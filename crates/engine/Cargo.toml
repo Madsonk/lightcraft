@@ -37,6 +37,7 @@ lightcraft-depth = { workspace = true, optional = true }
 lightcraft-inpaint = { workspace = true, optional = true }
 lightcraft-fetch = { workspace = true, optional = true }
 png = { workspace = true, optional = true }
+lightcraft-search = { workspace = true, optional = true }
 
 [features]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
@@ -49,6 +50,8 @@ restore = ["dep:lightcraft-restore", "dep:lightcraft-fetch"]
 depth = ["dep:lightcraft-depth", "dep:lightcraft-fetch", "dep:png"]
 # Object removal by inpainting with MI-GAN (`spot.inpaint`). Off for the web build.
 inpaint = ["dep:lightcraft-inpaint", "dep:lightcraft-fetch"]
+# Semantic search (SigLIP) and near-duplicate detection. Off for the web build.
+search = ["dep:lightcraft-search", "dep:lightcraft-fetch"]
 
 [dev-dependencies]
 libc = { workspace = true }

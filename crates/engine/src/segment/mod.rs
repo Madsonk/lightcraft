@@ -15,7 +15,8 @@
 //! commands return at once and [`Session::segment_poll`] applies the results; without it (CLI,
 //! MCP, tests) they wait for the worker.
 
-#[cfg(any(feature = "sam", feature = "depth", feature = "inpaint"))]
+// (also the semantic search model's download: `crate::search`)
+#[cfg(any(feature = "sam", feature = "depth", feature = "inpaint", feature = "search"))]
 pub(crate) mod download;
 #[cfg(feature = "sam")]
 mod worker;

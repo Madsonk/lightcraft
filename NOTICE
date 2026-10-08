@@ -22,6 +22,13 @@ The port was modified by the LightCraft contributors (2026): translated from Pyt
 Rust on candle and restructured; each ported file says so. Because of this, crates/segment is
 licensed under the Apache License 2.0 only (LICENSE-APACHE), not under the MIT option.
 
+crates/search (lightcraft-search) ports the SigLIP model code of Hugging Face Transformers
+(src/transformers/models/siglip), Copyright The HuggingFace Team and Google, licensed under the Apache
+License 2.0, translated to Rust on candle by the LightCraft contributors (2026). It is licensed under the
+Apache License 2.0 only. The SigLIP 2 weights (google/siglip2-base-patch16-224, Apache License 2.0 per its
+model card) are not part of LightCraft and are never distributed with it: a user downloads them only when
+they choose to. See docs/semantic-search.md.
+
 The SAM 3 weights are not part of LightCraft and are never distributed with it. A user downloads
 the facebook/sam3 checkpoint only when they choose to (in the app, or by hand), under Meta's SAM
 License (https://github.com/facebookresearch/sam3/blob/main/LICENSE), a separate, non-OSI

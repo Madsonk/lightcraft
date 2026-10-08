@@ -2,6 +2,11 @@
 
 ## October 2026
 
+### Search by meaning and duplicates
+- Find photos by describing them, in English or French (`search.semantic`), and label them by meaning (`search.tag`),
+  with SigLIP 2 running locally in pure Rust. The ~1.5 GB model is an optional download; `library.findDuplicates`
+  finds exact and near duplicates (bursts, re-exports) and can stack them. See docs/semantic-search.md.
+
 ### RAW decoding
 - Sony ILCE-7M4 downsized lossless ARWs now decode subsampled YCbCr tiles into linear RGB,
   preserving RAW editing & full-resolution export instead of using embedded JPEG previews.

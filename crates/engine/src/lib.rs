@@ -36,6 +36,7 @@ pub mod preset_luminar;
 pub mod presets;
 pub mod rename;
 pub mod restore;
+pub mod search;
 pub mod segment;
 pub mod sidecar;
 pub mod smart;
@@ -164,6 +165,8 @@ pub struct Session {
     pub faces: faces::Faces,
     /// Depth maps, inpainted pixels and their models (Lens Blur, Depth Range, object removal).
     pub ai: ai::Ai,
+    /// Semantic search and near-duplicates: the SigLIP model, the index, the indexing run.
+    pub searcher: search::Searcher,
     /// Selected spot (Remove panel), by index into the active photo's spots.
     pub active_spot: Option<usize>,
     /// The persistent library this session writes to (`None` = in-memory only).
@@ -255,6 +258,7 @@ impl Session {
             segmenter: segment::Segmenter::default(),
             faces: faces::Faces::default(),
             ai: ai::Ai::default(),
+            searcher: search::Searcher::default(),
             active_spot: None,
             library: None,
             xmp: sidecar::XmpPrefs::default(),
@@ -739,6 +743,8 @@ mod tests_organize;
 mod tests_persist;
 #[cfg(test)]
 mod tests_prefs;
+#[cfg(test)]
+mod tests_search;
 #[cfg(test)]
 mod tests_segment;
 #[cfg(test)]

@@ -296,6 +296,7 @@ LightCraft is young and moving fast. **Where we honestly stand** (details in the
 
 | Area | Status |
 |---|---|
+| Search by meaning (SigLIP 2, optional model, EN/FR), duplicate and near-duplicate finder — commands, no UI yet ([docs](docs/semantic-search.md)) | 🟡 |
 | Library: albums, folders, smart albums, stacks (incl. auto-stack), virtual copies, ratings, flags, labels, filter bar, search, sort, grids, filmstrip | ✅ |
 | Culling: Compare (synced zoom) and Survey views, auto-advance, instant previews | ✅ |
 | Light, Color, Effects (vignette styles), Tone Curve (+ refine saturation, targeted adjustment), Color Mixer (+ targeted), Point Color, Color Grading, Calibration, B&W | ✅ |

@@ -514,6 +514,12 @@ fn main() -> eframe::Result {
             // Analyze Faces: the face model in <config>/models/faces (or LIGHTCRAFT_FACES_DIR), downloaded on request
             // from Google's model storage or the user's own list (LIGHTCRAFT_FACES_MIRRORS too; see docs/faces.md)
             session.faces.mirrors_file = config_dir().map(|d| d.join("models").join("faces-mirrors.txt"));
+            // semantic search: SigLIP 2 in <config>/models/search, or LIGHTCRAFT_SEARCH_DIR (never required;
+            // see docs/semantic-search.md)
+            session.searcher.dir = std::env::var_os("LIGHTCRAFT_SEARCH_DIR")
+                .map(std::path::PathBuf::from)
+                .or_else(|| config_dir().map(|d| d.join("models").join("search")));
+            session.searcher.mirrors_file = config_dir().map(|d| d.join("models").join("search-mirrors.txt"));
             let mut app = LightcraftApp::new(session, services());
             if let Some(ui) = prefs {
                 app.ui = ui;

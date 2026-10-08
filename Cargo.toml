@@ -35,6 +35,7 @@ lightcraft-faces = { path = "crates/faces" }
 lightcraft-restore = { path = "crates/restore" }
 lightcraft-depth = { path = "crates/depth" }
 lightcraft-inpaint = { path = "crates/inpaint" }
+lightcraft-search = { path = "crates/search" }
 
 # foundation
 thiserror = "2"
