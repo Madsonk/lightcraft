@@ -14,7 +14,8 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-lightcraft-engine = { workspace = true }
+# depth and inpaint: the AI models of Lens Blur / Depth Range and of object removal (downloaded on request)
+lightcraft-engine = { workspace = true, features = ["depth", "inpaint"] }
 lightcraft-sysmem = { workspace = true }
 lightcraft-mcp = { workspace = true }
 lightcraft-ui-egui = { workspace = true }

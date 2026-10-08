@@ -7,11 +7,13 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod controls;
+pub mod depth;
 pub mod presets;
 pub mod segmask;
 pub mod settings;
 
 pub use controls::{CONTROLS, ControlSpec, Section, Track};
+pub use depth::{Aux, DepthMap, InpaintPatch};
 pub use presets::{Preset, SettingsGroup, apply_partial, extract_groups};
 pub use segmask::SegMask;
 pub use settings::*;
@@ -61,6 +63,7 @@ impl DevelopSettings {
         let mut a = self.clone();
         let d = DevelopSettings::default();
         a.wb = d.wb;
+        a.aux = Aux::default();
         a == d
     }
 

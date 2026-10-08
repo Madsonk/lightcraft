@@ -31,10 +31,18 @@ thiserror = { workspace = true }
 log = { workspace = true }
 ab_glyph = { workspace = true }
 lightcraft-segment = { workspace = true, optional = true }
+lightcraft-depth = { workspace = true, optional = true }
+lightcraft-inpaint = { workspace = true, optional = true }
+lightcraft-fetch = { workspace = true, optional = true }
+png = { workspace = true, optional = true }
 
 [features]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
-sam = ["dep:lightcraft-segment"]
+sam = ["dep:lightcraft-segment", "dep:lightcraft-fetch"]
+# Depth Anything V2 Small: depth maps, Lens Blur and the Depth Range mask (`depth.*`). Off for the web build.
+depth = ["dep:lightcraft-depth", "dep:lightcraft-fetch", "dep:png"]
+# Object removal by inpainting with MI-GAN (`spot.inpaint`). Off for the web build.
+inpaint = ["dep:lightcraft-inpaint", "dep:lightcraft-fetch"]
 
 [dev-dependencies]
 libc = { workspace = true }
