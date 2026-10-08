@@ -217,6 +217,7 @@ controls! {
     "detail.nrColor" => detail.nr_color, "Color Noise Reduction", Detail, 0, 100, 0, 1, 0, Plain;
     "detail.nrColorDetail" => detail.nr_color_detail, "Detail", Detail, 0, 100, 50, 1, 0, Plain;
     "detail.nrColorSmoothness" => detail.nr_color_smoothness, "Smoothness", Detail, 0, 100, 50, 1, 0, Plain;
+    "enhance.denoise" => enhance.denoise, "AI Denoise", Detail, 0, 100, 0, 1, 0, Plain;
     "optics.distortion" => optics.distortion, "Distortion", Optics, -100, 100, 0, 1, 0, Centered;
     "optics.vignetting" => optics.vignetting, "Vignetting", Optics, -100, 100, 0, 1, 0, Centered;
     "optics.vignettingMidpoint" => optics.vignetting_midpoint, "Midpoint", Optics, 0, 100, 50, 1, 0, Plain;

@@ -33,6 +33,7 @@ pub mod preset_import;
 pub mod preset_luminar;
 pub mod presets;
 pub mod rename;
+pub mod restore;
 pub mod segment;
 pub mod sidecar;
 pub mod smart;

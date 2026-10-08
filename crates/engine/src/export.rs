@@ -1083,7 +1083,10 @@ impl PreparedExport {
         match self.work {
             Work::Render(w) => {
                 let RenderWork { job, meta, opts } = *w;
-                let r = job.run().rendered?;
+                // AI denoise / super-resolution are settings of the photo (Enhance): they run on
+                // the finished render, here and only here (never in a preview)
+                let restore = crate::restore::Request::from_settings(&job.settings);
+                let r = crate::restore::apply(job.run().rendered?, restore)?;
                 let bytes = encode_rendered(&r, &opts, meta.as_ref())?;
                 Ok(Exported { file_name, bytes, width: r.image.width, height: r.image.height, sidecars: Vec::new() })
             }

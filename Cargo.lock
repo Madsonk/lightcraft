@@ -2895,6 +2895,7 @@ dependencies = [
  "lightcraft-codecs",
  "lightcraft-color",
  "lightcraft-develop",
+ "lightcraft-fetch",
  "lightcraft-geom",
  "lightcraft-gpu",
  "lightcraft-merge",
@@ -2903,6 +2904,7 @@ dependencies = [
  "lightcraft-preview",
  "lightcraft-raster",
  "lightcraft-raw",
+ "lightcraft-restore",
  "lightcraft-scenes",
  "lightcraft-segment",
  "log",
@@ -3045,6 +3047,20 @@ dependencies = [
  "thiserror 2.0.21",
  "zune-core",
  "zune-jpeg",
+]
+
+[[package]]
+name = "lightcraft-restore"
+version = "0.4.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "log",
+ "miniz_oxide 0.8.9",
+ "rayon",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
