@@ -2895,6 +2895,7 @@ dependencies = [
  "lightcraft-codecs",
  "lightcraft-color",
  "lightcraft-develop",
+ "lightcraft-fetch",
  "lightcraft-geom",
  "lightcraft-gpu",
  "lightcraft-merge",
@@ -2904,6 +2905,7 @@ dependencies = [
  "lightcraft-raster",
  "lightcraft-raw",
  "lightcraft-scenes",
+ "lightcraft-search",
  "lightcraft-segment",
  "log",
  "miniz_oxide 0.8.9",
@@ -3056,6 +3058,23 @@ dependencies = [
  "lightcraft-raster",
  "rayon",
  "serde",
+]
+
+[[package]]
+name = "lightcraft-search"
+version = "0.4.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "half",
+ "image",
+ "lightcraft-fetch",
+ "log",
+ "rayon",
+ "serde",
+ "serde_json",
+ "siphasher",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

@@ -14,7 +14,8 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-lightcraft-engine = { workspace = true }
+# search: semantic search and near-duplicates (the model is optional and downloaded on request)
+lightcraft-engine = { workspace = true, features = ["search"] }
 lightcraft-sysmem = { workspace = true }
 lightcraft-mcp = { workspace = true }
 lightcraft-ui-egui = { workspace = true }

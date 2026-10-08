@@ -31,10 +31,14 @@ thiserror = { workspace = true }
 log = { workspace = true }
 ab_glyph = { workspace = true }
 lightcraft-segment = { workspace = true, optional = true }
+lightcraft-search = { workspace = true, optional = true }
+lightcraft-fetch = { workspace = true, optional = true }
 
 [features]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
-sam = ["dep:lightcraft-segment"]
+sam = ["dep:lightcraft-segment", "dep:lightcraft-fetch"]
+# Semantic search (SigLIP) and near-duplicate detection. Off for the web build.
+search = ["dep:lightcraft-search", "dep:lightcraft-fetch"]
 
 [dev-dependencies]
 libc = { workspace = true }
