@@ -33,15 +33,22 @@ ab_glyph = { workspace = true }
 lightcraft-segment = { workspace = true, optional = true }
 lightcraft-faces = { workspace = true, optional = true }
 lightcraft-restore = { workspace = true, optional = true }
+lightcraft-depth = { workspace = true, optional = true }
+lightcraft-inpaint = { workspace = true, optional = true }
 lightcraft-fetch = { workspace = true, optional = true }
+png = { workspace = true, optional = true }
 
 [features]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
-sam = ["dep:lightcraft-segment"]
+sam = ["dep:lightcraft-segment", "dep:lightcraft-fetch"]
 # Analyze Faces (eyes open / closed, eye sharpness) with MediaPipe Face Landmarker. Off for the web build.
 faces = ["dep:lightcraft-faces", "dep:lightcraft-fetch"]
 # AI denoise (SCUNet) and 2x super-resolution (SPAN) of exports. Off for the web build.
 restore = ["dep:lightcraft-restore", "dep:lightcraft-fetch"]
+# Depth Anything V2 Small: depth maps, Lens Blur and the Depth Range mask (`depth.*`). Off for the web build.
+depth = ["dep:lightcraft-depth", "dep:lightcraft-fetch", "dep:png"]
+# Object removal by inpainting with MI-GAN (`spot.inpaint`). Off for the web build.
+inpaint = ["dep:lightcraft-inpaint", "dep:lightcraft-fetch"]
 
 [dev-dependencies]
 libc = { workspace = true }

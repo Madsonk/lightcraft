@@ -3,7 +3,7 @@
 //! Shapes are defined in normalized oriented-image coordinates; sizes are in "long-edge units".
 //! Components combine with Add (max), Subtract (a·(1−c)) and Intersect (a·c).
 
-use lightcraft_develop::{BrushStroke, LocalAdjustments, Mask, MaskOp, MaskShape, SegMask};
+use lightcraft_develop::{Aux, BrushStroke, LocalAdjustments, Mask, MaskOp, MaskShape, SegMask};
 use lightcraft_geom::Point;
 use lightcraft_raster::{Plane, Rgb32f};
 
@@ -25,20 +25,30 @@ fn smooth(e0: f32, e1: f32, x: f32) -> f32 {
 
 /// The visible masks with components, evaluated in order.
 pub fn evaluate(masks: &[Mask], frame: &Frame, w: usize, h: usize, img: &Rgb32f, log_l: &Plane, ev: f32) -> Vec<Evaluated> {
+    evaluate_aux(masks, frame, w, h, img, log_l, ev, &Aux::default())
+}
+
+/// [`evaluate`] with the data a render attaches to its settings (the depth map of Depth Range).
+pub fn evaluate_aux(masks: &[Mask], frame: &Frame, w: usize, h: usize, img: &Rgb32f, log_l: &Plane, ev: f32, aux: &Aux) -> Vec<Evaluated> {
     masks
         .iter()
         .filter(|m| m.visible && !m.components.is_empty())
-        .map(|m| Evaluated { id: m.id, alpha: evaluate_one(m, frame, w, h, img, log_l, ev), adjust: m.adjust })
+        .map(|m| Evaluated { id: m.id, alpha: evaluate_one_aux(m, frame, w, h, img, log_l, ev, aux), adjust: m.adjust })
         .collect()
 }
 
 /// The alpha plane of mask `m` (whether visible or not): its components combined, inverted and
 /// scaled by its amount.
 pub fn evaluate_one(m: &Mask, frame: &Frame, w: usize, h: usize, img: &Rgb32f, log_l: &Plane, ev: f32) -> Plane {
+    evaluate_one_aux(m, frame, w, h, img, log_l, ev, &Aux::default())
+}
+
+/// [`evaluate_one`] with the render's attached data.
+pub fn evaluate_one_aux(m: &Mask, frame: &Frame, w: usize, h: usize, img: &Rgb32f, log_l: &Plane, ev: f32, aux: &Aux) -> Plane {
     let mut alpha = Plane::new(w, h);
     let mut first = true;
     for comp in &m.components {
-        let mut c = shape_alpha(&comp.shape, frame, w, h, img, log_l, ev);
+        let mut c = shape_alpha_aux(&comp.shape, frame, w, h, img, log_l, ev, aux);
         if comp.invert {
             c.data.iter_mut().for_each(|v| *v = 1.0 - *v);
         }
@@ -89,6 +99,11 @@ fn for_each_pos(frame: &Frame, w: usize, h: usize, out: &mut Plane, f: impl Fn(P
 }
 
 pub fn shape_alpha(shape: &MaskShape, frame: &Frame, w: usize, h: usize, img: &Rgb32f, log_l: &Plane, ev: f32) -> Plane {
+    shape_alpha_aux(shape, frame, w, h, img, log_l, ev, &Aux::default())
+}
+
+/// [`shape_alpha`] with the render's attached data.
+pub fn shape_alpha_aux(shape: &MaskShape, frame: &Frame, w: usize, h: usize, img: &Rgb32f, log_l: &Plane, ev: f32, aux: &Aux) -> Plane {
     let mut out = Plane::new(w, h);
     let to_long = |p: Point| frame.norm_to_long(p);
     // `img`/`log_l` are before exposure: range masks select on the exposed values.
@@ -180,11 +195,23 @@ pub fn shape_alpha(shape: &MaskShape, frame: &Frame, w: usize, h: usize, img: &R
             smooth_plane(&mut out, 0.015 * frame_px(frame, w));
         }
         MaskShape::Background => {
-            let mut s = shape_alpha(&MaskShape::Subject, frame, w, h, img, log_l, ev);
+            let mut s = shape_alpha_aux(&MaskShape::Subject, frame, w, h, img, log_l, ev, aux);
             s.data.iter_mut().for_each(|v| *v = 1.0 - *v);
             out = s;
         }
-        MaskShape::DepthRange { .. } | MaskShape::Landscape { .. } => {}
+        // lo..hi from the nearest (0) to the farthest (1) of the photo, with a feathered falloff;
+        // nothing selected until the depth map exists (`depth.estimate`)
+        MaskShape::DepthRange { lo, hi, feather } => {
+            if let Some(depth) = &aux.depth {
+                let near = crate::lensblur::depth_plane(depth, frame, w, h, img);
+                let (lo, hi, f) = (*lo as f32, *hi as f32, (*feather as f32).max(1e-3));
+                for (v, d) in out.data.iter_mut().zip(&near.data) {
+                    let far = 1.0 - d;
+                    *v = smooth(lo - f, lo, far) * (1.0 - smooth(hi, hi + f, far));
+                }
+            }
+        }
+        MaskShape::Landscape { .. } => {}
     }
     out
 }

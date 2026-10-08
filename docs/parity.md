@@ -31,7 +31,7 @@ and prints the summary; `cargo xtask parity --write` refreshes the summary table
 | H. Crop & rotate (CROP) | 9 | 0 | 0 | 1 | 6/6 (100%) | 3/3 (100%) |
 | I. Remove / healing (REM) | 7 | 1 | 2 | 2 | 4/4 (100%) | 2/3 (67%) |
 | J. Red eye (EYE) | 2 | 0 | 0 | 0 | — | 1/1 (100%) |
-| K. Masking (MASK) | 14 | 4 | 5 | 0 | 8/8 (100%) | 5/5 (100%) |
+| K. Masking (MASK) | 14 | 5 | 4 | 0 | 8/8 (100%) | 5/5 (100%) |
 | L. Presets (PRE) | 6 | 0 | 1 | 1 | 2/2 (100%) | 2/2 (100%) |
 | M. Versions & history (VER) | 5 | 0 | 0 | 0 | 1/1 (100%) | 3/3 (100%) |
 | N. Copy / paste / sync (SYNC) | 5 | 0 | 0 | 0 | 3/3 (100%) | 1/1 (100%) |
@@ -73,6 +73,8 @@ Take the first one nobody is working on.
    the app offers a consented, verified download, but **LightCraft's CDN mirrors are not configured yet** (the
    built-in list is empty, so today users need their own mirror or a manual install). Subject / Sky / People could
    use the same model with fixed prompts. AI denoise (SCUNet) and 2x super-resolution (SPAN) run in pure Rust on exports (`crates/restore`, docs/ai-restore.md), but are slow and their weights' licences are a maintainer decision.
+   Lens Blur, the Depth Range mask and inpainting removal are in (`crates/depth`, `crates/inpaint`, see
+   `docs/depth-inpaint.md`): panels, a depth overlay and the licence dialogs for the two small models are missing.
 7. **HDR** (Q. HDR, LR-EXP-HDR), **video** (R. Video), **Classic output modules** (Map view, Book, Slideshow module,
    Print, publish): large, well understood, lower priority than 1–5.
 
@@ -261,7 +263,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-EDIT-GEOM-MANUAL | Manual transform | P1 | ✅ | `ctl:geometry.*` | |
 | LR-EDIT-GEOM-CONSTRAIN | Constrain crop | P1 | ✅ | `crates/ui-egui/src/panels/right.rs` (checkbox → `cmd:develop.merge`) | |
 | LR-EDIT-GEOM-GRID | Grid while transforming | P2 | ✅ | `crates/ui-egui/src/panels/detail.rs` | a fine grid over the photo while a geometry slider is dragged |
-| LR-EDIT-LENSBLUR | Lens blur | P2 | ⬜ | | settings field reserved, not rendered |
+| LR-EDIT-LENSBLUR | Lens blur | P2 | 🟡 | `cmd:depth.estimate`, `cmd:depth.export`, `cmd:lensblur.set`, `cmd:depth.model.status`, `cmd:depth.model.download`, `cmd:depth.model.cancel`, `crates/depth`, `crates/pipeline/src/lensblur.rs`, `crates/engine/src/ai.rs`, `docs/depth-inpaint.md` | monocular depth (Depth Anything V2 Small, Apache-2.0, pure Rust on candle, Metal on macOS) + a layered disc-aperture blur by depth in the scene-linear stage (amount, focus by click or value, focus range; sharp subject kept, no halo: measured on a synthetic scene and on 18 photos). The model is optional and downloaded with consent and SHA-256; the depth map is a file next to the library, never in the journal. No panel yet (commands only); depth is relative, so hair, glass and fine structures fail visibly (see the doc) |
 | LR-EDIT-CALIB | Calibration [Classic] | P1 | ✅ | `ctl:calibration.*` | shadows tint, red/green/blue primary hue and saturation; read/written in XMP |
 | LR-EDIT-SECTION-TOGGLE | Section on/off | P1 | ✅ | `cmd:develop.sectionEnabled` | |
 | LR-EDIT-RESET | Reset all / section / slider | P0 | ✅ | `cmd:develop.reset`, `cmd:develop.resetSection`, `cmd:develop.resetControl`, `crates/ui-egui/src/widgets.rs` (double-click) | no "reset to open" |
@@ -302,7 +304,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-REM-CONTENTAWARE | Content-aware remove | P1 | 🟡 | `cmd:spot.add` (`mode: remove`), `crates/pipeline/src/spots.rs` | heal with automatic source; no patch synthesis (M8.4) |
+| LR-REM-CONTENTAWARE | Content-aware remove | P1 | 🟡 | `cmd:spot.add` (`mode: remove`), `crates/pipeline/src/spots.rs`, `cmd:spot.inpaint`, `cmd:inpaint.model.status`, `cmd:inpaint.model.download`, `cmd:inpaint.model.cancel`, `crates/inpaint`, `crates/pipeline/src/inpaint.rs`, `docs/depth-inpaint.md` | heal with automatic source, and now MI-GAN inpainting (`spot.inpaint` with a rectangle, ellipse or brushed path; MIT licence, pure Rust on candle, CPU) for what a heal cannot fill: convincing on out-of-focus backgrounds and mixed textures, weak on smooth surfaces with sparse specks, repeating structures and large areas (8 cases viewed, see the doc); the fill is a file next to the library, the edit an undoable spot; the model is optional (download with consent and SHA-256) and its training data (Places2, FFHQ) carries non-commercial terms the maintainers must weigh; no panel yet |
 | LR-REM-HEAL | Heal | P0 | ✅ | `cmd:spot.add` (`mode: heal`) | |
 | LR-REM-CLONE | Clone | P0 | ✅ | `cmd:spot.add` (`mode: clone`) | |
 | LR-REM-GEN | Generative remove | OOS | 🚫 | | |
@@ -338,7 +340,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-MASK-RADIAL | Radial gradient | P0 | ✅ | `cmd:tool.radial`, `cmd:mask.update` | |
 | LR-MASK-COLORRANGE | Colour range | P1 | ✅ | `cmd:mask.add` (`colorRange`), `cmd:mask.sampleColor`, `cmd:mask.update`, `crates/pipeline/src/lib.rs` (`color_range_sample`) | Color tile → click the photo to sample (⇧-click adds, up to 5; samples taken in the space the mask compares in), Pick button, Refine slider |
 | LR-MASK-LUMRANGE | Luminance range | P1 | ✅ | `cmd:mask.add` (`luminanceRange`), `cmd:mask.update`, `crates/ui-egui/src/panels/masking.rs` (`range_controls`) | range bar with two handles (one undo step per drag), Smoothness, Show Luminance Map (B&W photo with the range tinted) |
-| LR-MASK-DEPTHRANGE | Depth range | P2 | ⬜ | | shape exists, needs depth data |
+| LR-MASK-DEPTHRANGE | Depth range | P2 | 🟡 | `cmd:mask.add` (`depthRange`), `cmd:depth.estimate`, `crates/pipeline/src/masks.rs`, `crates/develop/src/depth.rs` | range from the nearest to the farthest of the photo with a feathered falloff, on the same depth map as Lens Blur (relative depth, edges snapped to the photo's); selects nothing until `depth.estimate` ran; no panel, no depth visualization |
 | LR-MASK-COMBINE | Add / subtract / intersect | P0 | ✅ | `cmd:mask.addComponent` | |
 | LR-MASK-INVERT | Invert | P0 | ✅ | `cmd:mask.invert` | |
 | LR-MASK-AMOUNT | Mask amount | P1 | ✅ | `cmd:mask.adjust` (`amount`), `crates/ui-egui/src/panels/masking.rs` | |

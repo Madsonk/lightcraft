@@ -730,6 +730,10 @@ impl crate::Session {
         let content = source_key.0 as u64;
         // Temporary "before" settings must not replace the photo's cached develop hash.
         let settings_hash = if before { settings.hash64() } else { self.media.settings_hashes.get(id, &settings) };
+        // depth map and inpainted pixels the edits refer to (they are not in the settings: their
+        // identity goes into the keys)
+        let settings = self.attach_aux(&p, settings);
+        let settings_hash = if settings.aux.is_empty() { settings_hash } else { settings_hash ^ settings.aux.key().rotate_left(13) };
         let key = settings_hash
             ^ ((max_w as u64) << 40)
             ^ ((max_h as u64) << 20)
@@ -769,8 +773,14 @@ impl crate::Session {
     /// temporary preview while hovering a preset or profile; nothing is committed or cached).
     pub fn preview_job(&mut self, id: PhotoId, max_w: usize, max_h: usize, apply_crop: bool, settings: &DevelopSettings) -> Option<RenderJob> {
         let mut job = self.render_job(id, max_w, max_h, false, apply_crop)?;
-        job.settings = Arc::new(settings.clone());
-        job.key = settings.hash64() ^ ((max_w as u64) << 40) ^ ((max_h as u64) << 20) ^ (apply_crop as u64) ^ (job.level as u64) << 60;
+        let p = self.catalog.photo(id)?.clone();
+        job.settings = self.attach_aux(&p, Arc::new(settings.clone()));
+        job.key = settings.hash64()
+            ^ job.settings.aux.key()
+            ^ ((max_w as u64) << 40)
+            ^ ((max_h as u64) << 20)
+            ^ (apply_crop as u64)
+            ^ (job.level as u64) << 60;
         Some(job)
     }
 

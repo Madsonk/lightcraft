@@ -33,6 +33,8 @@ lightcraft-fetch = { path = "crates/fetch" }
 lightcraft-segment = { path = "crates/segment" }
 lightcraft-faces = { path = "crates/faces" }
 lightcraft-restore = { path = "crates/restore" }
+lightcraft-depth = { path = "crates/depth" }
+lightcraft-inpaint = { path = "crates/inpaint" }
 
 # foundation
 thiserror = "2"

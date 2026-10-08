@@ -15,7 +15,8 @@ workspace = true
 
 [dependencies]
 # `restore`: `render --denoise N` / `--upscale 2` (AI models, downloaded on request: docs/ai-restore.md)
-lightcraft-engine = { workspace = true, features = ["faces", "restore"] }
+# depth and inpaint: the AI models of Lens Blur / Depth Range and of object removal (downloaded on request)
+lightcraft-engine = { workspace = true, features = ["faces", "restore", "depth", "inpaint"] }
 lightcraft-sysmem = { workspace = true }
 lightcraft-mcp = { workspace = true }
 lightcraft-ui-egui = { workspace = true }

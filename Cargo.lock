@@ -2884,6 +2884,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-depth"
+version = "0.4.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "lightcraft-raster",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-develop"
 version = "0.4.0"
 dependencies = [
@@ -2904,21 +2916,25 @@ dependencies = [
  "lightcraft-catalog",
  "lightcraft-codecs",
  "lightcraft-color",
+ "lightcraft-depth",
  "lightcraft-develop",
  "lightcraft-faces",
  "lightcraft-fetch",
  "lightcraft-geom",
  "lightcraft-gpu",
+ "lightcraft-inpaint",
  "lightcraft-merge",
  "lightcraft-meta",
  "lightcraft-pipeline",
  "lightcraft-preview",
  "lightcraft-raster",
  "lightcraft-raw",
+ "lightcraft-restore",
  "lightcraft-scenes",
  "lightcraft-segment",
  "log",
  "miniz_oxide 0.8.9",
+ "png",
  "rayon",
  "serde",
  "serde_json",
@@ -2970,6 +2986,18 @@ dependencies = [
  "log",
  "pollster 1.0.1",
  "wgpu",
+]
+
+[[package]]
+name = "lightcraft-inpaint"
+version = "0.4.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "lightcraft-raster",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -3068,6 +3096,20 @@ dependencies = [
  "thiserror 2.0.21",
  "zune-core",
  "zune-jpeg",
+]
+
+[[package]]
+name = "lightcraft-restore"
+version = "0.4.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "log",
+ "miniz_oxide 0.8.9",
+ "rayon",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

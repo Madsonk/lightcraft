@@ -10,6 +10,7 @@
 //! run them off the UI thread.
 #![forbid(unsafe_code)]
 
+pub mod ai;
 pub mod availability;
 mod camera_preview;
 pub mod camera_profiles;
@@ -161,6 +162,8 @@ pub struct Session {
     pub segmenter: segment::Segmenter,
     /// Face analysis (eyes open / closed, eye sharpness): the model and the run in progress.
     pub faces: faces::Faces,
+    /// Depth maps, inpainted pixels and their models (Lens Blur, Depth Range, object removal).
+    pub ai: ai::Ai,
     /// Selected spot (Remove panel), by index into the active photo's spots.
     pub active_spot: Option<usize>,
     /// The persistent library this session writes to (`None` = in-memory only).
@@ -251,6 +254,7 @@ impl Session {
             active_mask: None,
             segmenter: segment::Segmenter::default(),
             faces: faces::Faces::default(),
+            ai: ai::Ai::default(),
             active_spot: None,
             library: None,
             xmp: sidecar::XmpPrefs::default(),
@@ -709,6 +713,8 @@ pub fn json_delta(old: &Value, new: &Value) -> Option<Value> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_ai;
 #[cfg(test)]
 mod tests_color;
 #[cfg(test)]
