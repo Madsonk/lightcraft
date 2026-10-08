@@ -336,12 +336,12 @@ impl Photo {
     pub fn develops_raw(&self) -> bool {
         self.kind == MediaKind::Raw && self.preview_only.is_none()
     }
-    /// The current ARW, NEF and RW2 readers have vendor WB multipliers but no measured camera
+    /// The current ARW, NEF, RW2 and CR2 readers have vendor WB multipliers but no measured camera
     /// illuminant. Use adjustments relative to the camera's as-shot look, as for rendered
     /// photographs (the engine's `camera_preview::file_local_look` covers the same formats; RWL and
     /// RAW are Leica's and the oldest Panasonic bodies' names for RW2 files).
     pub fn relative_wb(&self) -> bool {
-        self.develops_raw() && ["ARW", "NEF", "NRW", "RW2", "RWL", "RAW"].iter().any(|f| self.format.eq_ignore_ascii_case(f))
+        self.develops_raw() && ["ARW", "NEF", "NRW", "RW2", "RWL", "RAW", "CR2"].iter().any(|f| self.format.eq_ignore_ascii_case(f))
     }
     /// The develop settings import gave this photo: [`Photo::camera_defaults`], or the user's
     /// default preset applied on top of them ([`Photo::import_look`]).

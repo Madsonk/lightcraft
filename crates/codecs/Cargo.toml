@@ -26,14 +26,18 @@ tiff = { workspace = true }
 image-webp = { workspace = true }
 moxcms = { workspace = true }
 jxl-oxide = { workspace = true, optional = true }
+## HEIC/HEIF decode: clean-room pure-Rust HEVC decoder from the sibling FilmCraft project (MIT/Apache-2.0)
+filmcraft-hevc = { path = "../../../filmcraft/crates/hevc", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ravif = { workspace = true, optional = true }
 
 [features]
-default = ["parallel", "jxl", "avif"]
+default = ["parallel", "jxl", "avif", "heif"]
 parallel = ["dep:rayon", "lightcraft-raster/parallel", "jpeg-decoder/rayon"]
 jxl = ["dep:jxl-oxide"]
+## HEIC/HEIF still-image decode (HEVC intra tiles, grid assembly)
+heif = ["dep:filmcraft-hevc"]
 ## AVIF encoding via ravif/rav1e (pure Rust, BSD). Native targets only; a no-op on wasm32.
 avif = ["dep:ravif"]
 
