@@ -541,7 +541,7 @@ fn info(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                 }
             });
         }
-        if let Some(a) = p.analysis {
+        if let Some(a) = &p.analysis {
             let mut line = format!("Focus {:.0}", a.sharpness);
             if a.clipped > 0.02 {
                 line.push_str(&format!(" · {:.0}% clipped", a.clipped * 100.0));
@@ -551,6 +551,36 @@ fn info(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
             }
             ui.add_space(4.0);
             ui.label(egui::RichText::new(line).color(t.text_dim));
+            // Analyze Faces: one line per face with how open and how sharp its eyes are
+            if let Some(faces) = a.faces.as_deref() {
+                let judged = faces.iter().filter(|f| f.eyes_judged()).count();
+                let closed = faces.iter().filter(|f| f.eyes_closed()).count();
+                let head = match (faces.len(), closed) {
+                    (0, _) => crate::i18n::tr("No faces").to_string(),
+                    (n, 0) => format!("{n} {}", if n == 1 { "face" } else { "faces" }),
+                    (n, c) => format!("{n} {} · eyes closed on {c}", if n == 1 { "face" } else { "faces" }),
+                };
+                ui.label(egui::RichText::new(head).color(if closed > 0 { t.caution } else { t.text_dim }));
+                let mut order: Vec<usize> = (0..faces.len()).filter(|&i| faces[i].eyes_judged()).collect();
+                order.sort_by(|&a, &b| faces[a].rect[0].total_cmp(&faces[b].rect[0]));
+                for (k, &i) in order.iter().enumerate().take(12) {
+                    let f = &faces[i];
+                    let (l, r) = (lightcraft_catalog::FaceInfo::open_score(f.open[0]), lightcraft_catalog::FaceInfo::open_score(f.open[1]));
+                    let line = format!(
+                        "  {}: eyes {:.0} / {:.0} open · {:.0} / {:.0} sharp{}",
+                        k + 1,
+                        l,
+                        r,
+                        f.sharp[0],
+                        f.sharp[1],
+                        if f.eyes_closed() { " · closed" } else { "" }
+                    );
+                    ui.label(egui::RichText::new(line).size(11.0).color(if f.eyes_closed() { t.caution } else { t.text_dim }));
+                }
+                if judged < faces.len() {
+                    ui.label(egui::RichText::new(format!("  {} small or turned away: not judged", faces.len() - judged)).size(11.0).color(t.text_dim));
+                }
+            }
         }
         // offline originals / smart previews
         // (cached answers, checked off the UI thread: unknown counts as online / no smart preview)

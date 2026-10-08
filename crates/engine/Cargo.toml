@@ -31,10 +31,14 @@ thiserror = { workspace = true }
 log = { workspace = true }
 ab_glyph = { workspace = true }
 lightcraft-segment = { workspace = true, optional = true }
+lightcraft-faces = { workspace = true, optional = true }
+lightcraft-fetch = { workspace = true, optional = true }
 
 [features]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
 sam = ["dep:lightcraft-segment"]
+# Analyze Faces (eyes open / closed, eye sharpness) with MediaPipe Face Landmarker. Off for the web build.
+faces = ["dep:lightcraft-faces", "dep:lightcraft-fetch"]
 
 [dev-dependencies]
 libc = { workspace = true }
