@@ -511,6 +511,9 @@ fn main() -> eframe::Result {
                 std::env::var_os("LIGHTCRAFT_SAM3_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("sam3")));
             // the user's own download locations, one base URL per line (LIGHTCRAFT_SAM3_MIRRORS too)
             session.segmenter.mirrors_file = config_dir().map(|d| d.join("models").join("sam3-mirrors.txt"));
+            // Analyze Faces: the face model in <config>/models/faces (or LIGHTCRAFT_FACES_DIR), downloaded on request
+            // from Google's model storage or the user's own list (LIGHTCRAFT_FACES_MIRRORS too; see docs/faces.md)
+            session.faces.mirrors_file = config_dir().map(|d| d.join("models").join("faces-mirrors.txt"));
             let mut app = LightcraftApp::new(session, services());
             if let Some(ui) = prefs {
                 app.ui = ui;

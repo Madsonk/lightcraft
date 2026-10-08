@@ -209,6 +209,8 @@ impl LightcraftApp {
     pub fn new(mut session: Session, services: Services) -> Self {
         // AI mask requests run on the model's worker; frames apply their results (never wait)
         session.segmenter.background = true;
+        // Analyze Faces runs on its own worker too; frames apply what it finds
+        session.faces.background = true;
         Self {
             session,
             ui: UiState::default(),
@@ -271,6 +273,10 @@ impl LightcraftApp {
         if let Err(e) = &r {
             log::warn!("{id}: {e}");
             self.ui.status = e.clone();
+            // Analyze Faces without its model: offer the download (never downloads by itself)
+            if e.contains(lightcraft_engine::faces::NOT_INSTALLED) && self.ui.dialog.is_none() {
+                self.ui.dialog = Some(state::Dialog::FaceModel { error: None });
+            }
         }
         r
     }
@@ -425,6 +431,41 @@ impl LightcraftApp {
             self.offer_sam_download(then);
         } else {
             self.toast_error(ctx, e);
+        }
+    }
+
+    /// Analyze Faces: apply what the worker found, show its errors and its end, watch the model
+    /// download. Never waits for the model.
+    fn faces_poll(&mut self, ctx: &egui::Context) {
+        let polled = self.session.faces_poll();
+        if polled.changed {
+            ctx.request_repaint();
+        }
+        if let Some(e) = polled.messages.into_iter().last() {
+            self.toast_error(ctx, e);
+        }
+        let busy = self.session.faces.busy();
+        if busy {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        } else if self.ui.faces_running {
+            let p = self.session.faces.progress();
+            let closed = self.session.catalog.photos().filter(|ph| ph.has_closed_eyes()).count();
+            self.toast(ctx, format!("Faces analyzed in {} photo{} · {closed} with closed eyes", p.done, if p.done == 1 { "" } else { "s" }));
+        }
+        self.ui.faces_running = busy;
+        let download = self.session.faces.download_status();
+        if download.running {
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        if self.ui.faces_downloading && !download.running {
+            self.ui.faces_downloading = false;
+            let open = matches!(self.ui.dialog, Some(state::Dialog::FaceModel { .. }));
+            match (&download.error, open) {
+                (_, true) => {}
+                (Some(e), false) => self.toast_error(ctx, format!("The face model download failed: {e}")),
+                (None, false) if download.finished => self.toast(ctx, crate::i18n::tr("The face model is installed: run Photo ▸ Analyze Faces.")),
+                (None, false) => {}
+            }
         }
     }
 
@@ -773,6 +814,7 @@ impl LightcraftApp {
         // panels set it again this frame while the pointer rests on a preset or profile
         self.hover_preview = None;
         self.ai_mask_detail(&ctx);
+        self.faces_poll(&ctx);
         if self.ui.fullscreen {
             // full-screen preview: the photo alone on black
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(egui::Color32::BLACK)).show(ui, |ui| panels::detail::show(self, ui));

@@ -283,9 +283,73 @@ pub struct Photo {
     pub local_baseline: Option<u64>,
 }
 
-/// What assisted culling measured on a photo.
+/// A face found in a photo by Analyze Faces (the face model in `lightcraft-faces`). Coordinates are
+/// fractions of the upright photo (EXIF orientation applied, before the user's Rotate Left/Right
+/// and crop), like the XMP regions in [`Photo::regions`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FaceInfo {
+    /// The face's box `[x0, y0, x1, y1]`, 0..1.
+    pub rect: [f32; 4],
+    /// The model's confidence that this is a face, 0..1.
+    pub score: f32,
+    /// Eye aspect ratio (lid gap over eye width) of the image-left and image-right eye: ≈ 0.3 open,
+    /// near 0 closed.
+    pub open: [f32; 2],
+    /// Sharpness of the image-left and image-right eye, 0..100 (variance of the Laplacian on a
+    /// normalized crop of the eye).
+    pub sharp: [f32; 2],
+    /// Head turn, −1 .. 1 (0 = facing the camera).
+    pub turn: f32,
+}
+
+/// Eye aspect ratio below which an eye counts as closed (calibrated on real photos: see
+/// `docs/faces.md`).
+pub const EYE_CLOSED_BELOW: f32 = 0.15;
+/// Eye aspect ratio from which an eye counts as fully open (openness score 100).
+pub const EYE_OPEN_FROM: f32 = 0.24;
+/// Faces turned further than this (|turn|) are not judged: the far eye is hidden.
+pub const MAX_TURN: f32 = 0.55;
+/// Faces narrower than this share of the photo's long edge are not judged (too small to see the eyes).
+pub const MIN_FACE_SHARE: f32 = 0.025;
+
+impl FaceInfo {
+    /// Whether the eyes can be judged: a face of some size, not turned away.
+    pub fn eyes_judged(&self) -> bool {
+        self.turn.abs() <= MAX_TURN && (self.rect[2] - self.rect[0]).max(self.rect[3] - self.rect[1]) >= MIN_FACE_SHARE
+    }
+
+    /// Openness 0 (closed) .. 100 (wide open) of an eye, from its eye aspect ratio: 50 at the
+    /// closed threshold ([`EYE_CLOSED_BELOW`]), 100 from [`EYE_OPEN_FROM`].
+    pub fn open_score(ear: f32) -> f32 {
+        if ear < EYE_CLOSED_BELOW {
+            (50.0 * ear / EYE_CLOSED_BELOW).max(0.0)
+        } else {
+            (50.0 + 50.0 * (ear - EYE_CLOSED_BELOW) / (EYE_OPEN_FROM - EYE_CLOSED_BELOW)).min(100.0)
+        }
+    }
+
+    /// Whether at least one eye is closed (only for faces whose eyes can be judged).
+    pub fn eyes_closed(&self) -> bool {
+        self.eyes_judged() && self.open[0].min(self.open[1]) < EYE_CLOSED_BELOW
+    }
+
+    /// How good the face is for choosing between similar shots, 0..100: both eyes open and sharp.
+    /// The less open and the less sharp of the two eyes count (a wink or a blurred eye spoils it).
+    pub fn quality(&self) -> f32 {
+        let open = Self::open_score(self.open[0].min(self.open[1]));
+        let sharp = self.sharp[0].min(self.sharp[1]);
+        0.7 * open + 0.3 * sharp
+    }
+}
+
+/// What assisted culling measured on a photo.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Analysis {
+    /// The faces found in the photo: `None` until Analyze Faces ran on it, `Some` of an empty list
+    /// when it has none. Kept in the analysis (not as a new kind of change) so that older
+    /// LightCraft builds, which ignore the field, still read the library.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub faces: Option<Arc<Vec<FaceInfo>>>,
     /// Focus: 0 (blurred) .. 100 (crisp), from the detail in the photo's sharpest area.
     pub sharpness: f32,
     /// Exposure: share of clipped pixels, 0..1 (shadows + highlights).
@@ -297,6 +361,21 @@ pub struct Analysis {
 }
 
 impl Photo {
+    /// The faces Analyze Faces found (`None` until it ran on this photo).
+    pub fn faces(&self) -> Option<&[FaceInfo]> {
+        self.analysis.as_ref().and_then(|a| a.faces.as_deref()).map(Vec::as_slice)
+    }
+
+    /// Whether some face whose eyes can be judged has a closed eye.
+    pub fn has_closed_eyes(&self) -> bool {
+        self.faces().is_some_and(|f| f.iter().any(FaceInfo::eyes_closed))
+    }
+
+    /// Whether the photo has faces whose eyes can be judged and all of them are open.
+    pub fn has_open_eyes(&self) -> bool {
+        self.faces().is_some_and(|f| f.iter().any(FaceInfo::eyes_judged) && !f.iter().any(FaceInfo::eyes_closed))
+    }
+
     pub fn new(id: PhotoId, source: Source, file_name: &str, format: &str, width: u32, height: u32, imported: &str) -> Photo {
         Photo {
             id,

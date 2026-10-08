@@ -13,6 +13,7 @@ pub mod curves;
 mod develop;
 mod edit;
 mod export;
+mod faces;
 pub mod filters;
 pub mod keywords;
 pub mod library;
@@ -127,6 +128,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(previews::specs());
         v.extend(lut_profiles::specs());
         v.extend(cull::specs());
+        v.extend(faces::specs());
         v.extend(convert::specs());
         v.extend(convert::edit_specs());
         v.extend(merge::specs());

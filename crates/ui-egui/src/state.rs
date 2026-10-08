@@ -297,6 +297,12 @@ pub struct UiState {
     /// A SAM 3 download was started from the app (to report its end once).
     #[serde(skip)]
     pub sam_downloading: bool,
+    /// The face model download was started from the app (to report its end once), and Analyze
+    /// Faces was running at the last frame (to report its end once).
+    #[serde(skip)]
+    pub faces_downloading: bool,
+    #[serde(skip)]
+    pub faces_running: bool,
     /// When to start the zoomed-in detail pass of an AI mask (app time) and which mask: set by
     /// each click or description, so the pass runs once the clicking stops.
     #[serde(skip)]
@@ -529,6 +535,13 @@ pub enum Dialog {
         #[serde(default)]
         error: Option<String>,
     },
+    /// Analyze Faces needs the face model (3.8 MB, Apache-2.0, Google), which isn't installed: offer
+    /// to download it (size, licence, progress), then run Analyze Faces.
+    FaceModel {
+        /// Why the download couldn't start (shown in the dialog).
+        #[serde(default)]
+        error: Option<String>,
+    },
     /// Confirm moving photos to Recently Deleted.
     ConfirmDelete {
         count: usize,
@@ -588,6 +601,8 @@ impl Default for UiState {
             describe: None,
             detail_due: None,
             sam_downloading: false,
+            faces_downloading: false,
+            faces_running: false,
             renaming_component: None,
             quit: false,
             dragging_photos: None,

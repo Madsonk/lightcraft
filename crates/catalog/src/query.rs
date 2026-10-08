@@ -41,6 +41,9 @@ pub struct Filter {
     pub keyword: Option<String>,
     /// A person: photos with a named face region of this name (case-insensitive), as read from XMP.
     pub person: Option<String>,
+    /// Faces found by Analyze Faces: `any` (at least one face), `none` (analyzed, no face),
+    /// `closedEyes` (a face with a closed eye), `eyesOpen` (faces, all eyes open) or `unanalyzed`.
+    pub faces: Option<String>,
     pub camera: Option<String>,
     /// Lens (case-insensitive substring).
     pub lens: Option<String>,
@@ -135,6 +138,8 @@ fn token_matches(p: &Photo, tok: &str) -> bool {
             "lens" => p.meta.lens.to_lowercase().contains(val),
             "keyword" | "kw" => p.meta.keywords.iter().any(|k| crate::keywords::is_under(k, val)),
             "person" | "who" => has_person(p, val),
+            "faces" | "face" => faces_match(p, val),
+            "eyes" => faces_match(p, if val == "closed" { "closedeyes" } else if val == "open" { "eyesopen" } else { val }),
             "type" | "kind" => format!("{:?}", p.kind).eq_ignore_ascii_case(val),
             "edited" => (val == "true" || val == "yes") == p.is_edited(),
             "date" => p.date().starts_with(val),
@@ -145,6 +150,19 @@ fn token_matches(p: &Photo, tok: &str) -> bool {
     }
     let hay = [&p.file_name, &p.meta.title, &p.meta.caption, &p.meta.camera, &p.meta.lens, &p.meta.location, &p.format];
     hay.iter().any(|h| h.to_lowercase().contains(&t)) || p.meta.keywords.iter().any(|k| k.to_lowercase().contains(&t))
+}
+
+/// Whether `p`'s faces (Analyze Faces) fit `want`: `any`, `none`, `closedEyes`, `eyesOpen` or
+/// `unanalyzed` (case-insensitive).
+pub fn faces_match(p: &Photo, want: &str) -> bool {
+    match want.trim().to_lowercase().as_str() {
+        "any" | "yes" | "true" => p.faces().is_some_and(|f| !f.is_empty()),
+        "none" | "no" | "false" => p.faces().is_some_and(<[crate::FaceInfo]>::is_empty),
+        "closedeyes" | "closed" => p.has_closed_eyes(),
+        "eyesopen" | "open" => p.has_open_eyes(),
+        "unanalyzed" | "unanalysed" => p.faces().is_none(),
+        _ => false,
+    }
 }
 
 /// Whether `p` has a named face region called `name` (case-insensitive).
@@ -183,6 +201,7 @@ impl Filter {
         for (name, val) in [
             ("keyword", &self.keyword),
             ("person", &self.person),
+            ("faces", &self.faces),
             ("camera", &self.camera),
             ("lens", &self.lens),
             ("date", &self.date),
@@ -302,6 +321,11 @@ impl Filter {
         }
         if let Some(n) = &self.person
             && !has_person(p, n)
+        {
+            return false;
+        }
+        if let Some(f) = &self.faces
+            && !faces_match(p, f)
         {
             return false;
         }

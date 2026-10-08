@@ -446,3 +446,36 @@ fn random_sort_has_no_date_headers() {
     let ids = many(&mut c, 5);
     assert!(c.date_runs(&ids, SortKey::Random, GroupBy::Day).is_empty());
 }
+
+fn face(open: f32, sharp: f32) -> FaceInfo {
+    FaceInfo { rect: [0.3, 0.2, 0.6, 0.6], score: 1.0, open: [open, open], sharp: [sharp, sharp], turn: 0.0 }
+}
+
+#[test]
+fn eye_openness_scores_follow_the_calibrated_thresholds() {
+    // 50 at the closed threshold, 100 from the open one, 0 shut
+    assert_eq!(FaceInfo::open_score(0.0), 0.0);
+    assert!((FaceInfo::open_score(EYE_CLOSED_BELOW) - 50.0).abs() < 1e-4);
+    assert_eq!(FaceInfo::open_score(EYE_OPEN_FROM), 100.0);
+    assert_eq!(FaceInfo::open_score(0.5), 100.0);
+    assert!(FaceInfo::open_score(0.10) < FaceInfo::open_score(0.20));
+    // one closed eye is enough; a turned or tiny face is not judged
+    let wink = FaceInfo { open: [0.30, 0.05], ..face(0.3, 80.0) };
+    assert!(wink.eyes_closed() && !face(0.3, 80.0).eyes_closed());
+    assert!(!FaceInfo { turn: 0.9, ..wink }.eyes_closed());
+    assert!(!FaceInfo { rect: [0.5, 0.5, 0.51, 0.52], ..wink }.eyes_closed());
+    // the wink is the worse shot, whatever its focus
+    assert!(face(0.3, 60.0).quality() > wink.quality());
+}
+
+#[test]
+fn photo_face_queries() {
+    let mut c = Catalog::new();
+    let a = photo(&mut c, "a.jpg", "2026-01-01T10:00:00");
+    assert!(c.photo(a).unwrap().faces().is_none() && !c.photo(a).unwrap().has_closed_eyes() && !c.photo(a).unwrap().has_open_eyes());
+    let faces = Some(Arc::new(vec![face(0.3, 70.0), face(0.04, 70.0)]));
+    c.apply(Op::SetAnalysis { id: a, analysis: Some(Analysis { faces, ..Default::default() }) }).unwrap();
+    let p = c.photo(a).unwrap();
+    assert_eq!(p.faces().map(<[FaceInfo]>::len), Some(2));
+    assert!(p.has_closed_eyes() && !p.has_open_eyes());
+}

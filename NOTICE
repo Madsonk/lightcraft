@@ -27,6 +27,14 @@ the facebook/sam3 checkpoint only when they choose to (in the app, or by hand), 
 License (https://github.com/facebookresearch/sam3/blob/main/LICENSE), a separate, non-OSI
 licence. See docs/ai-masks.md.
 
+crates/faces (lightcraft-faces) runs Google's MediaPipe Face Landmarker (BlazeFace detector and Face
+Mesh V2) and follows MediaPipe's published face landmarker graph (https://github.com/google-ai-edge/mediapipe,
+Apache License 2.0). Its TensorFlow Lite interpreter, kernels and zip reader are adapted from EffectCraft's
+effectcraft-segment (same authors, MIT OR Apache-2.0), and read the .tflite FlatBuffer as laid out by the
+TensorFlow Lite schema (Apache License 2.0). The face model file (face_landmarker.task, Apache License 2.0,
+Google LLC) is not part of LightCraft and is never distributed with it: a user downloads it only when they
+choose to (in the app, or by hand), checked against its published SHA-256. See docs/faces.md.
+
 Builds made with craft-fonts (the optional CRAFT_FONTS_DIR build input; all official releases)
 also embed the fonts listed in https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md
 (the Japanese fonts BIZ UDPGothic, BIZ UDMincho and Shippori Mincho; the web build embeds only BIZ
