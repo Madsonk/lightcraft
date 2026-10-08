@@ -195,7 +195,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "library.findDuplicates",
             "Find Duplicates",
-            ["Library"],
+            ["Photo"],
             None,
             "{mode?: \"exact\" | \"near\" (exact), ids?, maxDistance?: 0..128 hash bits (10), minCosine?: 0..1 (0.90), stack?: bool, filter?: bool} — `exact`: files with the same content hash; `near`: look-alikes (bursts, re-exports) by perceptual hash, confirmed by the embeddings when indexed (hashes are computed on the spot, no model needed); `stack` groups each set into a stack (largest file on top), `filter` shows only them → {mode, groups: [{ids, kind, distance?, cosine?, confirmed?}], photos, stacked}",
             always,
