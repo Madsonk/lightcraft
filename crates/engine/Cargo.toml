@@ -32,6 +32,7 @@ log = { workspace = true }
 ab_glyph = { workspace = true }
 lightcraft-segment = { workspace = true, optional = true }
 lightcraft-faces = { workspace = true, optional = true }
+lightcraft-restore = { workspace = true, optional = true }
 lightcraft-fetch = { workspace = true, optional = true }
 
 [features]
@@ -39,6 +40,8 @@ lightcraft-fetch = { workspace = true, optional = true }
 sam = ["dep:lightcraft-segment"]
 # Analyze Faces (eyes open / closed, eye sharpness) with MediaPipe Face Landmarker. Off for the web build.
 faces = ["dep:lightcraft-faces", "dep:lightcraft-fetch"]
+# AI denoise (SCUNet) and 2x super-resolution (SPAN) of exports. Off for the web build.
+restore = ["dep:lightcraft-restore", "dep:lightcraft-fetch"]
 
 [dev-dependencies]
 libc = { workspace = true }

@@ -59,7 +59,8 @@ Priorities, in order. Each points at tracker rows in [`docs/parity.md`](docs/par
 6. **AI model strategy** (maintainer decision): which permissively licensed models (or our own training) for
    segmentation masks and denoise; then pure-Rust inference. Unblocks M12 and Enhance. Object / Describe masks now
    run Meta's SAM 3 in pure Rust (optional, user-consented download under the non-OSI SAM License; CDN mirrors still
-   to be set up, docs/ai-masks.md); Subject / Sky / People and Enhance are still open.
+   to be set up, docs/ai-masks.md); Subject / Sky / People are still open. Enhance: AI denoise (SCUNet) and 2x super-resolution (SPAN) run on exports in pure Rust
+   (optional downloads, docs/ai-restore.md) but are slow and their weights' licences need a maintainer decision.
 7. **Then:** HDR (Q), the Classic output modules (Print first, then Map view, Book, Slideshow), video (R), localisation
    and accessibility.
 

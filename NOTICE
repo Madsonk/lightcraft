@@ -34,6 +34,20 @@ effectcraft-segment (same authors, MIT OR Apache-2.0), and read the .tflite Flat
 TensorFlow Lite schema (Apache License 2.0). The face model file (face_landmarker.task, Apache License 2.0,
 Google LLC) is not part of LightCraft and is never distributed with it: a user downloads it only when they
 choose to (in the app, or by hand), checked against its published SHA-256. See docs/faces.md.
+crates/restore (lightcraft-restore) ports two inference networks, translated from Python/PyTorch to
+Rust on candle and modified by the LightCraft contributors (2026); each ported file says so:
+SCUNet (https://github.com/cszn/SCUNet, models/network_scunet.py, Copyright Kai Zhang et al.,
+Apache License 2.0; its Swin blocks derive from SwinIR, Apache-2.0) and SPAN
+(https://github.com/hongyuanyu/SPAN, basicsr/archs/span_arch.py, Apache License 2.0, built on
+BasicSR, Copyright 2018-2020 BasicSR Authors). crates/restore/src/pt.rs (a PyTorch checkpoint
+reader) comes from the sibling EffectCraft project (MIT OR Apache-2.0). Because of the ports,
+crates/restore is licensed under the Apache License 2.0 only (LICENSE-APACHE).
+
+The AI denoise and super-resolution weights are not part of LightCraft and are never distributed
+with it. A user downloads them only when they choose to: scunet_color_real_psnr.pth from the
+SCUNet authors' KAIR release (no separate licence stated; see docs/ai-restore.md) and
+2xNomosUni_span_multijpg.safetensors by Philip Hofmann, licensed CC BY 4.0
+(https://creativecommons.org/licenses/by/4.0/; https://huggingface.co/Phips/2xNomosUni_span_multijpg).
 
 Builds made with craft-fonts (the optional CRAFT_FONTS_DIR build input; all official releases)
 also embed the fonts listed in https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md

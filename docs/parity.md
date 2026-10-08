@@ -26,7 +26,7 @@ and prints the summary; `cargo xtask parity --write` refreshes the summary table
 | C. Views & navigation (VIEW) | 16 | 0 | 1 | 0 | 9/9 (100%) | 4/4 (100%) |
 | D. Search & filter (FILT) | 11 | 1 | 1 | 0 | 4/4 (100%) | 4/4 (100%) |
 | E. Metadata (META) | 5 | 1 | 0 | 0 | 2/2 (100%) | 2/2 (100%) |
-| F. Edit panel — global adjustments (EDIT) | 42 | 1 | 5 | 1 | 28/28 (100%) | 13/14 (93%) |
+| F. Edit panel — global adjustments (EDIT) | 42 | 3 | 3 | 1 | 28/28 (100%) | 13/14 (93%) |
 | G. Profiles (PROF) | 6 | 2 | 3 | 0 | 3/4 (75%) | 2/3 (67%) |
 | H. Crop & rotate (CROP) | 9 | 0 | 0 | 1 | 6/6 (100%) | 3/3 (100%) |
 | I. Remove / healing (REM) | 7 | 1 | 2 | 2 | 4/4 (100%) | 2/3 (67%) |
@@ -48,9 +48,9 @@ and prints the summary; `cargo xtask parity --write` refreshes the summary table
 | Y. Menus | 81 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 74 | 3 | 3 | 1 | 49/52 (94%) | 22/23 (96%) |
 | Lightroom Classic extras | 31 | 10 | 39 | 9 | — | 21/22 (95%) |
-| **Total** | 389 | 34 | 86 | 37 | 194/200 (97%) | 139/149 (93%) |
+| **Total** | 389 | 36 | 84 | 37 | 194/200 (97%) | 139/149 (93%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **79.8%** of 509 in-scope rows — P0 98.5% of 200 · P1 95.6% of 149 · P2 41.6% of 160.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **80.0%** of 509 in-scope rows — P0 98.5% of 200 · P1 95.6% of 149 · P2 42.2% of 160.
 <!-- /parity:summary -->
 
 ## Top gaps
@@ -72,7 +72,7 @@ Take the first one nobody is working on.
    Object and Describe masks run SAM 3 in pure Rust (`crates/segment`); the weights (SAM License) are never bundled:
    the app offers a consented, verified download, but **LightCraft's CDN mirrors are not configured yet** (the
    built-in list is empty, so today users need their own mirror or a manual install). Subject / Sky / People could
-   use the same model with fixed prompts; denoise / super-resolution models remain a maintainer decision.
+   use the same model with fixed prompts. AI denoise (SCUNet) and 2x super-resolution (SPAN) run in pure Rust on exports (`crates/restore`, docs/ai-restore.md), but are slow and their weights' licences are a maintainer decision.
 7. **HDR** (Q. HDR, LR-EXP-HDR), **video** (R. Video), **Classic output modules** (Map view, Book, Slideshow module,
    Print, publish): large, well understood, lower priority than 1–5.
 
@@ -249,9 +249,9 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-EDIT-DETAIL-SHARPEN | Sharpening | P0 | ✅ | `ctl:detail.sharpenAmount`, `ctl:detail.sharpenRadius`, `ctl:detail.sharpenDetail`, `ctl:detail.sharpenMasking` | no Alt-drag mask preview |
 | LR-EDIT-DETAIL-NR | Luminance noise reduction | P0 | ✅ | `ctl:detail.nrLuminance`, `ctl:detail.nrDetail`, `ctl:detail.nrContrast` | |
 | LR-EDIT-DETAIL-CNR | Colour noise reduction | P0 | ✅ | `ctl:detail.nrColor`, `ctl:detail.nrColorDetail`, `ctl:detail.nrColorSmoothness` | |
-| LR-EDIT-DETAIL-DENOISE | AI denoise | P2 | ⬜ | | settings field reserved, not rendered |
+| LR-EDIT-DETAIL-DENOISE | AI denoise | P2 | 🟡 | `ctl:enhance.denoise`, `cmd:restore.model.status`, `cmd:restore.model.download`, `cmd:restore.model.cancel`, `crates/restore`, `crates/engine/src/restore.rs` | SCUNet (blind, pure Rust on candle, Metal on macOS), strength 0–100 %, applied to the finished render of exports and `lightcraft-cli render --denoise N` (never the preview). Optional model, consented verified download, weights never bundled (docs/ai-restore.md). **Slow** (≈ 8 s per 512² tile on an M4: minutes per full-size photo), after sharpening rather than before it, weights without an explicit licence statement; not compared with Lightroom's Denoise |
 | LR-EDIT-DETAIL-RAWDETAILS | Improved demosaic toggle | P2 | ⬜ | | |
-| LR-EDIT-DETAIL-SUPERRES | Super resolution | P2 | ⬜ | | |
+| LR-EDIT-DETAIL-SUPERRES | Super resolution | P2 | 🟡 | `cmd:restore.model.download`, `crates/restore`, `crates/engine/src/restore.rs` | SPAN 2x (CC BY 4.0 weights) on exports: setting `enhance.super_resolution`, `lightcraft-cli render --upscale 2`. Crisper than Lanczos but lower PSNR/SSIM on a downscale-then-upscale test (invents detail); no UI toggle yet; docs/ai-restore.md |
 | LR-EDIT-DETAIL-AISHARPEN | AI sharpen | OOS | 🚫 | | |
 | LR-EDIT-OPTICS-CA | Remove chromatic aberration | P1 | ✅ | `crates/ui-egui/src/panels/edit.rs` (checkbox), `ctl:optics.caRed`, `ctl:optics.caBlue` | |
 | LR-EDIT-OPTICS-PROFILE | Lens profile corrections | P1 | 🟡 | `ctl:optics.profileDistortion`, `ctl:optics.profileVignetting`, `crates/pipeline/src/optics.rs` | uses corrections embedded in DNG/raw files; no lens-profile database |
