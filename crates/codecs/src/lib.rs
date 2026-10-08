@@ -17,8 +17,12 @@
 mod convert;
 pub mod encode;
 pub mod exif;
+#[cfg(feature = "avif-decode")]
+mod avif;
 #[cfg(feature = "heif")]
 mod heif;
+#[cfg(any(feature = "heif", feature = "avif-decode"))]
+mod isobmff_still;
 pub mod icc;
 mod jpeg;
 pub mod jpeg_par;
@@ -173,7 +177,10 @@ pub fn decode_unguarded(bytes: &[u8], format: Format, opts: &DecodeOptions) -> R
         Format::Jxl => jxl::decode(bytes, &opts),
         #[cfg(not(feature = "jxl"))]
         Format::Jxl => Err(Error::Unsupported(format, "built without the `jxl` feature")),
-        Format::Avif => Err(Error::Unsupported(format, "no pure-Rust, permissively licensed AV1 decoder yet")),
+        #[cfg(feature = "avif-decode")]
+        Format::Avif => avif::decode(bytes, &opts),
+        #[cfg(not(feature = "avif-decode"))]
+        Format::Avif => Err(Error::Unsupported(format, "built without the `avif-decode` feature")),
         #[cfg(feature = "heif")]
         Format::Heif => heif::decode(bytes, &opts),
         #[cfg(not(feature = "heif"))]

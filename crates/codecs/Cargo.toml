@@ -28,16 +28,20 @@ moxcms = { workspace = true }
 jxl-oxide = { workspace = true, optional = true }
 ## HEIC/HEIF decode: clean-room pure-Rust HEVC decoder from the sibling FilmCraft project (MIT/Apache-2.0)
 filmcraft-hevc = { path = "../../../filmcraft/crates/hevc", optional = true }
+## AVIF decode: clean-room pure-Rust AV1 decoder from the sibling FilmCraft project (MIT/Apache-2.0)
+filmcraft-av1 = { path = "../../../filmcraft/crates/av1", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ravif = { workspace = true, optional = true }
 
 [features]
-default = ["parallel", "jxl", "avif", "heif"]
+default = ["parallel", "jxl", "avif", "avif-decode", "heif"]
 parallel = ["dep:rayon", "lightcraft-raster/parallel", "jpeg-decoder/rayon"]
 jxl = ["dep:jxl-oxide"]
 ## HEIC/HEIF still-image decode (HEVC intra tiles, grid assembly)
 heif = ["dep:filmcraft-hevc"]
+## AVIF still-image decode (AV1 intra tiles, grid assembly, alpha); unrelated to the `avif` encoder feature
+avif-decode = ["dep:filmcraft-av1"]
 ## AVIF encoding via ravif/rav1e (pure Rust, BSD). Native targets only; a no-op on wasm32.
 avif = ["dep:ravif"]
 

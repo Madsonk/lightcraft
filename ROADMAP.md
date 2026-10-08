@@ -118,7 +118,7 @@ trip, slideshow, auto import…) in ≈ 12 h on 2026-10-02; four to six parallel
 | Work package | Tracker rows | Agent-hours | Risk |
 |---|---|---:|---|
 | Remaining P0/P1 UI and library features (folder rename/move, keyword painter, people view…) | ≈ 8 | 5–10 | low |
-| Raw codecs: CR3 (CRX), compressed ORF / RAF, NEF lossy-after-split, HEIC/AVIF decode, JPEG XL DNG | LR-IMP-FORMATS | 40–80 | **high** — clean-room black-box analysis, no permissive specs |
+| Raw codecs: CR3 (CRX), compressed ORF / RAF, NEF lossy-after-split, JPEG XL DNG (HEIC/AVIF stills decode since this branch; overlays and 4:0:0 HEIC alpha remain) | LR-IMP-FORMATS | 40–80 | **high** — clean-room black-box analysis, no permissive specs |
 | Lens-profile database of our own (calibration targets, fitting, data) | LR-EDIT-OPTICS-PROFILE | 15–30 | data collection |
 | Video: playback, trim, edits, export (pure-Rust decode, ideally shared with FilmCraft) | R. Video | 20–40 | medium |
 | AI: subject / sky / background / people / object masks, object-aware remove, AI denoise, super resolution, lens blur, people & faces, natural-language search, culling | ≈ 30 | 80–150 | **high** — permissively licensed weights, pure-Rust inference, maybe training |

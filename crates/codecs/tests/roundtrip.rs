@@ -433,7 +433,12 @@ fn avif_encode_native() {
     if cfg!(feature = "avif") {
         let b = r.unwrap();
         assert_eq!(sniff(&b), Some(Format::Avif));
-        assert!(matches!(decode(&b, DecodeOptions::default()), Err(Error::Unsupported(Format::Avif, _))));
+        if cfg!(feature = "avif-decode") {
+            let d = decode(&b, DecodeOptions::default()).unwrap();
+            assert_eq!((d.width, d.height, d.format), (64, 48, Format::Avif));
+        } else {
+            assert!(matches!(decode(&b, DecodeOptions::default()), Err(Error::Unsupported(Format::Avif, _))));
+        }
     } else {
         assert!(r.is_err());
     }

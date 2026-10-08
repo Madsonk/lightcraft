@@ -67,7 +67,8 @@ impl Format {
         match self {
             Format::Jxl => cfg!(feature = "jxl"),
             Format::Heif => cfg!(feature = "heif"),
-            Format::Avif | Format::RawTiffLike | Format::RawOther => false,
+            Format::Avif => cfg!(feature = "avif-decode"),
+            Format::RawTiffLike | Format::RawOther => false,
             _ => true,
         }
     }
