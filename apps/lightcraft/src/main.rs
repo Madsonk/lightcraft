@@ -634,7 +634,7 @@ fn main() -> eframe::Result {
             "--no-demo" => seed_demo = false,
             "--memory" | "--demo" => in_memory = true,
             "--version" => {
-                println!("lightcraft {}", env!("CARGO_PKG_VERSION"));
+                println!("lightcraft {}", lightcraft_ui_egui::BUILD_VERSION);
                 return Ok(());
             }
             "-h" | "--help" => {
@@ -656,7 +656,7 @@ fn main() -> eframe::Result {
         match log_dir().filter(|_| !in_memory) {
             Some(dir) => match logger.attach_dir(&dir) {
                 Ok(path) => {
-                    log::info!("LightCraft {}, log file {}", env!("CARGO_PKG_VERSION"), path.display());
+                    log::info!("LightCraft {}, log file {}", lightcraft_ui_egui::BUILD_VERSION, path.display());
                     log_file = Some(path);
                 }
                 // The file sink has given up by now, so this goes to standard error only.
@@ -715,6 +715,15 @@ fn main() -> eframe::Result {
                 std::env::var_os("LIGHTCRAFT_SAM3_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("sam3")));
             // the user's own download locations, one base URL per line (LIGHTCRAFT_SAM3_MIRRORS too)
             session.segmenter.mirrors_file = config_dir().map(|d| d.join("models").join("sam3-mirrors.txt"));
+            // Analyze Faces: the face model in <config>/models/faces (or LIGHTCRAFT_FACES_DIR), downloaded on request
+            // from Google's model storage or the user's own list (LIGHTCRAFT_FACES_MIRRORS too; see docs/faces.md)
+            session.facemesh.mirrors_file = config_dir().map(|d| d.join("models").join("faces-mirrors.txt"));
+            // semantic search: SigLIP 2 in <config>/models/search, or LIGHTCRAFT_SEARCH_DIR (never required;
+            // see docs/semantic-search.md)
+            session.searcher.dir = std::env::var_os("LIGHTCRAFT_SEARCH_DIR")
+                .map(std::path::PathBuf::from)
+                .or_else(|| config_dir().map(|d| d.join("models").join("search")));
+            session.searcher.mirrors_file = config_dir().map(|d| d.join("models").join("search-mirrors.txt"));
             let mut app = LightcraftApp::new(session, services(cc.egui_ctx.clone(), app_log_file.as_deref()));
             if let Some(ui) = prefs {
                 app.ui = ui;

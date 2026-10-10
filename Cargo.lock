@@ -1724,6 +1724,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
+name = "filmcraft-av1"
+version = "0.3.0"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "filmcraft-bitstream"
+version = "0.3.0"
+
+[[package]]
+name = "filmcraft-hevc"
+version = "0.3.0"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2993,12 +3015,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-autoseg"
+version = "0.5.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-catalog"
 version = "0.5.0"
 dependencies = [
  "crc32fast",
  "lightcraft-develop",
+ "lightcraft-geom",
+ "lightcraft-lens",
  "lightcraft-meta",
+ "lightcraft-places",
  "log",
  "proptest",
  "serde",
@@ -3027,6 +3063,8 @@ name = "lightcraft-codecs"
 version = "0.5.0"
 dependencies = [
  "bytemuck",
+ "filmcraft-av1",
+ "filmcraft-hevc",
  "image",
  "image-webp",
  "jpeg-decoder",
@@ -3034,7 +3072,6 @@ dependencies = [
  "jxl-oxide",
  "lightcraft-color",
  "lightcraft-geom",
- "lightcraft-heif",
  "lightcraft-raster",
  "moxcms 0.9.1",
  "png",
@@ -3090,6 +3127,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-depth"
+version = "0.5.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "lightcraft-raster",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-develop"
 version = "0.5.0"
 dependencies = [
@@ -3108,33 +3157,55 @@ dependencies = [
  "ab_glyph",
  "harfrust",
  "libc",
+ "lightcraft-autoseg",
  "lightcraft-catalog",
  "lightcraft-codecs",
  "lightcraft-color",
  "lightcraft-denoise",
  "lightcraft-denoise-core",
+ "lightcraft-depth",
  "lightcraft-develop",
+ "lightcraft-facemesh",
  "lightcraft-faces",
  "lightcraft-fetch",
  "lightcraft-geom",
  "lightcraft-gpu",
+ "lightcraft-inpaint",
+ "lightcraft-lens",
  "lightcraft-merge",
  "lightcraft-meta",
+ "lightcraft-people",
  "lightcraft-pipeline",
+ "lightcraft-places",
  "lightcraft-preview",
  "lightcraft-raster",
  "lightcraft-raw",
+ "lightcraft-restore",
  "lightcraft-scenes",
+ "lightcraft-search",
  "lightcraft-segment",
+ "lightcraft-taste",
  "lightcraft-tiff",
  "log",
  "miniz_oxide 0.8.9",
+ "png",
  "rayon",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
  "unicode-segmentation",
  "web-time",
+]
+
+[[package]]
+name = "lightcraft-facemesh"
+version = "0.5.0"
+dependencies = [
+ "image",
+ "miniz_oxide 0.8.9",
+ "ndarray",
+ "rayon",
+ "serde_json",
 ]
 
 [[package]]
@@ -3195,6 +3266,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-inpaint"
+version = "0.5.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "lightcraft-raster",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lightcraft-lens"
+version = "0.5.0"
+dependencies = [
+ "miniz_oxide 0.8.9",
+ "quick-xml 0.38.4",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lightcraft-mcp"
 version = "0.5.0"
 dependencies = [
@@ -3234,6 +3327,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-people"
+version = "0.5.0"
+dependencies = [
+ "candle-core",
+ "half",
+ "image",
+ "lightcraft-facemesh",
+ "lightcraft-inpaint",
+ "rayon",
+ "serde",
+ "serde_json",
+ "siphasher",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-pipeline"
 version = "0.5.0"
 dependencies = [
@@ -3246,6 +3355,15 @@ dependencies = [
  "lightcraft-scenes",
  "proptest",
  "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lightcraft-places"
+version = "0.5.0"
+dependencies = [
+ "miniz_oxide 0.8.9",
  "serde",
  "serde_json",
 ]
@@ -3297,6 +3415,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-restore"
+version = "0.5.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "log",
+ "miniz_oxide 0.8.9",
+ "rayon",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-scenes"
 version = "0.5.0"
 dependencies = [
@@ -3305,6 +3437,23 @@ dependencies = [
  "lightcraft-raster",
  "rayon",
  "serde",
+]
+
+[[package]]
+name = "lightcraft-search"
+version = "0.5.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "half",
+ "image",
+ "lightcraft-fetch",
+ "log",
+ "rayon",
+ "serde",
+ "serde_json",
+ "siphasher",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -3323,6 +3472,15 @@ dependencies = [
 [[package]]
 name = "lightcraft-sysmem"
 version = "0.5.0"
+
+[[package]]
+name = "lightcraft-taste"
+version = "0.5.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "lightcraft-tiff"

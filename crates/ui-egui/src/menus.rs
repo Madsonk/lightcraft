@@ -58,6 +58,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.survey", "Survey", Some("N"), "View"),
     ("view.people", "People", None, "View"),
     ("view.person", "Show Person", None, ""),
+    ("view.places", "Places", None, "View"),
     ("view.faceBoxes", "Face Boxes", None, "View"),
     ("view.reference", "Reference View", Some("Shift+R"), "View"),
     ("photo.setReference", "Set as Reference Photo", None, ""),
@@ -341,6 +342,10 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             app.ui.person_from = None;
             app.ui.person_page = Some(name.to_string());
             Ok(json!({"person": name}))
+        }
+        "view.places" => {
+            app.ui.view = ViewMode::Places;
+            Ok(json!({"places": app.session.catalog.places_in(&lightcraft_catalog::Filter::default()).placed}))
         }
         "view.survey" => {
             app.ui.view = ViewMode::Survey;
@@ -996,7 +1001,7 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             let gpu = (lightcraft_engine::gpu::ready() && lightcraft_engine::gpu::available()).then(lightcraft_engine::gpu::adapter_name).flatten();
             let mb = |b: u64| format!("{:.0} MB", b as f64 / (1u64 << 20) as f64);
             let mut rows = vec![
-                ("Version".to_string(), env!("CARGO_PKG_VERSION").to_string()),
+                ("Version".to_string(), crate::BUILD_VERSION.to_string()),
                 ("System".to_string(), format!("{} ({})", std::env::consts::OS, std::env::consts::ARCH)),
                 ("CPU threads".to_string(), std::thread::available_parallelism().map(|n| n.get().to_string()).unwrap_or_else(|_| "?".into())),
                 (
@@ -1157,6 +1162,18 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
                 return Some(Ok(app.ui.last_find_missing.clone().unwrap_or(Value::Null)));
             }
             Ok(json!({"background": true}))
+        }
+        "gallery.export" if p.get("dir").is_none() => {
+            // a folder to write the gallery in, then the engine command (the window waits: each photo is rendered at every width)
+            let Some(dir) = app.services.pick_folder.as_mut().and_then(|f| f()) else { return Some(Ok(Value::Null)) };
+            let mut params = p.as_object().cloned().unwrap_or_default();
+            params.insert("dir".into(), json!(dir));
+            let r = app.run("gallery.export", Value::Object(params));
+            if let Ok(v) = &r {
+                let n = v["photos"].as_u64().unwrap_or(0);
+                app.toast(&egui::Context::default(), format!("Web gallery: {n} photo{} in {dir}", if n == 1 { "" } else { "s" }));
+            }
+            r
         }
         "photo.tagFromTracklog" => {
             // a GPX file → GPS for the selected photos by capture time (one undo step)
@@ -1456,6 +1473,7 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
             app.session.active().is_some()
         }
         "photo.tagFromTracklog" => app.session.active().is_some() && app.services.pick_tracklog.is_some(),
+        "gallery.export" => app.session.active().is_some() && app.services.pick_folder.is_some(),
         "app.exportPrevious" => app.session.active().is_some() && app.session.last_export.is_some(),
         "dialog.pasteSettings" => app.session.active().is_some() && app.session.clipboard.is_some(),
         "app.showInFinder" => {

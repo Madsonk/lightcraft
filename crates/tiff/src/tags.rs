@@ -72,6 +72,7 @@ pub const LIGHT_SOURCE: u16 = 37384;
 pub const FLASH: u16 = 37385;
 pub const FOCAL_LENGTH: u16 = 37386;
 pub const MAKER_NOTE: u16 = 37500;
+pub const SUBJECT_DISTANCE: u16 = 37382;
 pub const USER_COMMENT: u16 = 37510;
 pub const SUBSEC_TIME: u16 = 37520;
 pub const SUBSEC_TIME_ORIGINAL: u16 = 37521;

@@ -184,7 +184,7 @@ pub(crate) fn content_op(id: lightcraft_catalog::PhotoId, ph: &lightcraft_catalo
 }
 
 /// Ops that fill a photo's empty camera fields (camera, lens, exposure, GPS, capture time) from a fresh probe.
-fn fill_missing_meta(id: lightcraft_catalog::PhotoId, ph: &lightcraft_catalog::Photo, info: &crate::media::ProbeInfo) -> Vec<Op> {
+pub(crate) fn fill_missing_meta(id: lightcraft_catalog::PhotoId, ph: &lightcraft_catalog::Photo, info: &crate::media::ProbeInfo) -> Vec<Op> {
     let (mut m, src) = (ph.meta.clone(), &info.meta);
     let before = m.clone();
     if m.camera.is_empty() {
@@ -197,6 +197,18 @@ fn fill_missing_meta(id: lightcraft_catalog::PhotoId, ph: &lightcraft_catalog::P
         m.shutter = src.shutter.clone();
     }
     m.focal_mm = m.focal_mm.or(src.focal_mm);
+    // lens recognition facts (lens maker and range, widest aperture, 35 mm focal length, subject distance)
+    if m.lens_make.is_empty() {
+        m.lens_make = src.lens_make.clone();
+    }
+    m.lens_spec = m.lens_spec.or(src.lens_spec);
+    m.lens_max_aperture = m.lens_max_aperture.or(src.lens_max_aperture);
+    m.focal_35mm = m.focal_35mm.or(src.focal_35mm);
+    m.subject_distance = m.subject_distance.or(src.subject_distance);
+    // a bare focal length ("50mm") is replaced by the fuller lens name a fresh read found
+    if !m.lens.is_empty() && !src.lens.is_empty() && m.lens != src.lens && m.lens.chars().filter(|c| c.is_alphabetic()).count() <= 2 {
+        m.lens = src.lens.clone();
+    }
     m.aperture = m.aperture.or(src.aperture);
     m.iso = m.iso.or(src.iso);
     m.gps = m.gps.or(src.gps);

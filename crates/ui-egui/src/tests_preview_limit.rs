@@ -357,6 +357,8 @@ mod in_the_loupe {
     #[test]
     fn a_slider_drag_when_zoomed_in_renders_canvas_sized_drafts() {
         let (mut h, native) = detail();
+        // (the local build keeps drags sharp by default; this test is about the lighter "Fast" drafts upstream shipped)
+        h.app.ui.settings.drag_preview = 60;
         h.app.ui.zoom = crate::state::Zoom::Percent(400.0);
         h.settle(SETTLE);
         h.app.session.begin_interaction("Exposure").unwrap();
@@ -366,6 +368,22 @@ mod in_the_loupe {
         assert!(main <= 1000 && main * 4 < native, "the whole-frame draft is {main} px for a {native} px photo");
         let region = h.app.region_view.expect("the window is drafted too");
         assert_eq!(region.full.0.max(region.full.1), native, "at 100 %, magnified by the GPU");
+        let (w, hh) = region_tile(&h).expect("a window draft");
+        assert!(w * hh <= 3_000_000, "{w}×{hh}: the window holds what is on screen, not the frame");
+    }
+
+    // Given the local default (drags as sharp as at rest), the whole-frame draft is still canvas sized, never zoom sized
+    #[test]
+    fn a_sharp_slider_drag_when_zoomed_in_still_follows_the_canvas() {
+        let (mut h, native) = detail();
+        assert_eq!(h.app.ui.settings.drag_preview, 100);
+        h.app.ui.zoom = crate::state::Zoom::Percent(400.0);
+        h.settle(SETTLE);
+        h.app.session.begin_interaction("Exposure").unwrap();
+        h.request("engine.execute", json!({"command": "develop.set", "params": {"control": "light.exposure", "value": 0.5}}), T);
+        h.settle(SETTLE);
+        let main = rendered_long_edge(&h);
+        assert!(main <= 1600 && main * 3 < native, "the whole-frame draft is {main} px for a {native} px photo");
         let (w, hh) = region_tile(&h).expect("a window draft");
         assert!(w * hh <= 3_000_000, "{w}×{hh}: the window holds what is on screen, not the frame");
     }

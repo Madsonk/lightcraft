@@ -46,8 +46,8 @@ CRW, MRW, X3F) are detected so the engine can route them to `lightcraft-raw`; `d
 | GIF / BMP | yes (first GIF frame) | — | via `image` |
 | PSD / PSB | merged composite: 8/16/32-bit gray, RGB, CMYK, indexed, duotone (as gray); raw/RLE | — | ICC (1039), EXIF (1058), XMP (1060); ZIP-compressed composite, Lab and 1-bit unsupported |
 | JPEG XL | yes (jxl-oxide, feature `jxl`, default on) | — | enum colour → rendered straight to linear Rec.2020; ICC → our ICC path; orientation applied by the decoder (reported as 1) |
-| AVIF | **no** | yes (ravif/rav1e, native only, feature `avif`) | 8-bit sRGB, EXIF; no ICC in the muxer |
-| HEIC/HEIF | **no** (sniff only) | — | see gaps |
+| AVIF | yes (`filmcraft-av1`, feature `avif-decode`, default on): `av01` item or `grid` of tiles, 8/10-bit, 4:2:0 / 4:2:2 / 4:4:4 / monochrome, `colr` nclx / ICC, `irot` / `imir` (reported as EXIF orientation), `clap` crop, auxiliary alpha (also one alpha item per grid tile), EXIF / XMP | yes (ravif/rav1e, native only, feature `avif`) | 8-bit sRGB, EXIF; no ICC in the muxer. 10-bit decodes to a 16-bit buffer |
+| HEIC/HEIF | yes (`filmcraft-hevc`, feature `heif`, default on): `hvc1` item or `grid`, Main / Main 10, 4:2:0, `colr` nclx / ICC, `irot` / `imir`, `clap` crop, auxiliary alpha (4:2:0 HEVC only), EXIF / XMP | — | HEIC and AVIF share one ISO-BMFF item parser (`isobmff_still.rs`) |
 
 ## Colour
 
@@ -81,6 +81,7 @@ All pure Rust, verified with `cargo info` / `cargo tree`:
 | moxcms | BSD-3-Clause OR Apache-2.0 | ICC parse/write, CMS |
 | jxl-oxide | MIT OR Apache-2.0 | JPEG XL decode |
 | ravif (+ rav1e, avif-serialize) | BSD-3-Clause / BSD-2-Clause | AVIF encode (native only; heavy to compile) |
+| filmcraft-av1 / filmcraft-hevc (sibling FilmCraft project, `path` dependencies) | MIT OR Apache-2.0 | AVIF / HEIC decode (clean-room, pure Rust, no `unsafe`) |
 
 Deliberately **not** used: anything AGPL from imazen (heic, zenjpeg, jxl-encoder, rav1d-safe),
 jpegxl-rs / imagequant (GPL / C), dav1d / libheif (C).
@@ -100,9 +101,18 @@ Run `cargo test --release -p lightcraft-codecs --test bench -- --ignored --nocap
 
 ## Gaps / limitations
 
-- **AVIF and HEIC decode**: no permissively licensed, pure-Rust AV1/HEVC decoder exists today
-  (dav1d/libheif are C; rav1d-safe and imazen's heic are AGPL). Files are sniffed and rejected with
-  `Error::Unsupported`; a raw-style embedded-preview path could be added for HEIC thumbnails.
+- **AVIF and HEIC decode** use the clean-room `filmcraft-av1` / `filmcraft-hevc` decoders (the C
+  alternatives dav1d / libheif are out, rav1d-safe and imazen's heic are AGPL). Shared limits: `iovl`
+  overlays, derived images other than `grid` / `iden`, animated sequences (`avis`), HDR transfer
+  functions (PQ / HLG are read as plain sRGB), a `clap` that follows an `irot` / `imir` (error).
+  4:2:0 chroma is upsampled bilinearly (libheif replicates), so 4:2:0 output differs slightly from libheif;
+  4:4:4 and monochrome match libheif exactly on the committed fixtures.
+  AVIF: decoded on one thread (~1.5-2 s for a 12 MP still under load, ~3x slower than `Decoder::new()`):
+  filmcraft-av1 panics on some corrupt streams, and with its frame worker threads the caller then waits forever
+  (regression file `tests/data/av1_frame_worker_panic.avif`); switch back once that crate reports worker panics
+  as errors. 12-bit (AV1 profile 2) is untested. HEIC: HEVC is 4:2:0 only, so an alpha plane coded as 4:0:0
+  (what Apple and libheif write) is dropped and the image decodes without transparency; 4:2:2 / 4:4:4 HEIC
+  is an `Unsupported` error. A raw-style embedded-preview path could be added for HEIC thumbnails.
 - JPEG: arithmetic coding unsupported (as in both decoders); extended XMP (> 64 KiB) neither read
   nor written; EXIF > 64 KiB not written. The encoder uses standard Huffman tables (interleaved
   baseline) for maximum compatibility.

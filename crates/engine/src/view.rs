@@ -187,6 +187,19 @@ pub fn filter_chips(f: &Filter, cat: &Catalog) -> Vec<FilterChip> {
     if let Some(e) = f.edited {
         add(if e { "Edited".into() } else { "Unedited".into() }, json!({"edited": Null}));
     }
+    match f.untagged {
+        Some(true) => add("No keyword".into(), json!({"untagged": Null})),
+        Some(false) => add("Has keyword".into(), json!({"untagged": Null})),
+        None => {}
+    }
+    if let Some(p) = &f.place {
+        let label = if p.eq_ignore_ascii_case(lightcraft_catalog::places::NONE) {
+            "No place".to_string()
+        } else {
+            format!("Place: {}", p.replacen("Places|", "", 1).replace('|', " › "))
+        };
+        add(label, json!({"place": Null}));
+    }
     for (name, key, val) in
         [("Camera", "camera", &f.camera), ("Lens", "lens", &f.lens), ("Keyword", "keyword", &f.keyword), ("Person", "person", &f.person)]
     {

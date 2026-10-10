@@ -6,6 +6,9 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+/// The version shown to people (About, System Info, `--version`): the upstream release plus the local build tag.
+pub const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-local-ia-v7");
+
 pub mod control;
 pub mod credits;
 pub mod export_task;
@@ -54,6 +57,10 @@ mod tests_menubar;
 mod tests_offline;
 #[cfg(test)]
 mod tests_panels;
+#[cfg(test)]
+mod tests_people;
+#[cfg(test)]
+mod tests_places;
 #[cfg(test)]
 mod tests_preview_limit;
 #[cfg(test)]
@@ -268,6 +275,10 @@ impl LightcraftApp {
     pub fn new(mut session: Session, services: Services) -> Self {
         // AI mask requests run on the model's worker; frames apply their results (never wait)
         session.segmenter.background = true;
+        // Analyze Faces runs on its own worker too; frames apply what it finds
+        session.facemesh.background = true;
+        // Find People and the grouping of faces run on their own threads too
+        session.people.background = true;
         Self {
             session,
             ui: UiState::default(),
@@ -370,6 +381,10 @@ impl LightcraftApp {
                 // no detector yet: offer it (its terms first) instead of only saying so
                 if id == "faces.detect" && e.contains("Settings > Faces") {
                     panels::faces::offer_detector(self);
+                }
+                // Analyze Faces without its model: offer the download (never downloads by itself)
+                if e.contains(lightcraft_engine::facemesh::NOT_INSTALLED) && self.ui.dialog.is_none() {
+                    self.ui.dialog = Some(state::Dialog::FacemeshModel { error: None });
                 }
             }
             Ok(v) if id == "faces.detect" => self.ui.status = detect_summary(v),
@@ -538,6 +553,52 @@ impl LightcraftApp {
             self.offer_sam_download(then);
         } else {
             self.toast_error(ctx, e);
+        }
+    }
+
+    /// Analyze Faces: apply what the worker found, show its errors and its end, watch the model
+    /// download. Never waits for the model.
+    fn faces_poll(&mut self, ctx: &egui::Context) {
+        let polled = self.session.faces_poll();
+        if polled.changed {
+            ctx.request_repaint();
+        }
+        if let Some(e) = polled.messages.into_iter().last() {
+            self.toast_error(ctx, e);
+        }
+        let busy = self.session.facemesh.busy();
+        if busy {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        } else if self.ui.faces_running {
+            let p = self.session.facemesh.progress();
+            let closed = self.session.catalog.photos().filter(|ph| ph.has_closed_eyes()).count();
+            self.toast(ctx, format!("Faces analyzed in {} photo{} · {closed} with closed eyes", p.done, if p.done == 1 { "" } else { "s" }));
+        }
+        self.ui.faces_running = busy;
+        let download = self.session.facemesh.download_status();
+        if download.running {
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        if self.ui.faces_downloading && !download.running {
+            self.ui.faces_downloading = false;
+            let open = matches!(self.ui.dialog, Some(state::Dialog::FacemeshModel { .. }));
+            match (&download.error, open) {
+                (_, true) => {}
+                (Some(e), false) => self.toast_error(ctx, format!("The face model download failed: {e}")),
+                (None, false) if download.finished => self.toast(ctx, crate::i18n::tr("The face model is installed: run Photo ▸ Analyze Faces.")),
+                (None, false) => {}
+            }
+        }
+    }
+
+    /// People: apply what the indexing run and the grouping finished; keep drawing while they work.
+    fn people_poll(&mut self, ctx: &egui::Context) {
+        if self.session.people_poll() {
+            self.caches.people_rec.dirty = true;
+            ctx.request_repaint();
+        }
+        if self.session.people.job_running() || self.session.people.computing() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(150));
         }
     }
 
@@ -903,6 +964,8 @@ impl LightcraftApp {
         // panels set it again this frame while the pointer rests on a preset or profile
         self.hover_preview = None;
         self.ai_mask_detail(&ctx);
+        self.faces_poll(&ctx);
+        self.people_poll(&ctx);
         if self.ui.fullscreen {
             // full-screen preview: the photo alone on black
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(egui::Color32::BLACK)).show(ui, |ui| panels::detail::show(self, ui));
@@ -944,6 +1007,7 @@ impl LightcraftApp {
             state::ViewMode::Survey => panels::compare::show_survey(self, ui),
             state::ViewMode::Reference => panels::compare::show_reference(self, ui),
             state::ViewMode::People => panels::people::show(self, ui),
+            state::ViewMode::Places => panels::places::show(self, ui),
         });
         panels::second::show(self, &ctx);
         panels::notices::show(self, &ctx);
@@ -1067,9 +1131,13 @@ pub struct Caches {
     folder_tree: Option<(u64, std::sync::Arc<Vec<lightcraft_catalog::FolderNode>>)>,
     people: Option<(u64, lightcraft_catalog::Filter, std::sync::Arc<Vec<lightcraft_catalog::Person>>)>,
     suggestions: Option<(u64, std::sync::Arc<Vec<String>>)>,
+    /// The Places view: its summary of places and the last preview / suggestions.
+    pub places: panels::places::PlacesUi,
     counts: Option<(u64, LibraryCounts)>,
     date_groups: Option<(u64, std::sync::Arc<Vec<lightcraft_catalog::DateGroup>>)>,
     filter_values: Option<(u64, std::sync::Arc<FilterValues>)>,
+    /// (key, (no keyword, has keyword)) for the current view; see [`Caches::keyword_presence`].
+    presence: Option<(u64, (usize, usize))>,
     album_counts: Option<(u64, std::sync::Arc<std::collections::HashMap<lightcraft_catalog::AlbumId, usize>>)>,
     /// How often the album counts were recomputed (tests check that unchanged frames don't).
     pub album_count_scans: usize,
@@ -1104,6 +1172,8 @@ pub struct Caches {
     pub grid: panels::grid::GridCache,
     /// What the grid did on its frames (benchmarks and tests check unchanged frames stay cheap).
     pub grid_stats: panels::grid::GridStats,
+    /// People ▸ Recognition: what the view lists.
+    pub people_rec: panels::people_rec::RecCache,
 }
 
 /// The left panel's counts.
@@ -1119,7 +1189,8 @@ pub struct LibraryCounts {
 pub struct FilterValues {
     pub cameras: Vec<String>,
     pub lenses: Vec<String>,
-    pub keywords: Vec<String>,
+    /// Every keyword with the photos that carry it exactly (not its children).
+    pub keywords: Vec<(String, usize)>,
 }
 
 pub(crate) fn key_of(parts: impl std::hash::Hash) -> u64 {
@@ -1225,9 +1296,26 @@ impl Caches {
                 let v = std::sync::Arc::new(FilterValues {
                     cameras: distinct(lib().map(|p| p.meta.camera.clone()).collect()),
                     lenses: distinct(lib().map(|p| p.meta.lens.clone()).collect()),
-                    keywords: cat.keywords().into_iter().map(|(k, _)| k).collect(),
+                    keywords: cat.keywords(),
                 });
                 self.filter_values = Some((cat.revision, v.clone()));
+                v
+            }
+        }
+    }
+    /// How many photos of the current view (source and filter bar, not the keyword filters) have no
+    /// keyword and how many have one: the numbers beside "No keyword" / "Has keyword". Recomputed
+    /// only when the catalog or the view changes, not every frame.
+    pub fn keyword_presence(&mut self, session: &mut lightcraft_engine::Session) -> (usize, usize) {
+        let mut f = session.filter.clone();
+        f.keyword = None;
+        f.untagged = None;
+        let key = key_of((session.catalog.revision, format!("{:?}|{f:?}|{:?}", session.source, session.browse)));
+        match self.presence {
+            Some((k, v)) if k == key => v,
+            _ => {
+                let v = session.keyword_presence();
+                self.presence = Some((key, v));
                 v
             }
         }

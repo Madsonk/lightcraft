@@ -106,6 +106,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
         // (nothing to download from in this build: the dialog explains the manual install)
         Dialog::SamModel { .. } if sam_by_hand(&app.session.segmenter) => "Install the SAM 3 Model",
         Dialog::SamModel { .. } => "Download the SAM 3 Model?",
+        Dialog::FacemeshModel { .. } => "Download the Face Model?",
         Dialog::About => "About LightCraft",
         Dialog::Shortcuts => "Keyboard Shortcuts",
     }
@@ -723,6 +724,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                 Dialog::Import { opts } => crate::import::body(app, ui, opts),
                 Dialog::Settings { tab } => crate::panels::settings::body(app, ui, tab),
                 Dialog::SamModel { error, .. } => sam_model_body(app, ui, error.as_deref()),
+                Dialog::FacemeshModel { error } => face_model_body(app, ui, error.as_deref()),
                 Dialog::ConfirmDelete { count } => {
                     let what = if *count == 1 { crate::i18n::tr("this photo").to_string() } else { crate::i18n::tr_format!("these {count} photos", count = count) };
                     ui.label(crate::i18n::tr_format!("Move {what} to Recently Deleted?", what = what));
@@ -762,7 +764,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                         2 => crate::credits::models_ui(ui),
                         _ => {
                             ui.label(egui::RichText::new("LightCraft").font(t.semibold(20.0)).color(t.text));
-                            ui.label(crate::i18n::tr_format!("Version {} — a clean-room, pure-Rust photo library and raw developer.", env!("CARGO_PKG_VERSION")));
+                            ui.label(crate::i18n::tr_format!("Version {} — a clean-room, pure-Rust photo library and raw developer.", crate::BUILD_VERSION));
                             ui.label(crate::i18n::tr_format!(
                                 "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.",
                                 crate::theme::font_credits(app.chinese_font.is_some())
@@ -801,9 +803,13 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                 let (sam_installed, sam_running, sam_failed) = (sam.installed(), sam.download_status().running, sam.download_status().error.is_some());
                 // no download location in this build: nothing to offer but the manual install
                 let sam_nowhere = sam_by_hand(sam);
+                let faces = &app.session.facemesh;
+                let (face_installed, face_running, face_failed) = (faces.installed(), faces.download_status().running, faces.download_status().error.is_some());
                 let cancel = match &dlg {
                     Dialog::SamModel { .. } if sam_running || sam_installed || sam_nowhere => "Close",
                     Dialog::SamModel { .. } => "Not Now",
+                    Dialog::FacemeshModel { .. } if face_running || face_installed => "Close",
+                    Dialog::FacemeshModel { .. } => "Not Now",
                     _ => "Cancel",
                 };
                 if !informational {
@@ -832,6 +838,10 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     Dialog::SamModel { .. } if sam_installed || sam_running || sam_nowhere => "",
                     Dialog::SamModel { error, .. } if error.is_some() || sam_failed => "Try Again",
                     Dialog::SamModel { .. } => "Download",
+                    Dialog::FacemeshModel { .. } if face_installed => "Analyze Faces",
+                    Dialog::FacemeshModel { .. } if face_running => "",
+                    Dialog::FacemeshModel { error } if error.is_some() || face_failed => "Try Again",
+                    Dialog::FacemeshModel { .. } => "Download",
                     _ if informational => "Close",
                     _ => "OK",
                 };
@@ -883,8 +893,16 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     *error = Some(e);
                 }
             }
+            Err(e) if matches!(dlg, Dialog::FacemeshModel { .. }) => {
+                if let Dialog::FacemeshModel { error } = &mut dlg {
+                    *error = Some(e);
+                }
+            }
             Ok(_) if keeps_open(app, &dlg) => {
                 if let Dialog::SamModel { error, .. } = &mut dlg {
+                    *error = None;
+                }
+                if let Dialog::FacemeshModel { error } = &mut dlg {
                     *error = None;
                 }
             }
@@ -915,7 +933,48 @@ pub fn fmt_gap(v: f64) -> String {
 /// Whether a dialog stays open after its action succeeded (the SAM 3 dialog while the model
 /// downloads).
 pub fn keeps_open(app: &LightcraftApp, dlg: &Dialog) -> bool {
-    matches!(dlg, Dialog::SamModel { .. }) && !app.session.segmenter.installed()
+    (matches!(dlg, Dialog::SamModel { .. }) && !app.session.segmenter.installed())
+        || (matches!(dlg, Dialog::FacemeshModel { .. }) && !app.session.facemesh.installed())
+}
+
+/// The face model dialog: what the model is, its size and licence, and the download's progress.
+fn face_model_body(app: &mut LightcraftApp, ui: &mut egui::Ui, error: Option<&str>) {
+    use lightcraft_engine::facemesh::{LICENSE_NAME, LICENSE_URL, MODEL_BYTES};
+    let t = Tokens::get(ui.ctx());
+    let faces = &app.session.facemesh;
+    let d = faces.download_status();
+    if faces.installed() {
+        ui.label(crate::i18n::tr("The face model is installed: Analyze Faces is ready."));
+        return;
+    }
+    let mb = |b: u64| b as f64 / 1e6;
+    ui.label(crate::i18n::tr(
+        "Analyze Faces finds the faces of your photos and tells which have closed eyes. It uses Google's MediaPipe Face Landmarker. The model isn't part of LightCraft, and everything else works without it.",
+    ));
+    let dir = faces.model_dir().map(|d| d.display().to_string()).unwrap_or_default();
+    ui.label(format!("{} {:.1} MB, {} {dir}", crate::i18n::tr("A one-time download of about"), mb(MODEL_BYTES), crate::i18n::tr("saved in")));
+    ui.label(egui::RichText::new(format!("{} {LICENSE_NAME}", crate::i18n::tr("Licence:"))).color(t.text_label));
+    let r = ui.link(crate::i18n::tr("Read the model card")).on_hover_text(LICENSE_URL);
+    crate::widgets::register(ui.ctx(), "link:faceLicense", r.rect);
+    if r.clicked() {
+        let _ = crate::links::open(app, LICENSE_URL);
+    }
+    if d.running {
+        ui.add_space(4.0);
+        let frac = if d.total > 0 { d.done as f64 / d.total as f64 } else { 0.0 };
+        let r = ui.add(egui::ProgressBar::new(frac as f32).text(format!("{:.1} / {:.1} MB", mb(d.done), mb(d.total))));
+        crate::widgets::register(ui.ctx(), "progress:faceDownload", r.rect);
+        let r = ui.button(crate::i18n::tr("Cancel Download"));
+        crate::widgets::register(ui.ctx(), "button:faceCancel", r.rect);
+        if r.clicked() {
+            app.session.facemesh.cancel_download();
+        }
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+        return;
+    }
+    if let Some(e) = error.map(str::to_string).or(d.error) {
+        ui.label(egui::RichText::new(format!("{} {e}", crate::i18n::tr("The download didn't work:"))).color(egui::Color32::from_rgb(230, 90, 80)));
+    }
 }
 
 /// No SAM 3 model, no download running and nowhere to download it from: installing it by hand is
@@ -1032,6 +1091,17 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
             let r = app.run("segment.model.download", json!({"acknowledged": true}));
             if r.is_ok() {
                 app.ui.sam_downloading = true;
+            }
+            r
+        }
+        Dialog::FacemeshModel { .. } => {
+            if app.session.facemesh.installed() {
+                // installed: do what the user asked for
+                return app.run("photo.analyzeFaces", json!({}));
+            }
+            let r = app.run("facemesh.model.download", json!({"acknowledged": true}));
+            if r.is_ok() {
+                app.ui.faces_downloading = true;
             }
             r
         }

@@ -35,6 +35,10 @@
 - Shortcuts are editable: Help ▸ Keyboard Shortcuts (⌘/) lists every command with a search box; click a shortcut and
   press the new keys (Esc cancels), × removes it, ↺ restores the original, Reset All undoes every change. A key that
   belonged to another command moves to the new one. Menus show the new keys; agents use `app.setShortcut`.
+### Search by meaning and duplicates
+- Find photos by describing them, in English or French (`search.semantic`), and label them by meaning (`search.tag`),
+  with SigLIP 2 running locally in pure Rust. The ~1.5 GB model is an optional download; `library.findDuplicates`
+  finds exact and near duplicates (bursts, re-exports) and can stack them. See docs/semantic-search.md.
 
 ### RAW decoding
 - Samsung SRW files without compression now open as raws: NX5, NX10, NX11, NX20, NX200, NX210, NX1000, NX1100, EX1

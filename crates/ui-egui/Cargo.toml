@@ -28,6 +28,8 @@ log = { workspace = true }
 lightcraft-denoise = { workspace = true, features = ["runtime"] }
 lightcraft-codecs = { workspace = true }
 lightcraft-faces = { workspace = true }
+# the People tests inject faces into the index (no model needed)
+lightcraft-engine = { workspace = true, features = ["people", "places"] }
 
 [build-dependencies]
 serde_json = { workspace = true }

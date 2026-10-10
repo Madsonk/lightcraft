@@ -1269,11 +1269,26 @@ fn folder_menu_for_library(app: &mut LightcraftApp, resp: &egui::Response, n: &F
 /// context menu renames, merges or deletes the keyword across the library.
 fn keywords_section(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let tree = app.caches.keyword_tree(&app.session.catalog);
-    if tree.is_empty() {
+    let (none, some) = app.caches.keyword_presence(&mut app.session);
+    if tree.is_empty() && none + some == 0 {
         return;
     }
     ui.add_space(10.0);
     if sidebar_section_header(app, ui, "keywords", "Keywords").1 {
+        // "No Keyword" first: the photos still to keyword (counts are for the current view)
+        let (u, label) = (app.session.filter.untagged, crate::i18n::tr("No Keyword"));
+        let resp = row(app, ui, "keywordNone", Icon::Tag, label, Some(none), u == Some(true), 0.0)
+            .on_hover_text(crate::i18n::tr("Photos with no keyword, to find what still needs keywording"));
+        if resp.clicked() {
+            let v = if u == Some(true) { serde_json::Value::Null } else { json!(true) };
+            let _ = app.run("library.filter", json!({"untagged": v, "keyword": serde_json::Value::Null}));
+        }
+        let label = crate::i18n::tr("Has Keyword");
+        let resp = row(app, ui, "keywordAny", Icon::Tag, label, Some(some), u == Some(false), 0.0);
+        if resp.clicked() {
+            let v = if u == Some(false) { serde_json::Value::Null } else { json!(false) };
+            let _ = app.run("library.filter", json!({"untagged": v, "keyword": serde_json::Value::Null}));
+        }
         keyword_rows(app, ui, &tree, 0.0);
     }
 }
@@ -1296,7 +1311,7 @@ fn keyword_rows(app: &mut LightcraftApp, ui: &mut egui::Ui, nodes: &[KeywordNode
         if resp.clicked() {
             let v = if sel { serde_json::Value::Null } else { json!(n.path) };
             browse_all_photos(app, !sel);
-            let _ = app.run("library.filter", json!({"keyword": v}));
+            let _ = app.run("library.filter", json!({"keyword": v, "untagged": serde_json::Value::Null}));
         }
         resp.context_menu(|ui| {
             let has_sel = app.session.active().is_some();

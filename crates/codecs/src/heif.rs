@@ -1,125 +1,83 @@
-//! HEIF / HEIC (the iPhone and Mac photo format), read-only.
+//! HEIC / HEIF still images: the ISO-BMFF item handling lives in [`crate::isobmff_still`]; this module
+//! decodes each HEVC intra item with the clean-room pure-Rust `filmcraft-hevc` (ITU-T H.265, Main /
+//! Main 10, 4:2:0).
 //!
-//! Decoding lives in the optional `lightcraft-heif` crate (heic-rs, a pure-Rust HEVC
-//! still-picture decoder), enabled by this crate's `heif` feature — off by default because HEVC
-//! is patent-encumbered and whether a build carries an HEVC decoder is the distributor's call
-//! (the same policy as the sibling PhotoCraft). Without the feature, HEIF files are still
-//! detected and opening one is an [`Error::Unsupported`] error, never a panic.
-//!
-//! HEIF records orientation in the container (`irot`/`imir`, plus a `clap` crop), not in EXIF,
-//! so the decoder applies them and `orientation` is reported as 1: the EXIF Orientation tag only
-//! mirrors what the container says, and applying it as well would turn the photo twice.
-//! The samples come back in the container's own primaries with its ICC profile (if any); like
-//! every decoder here, the colour interpretation happens in [`crate::convert::finish`].
+//! Supported: primary item `hvc1` or a `grid` of `hvc1` tiles; `colr` (`nclx` / ICC), `irot` / `imir`
+//! (reported as an EXIF orientation, not applied), `clap` crop, auxiliary alpha, EXIF and XMP items.
+//! Not supported (reported as errors, never panics): `iovl` overlays, 4:2:2 / 4:4:4 / monochrome HEVC
+//! (so an alpha plane coded as 4:0:0, as Apple writes it, is dropped), HDR transfer functions beyond a
+//! plain sRGB / Rec.709 reading.
 
-#[cfg(feature = "heif")]
-use crate::convert::{Buf, Meta, Model, Raw, finish};
+use crate::isobmff_still::{Codec, Prop, Still, Yuv, bad};
 use crate::{DecodeOptions, Decoded, Error, Format, Result};
+use filmcraft_hevc::{Decoder, Plane};
 
 const F: Format = Format::Heif;
 
-/// The reason given when this build has no HEIF decoder.
-#[cfg(not(feature = "heif"))]
-pub(crate) const NOT_IN_BUILD: &str = "HEIC/HEIF support isn't included in this build of LightCraft";
-
-/// The reason a HEIF file that no build can open is refused (this crate decodes HEVC stills
-/// only; the wrapper names the exact construct in its own errors).
-#[cfg(feature = "heif")]
-const NOT_DECODED: &str = "the image is not a decodable HEVC still (image sequence, overlay, alpha-less grid or AVIF-coded item)";
-
-#[cfg(not(feature = "heif"))]
-pub(crate) fn decode(_bytes: &[u8], _opts: &DecodeOptions) -> Result<Decoded> {
-    Err(Error::Unsupported(F, NOT_IN_BUILD))
+fn plane16(p: &Plane) -> Vec<u16> {
+    match p {
+        Plane::U8(v) => v.iter().map(|&x| x as u16).collect(),
+        Plane::U16(v) => v.clone(),
+    }
 }
 
-#[cfg(feature = "heif")]
-fn err(e: lightcraft_heif::Error) -> Error {
+fn hevc_err(e: filmcraft_hevc::Error) -> Error {
     match e {
-        // This crate's Unsupported takes a fixed reason; the dynamic wording lives in the
-        // lightcraft-heif error itself.
-        lightcraft_heif::Error::Unsupported(_) => Error::Unsupported(F, NOT_DECODED),
-        lightcraft_heif::Error::Limit(m) | lightcraft_heif::Error::Malformed(m) => Error::Malformed(F, m),
+        filmcraft_hevc::Error::Unsupported(_) => Error::Unsupported(F, "HEVC feature not supported by the decoder (e.g. 4:0:0 / 4:2:2 / 4:4:4)"),
+        e => bad(F, format!("HEVC: {e}")),
     }
 }
 
-#[cfg(feature = "heif")]
-pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
-    // The container alone: the declared size is checked before any pixel is decoded.
-    let info = lightcraft_heif::probe(bytes).map_err(err)?;
-    if (info.width as u64).saturating_mul(info.height as u64) > opts.max_pixels {
-        return Err(Error::TooLarge(info.width as u64, info.height as u64));
+fn decode_tile(h: &Still<'_>, id: u32) -> Result<Yuv> {
+    let item = h.item(id).ok_or_else(|| bad(F, format!("missing item {id}")))?;
+    if &item.kind != b"hvc1" && &item.kind != b"hev1" {
+        return Err(Error::Unsupported(F, "primary item is not an HEVC image or grid (overlay / AV1 / other)"));
     }
-    let options = lightcraft_heif::Options { max_pixels: opts.max_pixels, apply_transforms: true };
-    let decoded = lightcraft_heif::decode(bytes, &options).map_err(err)?;
-    // The decoder re-reads the container; trust its output's shape, not the probe's.
-    let buf = if decoded.sixteen_bit {
-        let mut v = Vec::with_capacity(decoded.data.len() / 2);
-        for pair in decoded.data.as_chunks::<2>().0 {
-            v.push(u16::from_ne_bytes(*pair));
+    let hvcc = h
+        .item_props(id)
+        .into_iter()
+        .find_map(|p| if let Prop::Hvcc(c) = p { Some(c.clone()) } else { None })
+        .ok_or_else(|| bad(F, "tile has no hvcC"))?;
+    let data = h.data(id)?;
+    let mut dec = Decoder::from_hvcc(&hvcc).map_err(hevc_err)?;
+    let mut pics = dec.decode(&data, 0).map_err(hevc_err)?;
+    pics.extend(dec.flush());
+    if let Some(e) = dec.take_error() {
+        return Err(hevc_err(e));
+    }
+    let p = pics.into_iter().next().ok_or_else(|| bad(F, "HEVC stream produced no picture"))?;
+    let (w, ht) = (p.width as usize, p.height as usize);
+    let (cw, ch) = (p.chroma_width as usize, p.chroma_height as usize);
+    if cw != w.div_ceil(2) || ch != ht.div_ceil(2) {
+        return Err(Error::Unsupported(F, "only 4:2:0 HEVC images are supported"));
+    }
+    // Re-pack to tight strides.
+    let (y16, u16v, v16) = (plane16(&p.y), plane16(&p.u), plane16(&p.v));
+    let tight = |src: &[u16], stride: usize, w: usize, h: usize| -> Vec<u16> {
+        let mut o = Vec::with_capacity(w * h);
+        for r in 0..h {
+            o.extend_from_slice(src.get(r * stride..r * stride + w).unwrap_or(&[]));
         }
-        Buf::U16(v)
-    } else {
-        Buf::U8(decoded.data)
+        o
     };
-    let raw = Raw {
-        width: decoded.width as usize,
-        height: decoded.height as usize,
-        model: Model::Rgb,
-        alpha: decoded.has_alpha,
-        premultiplied: false,
-        buf,
-        bit_depth: if decoded.sixteen_bit { 16 } else { 8 },
-    };
-    let meta = Meta { icc: decoded.icc, exif: decoded.exif, xmp: decoded.xmp, orientation: Some(1), ..Default::default() };
-    finish(F, raw, meta, (decoded.width, decoded.height), opts)
+    Ok(Yuv {
+        w,
+        h: ht,
+        cw,
+        ch,
+        ssx: 1,
+        ssy: 1,
+        mono: false,
+        bit_depth: p.bit_depth,
+        y: tight(&y16, p.y_stride, w, ht),
+        u: tight(&u16v, p.uv_stride, cw, ch),
+        v: tight(&v16, p.uv_stride, cw, ch),
+        vui: (p.color.full_range, p.color.matrix, p.color.primaries),
+        cicp: None,
+        alpha: None,
+    })
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::{Format, sniff};
-
-    /// The container header both builds recognise, whatever the feature says.
-    const HEIC_HEADER: &[u8] = b"\0\0\0\x18ftypheic\0\0\0\0mif1heic";
-
-    #[test]
-    fn heif_is_always_recognised() {
-        assert_eq!(sniff(HEIC_HEADER), Some(Format::Heif));
-    }
-
-    #[test]
-    fn can_decode_follows_the_feature() {
-        assert_eq!(Format::Heif.can_decode(), cfg!(feature = "heif"));
-    }
-
-    #[cfg(not(feature = "heif"))]
-    #[test]
-    fn without_the_feature_heif_is_a_clear_unsupported_error() {
-        let r = crate::decode(HEIC_HEADER, crate::DecodeOptions::default());
-        assert!(matches!(&r, Err(crate::Error::Unsupported(Format::Heif, why)) if why.contains("isn't included in this build")), "{r:?}");
-    }
-
-    /// Found by PhotoCraft's `decode_heif` fuzz target: a malformed box makes heic-rs 0.1.1 slice
-    /// out of range (`boxes.rs:130`). It must be an error, not a crash.
-    #[cfg(feature = "heif")]
-    const HEIC_RS_BOX_PANIC: [u8; 72] = [
-        0x00, 0x00, 0x00, 0x24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63, 0x00, 0x00, 0x00, 0x00, 0x6d, 0x69, 0x66, 0x31, 0x4d, 0x69, 0x50,
-        0x72, 0x6d, 0x69, 0x61, 0x66, 0x4d, 0x69, 0x48, 0x42, 0x72, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6d, 0x65, 0x74, 0x61, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x75, 0x75, 0x69, 0x64, 0x00, 0x00, 0x00, 0x00, 0x03, 0x08, 0x08, 0x08, 0x00, 0x03, 0x01, 0x03, 0x70,
-        0x00, 0xa8, 0x00,
-    ];
-
-    #[cfg(feature = "heif")]
-    #[test]
-    fn a_heic_rs_panic_is_a_malformed_error() {
-        let r = crate::decode(&HEIC_RS_BOX_PANIC, crate::DecodeOptions::default());
-        assert!(matches!(&r, Err(crate::Error::Malformed(Format::Heif, _))), "{r:?}");
-    }
-
-    #[cfg(feature = "heif")]
-    #[test]
-    fn an_image_sequence_is_unsupported() {
-        // An ftyp with no meta box: a video track, not a still.
-        let r = crate::decode(b"\0\0\0\x18ftypmsf1\0\0\0\0msf1hevc", crate::DecodeOptions::default());
-        assert!(matches!(&r, Err(crate::Error::Unsupported(Format::Heif, _))), "{r:?}");
-    }
+pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
+    crate::isobmff_still::decode(&Codec { fmt: F, tile: decode_tile, alpha_unsupported_ok: true }, bytes, opts)
 }

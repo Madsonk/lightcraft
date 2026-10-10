@@ -14,7 +14,10 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-lightcraft-engine = { workspace = true }
+# `restore`: `render --denoise N` / `--upscale 2` (AI models, downloaded on request: docs/ai-restore.md)
+# depth and inpaint: the AI models of Lens Blur / Depth Range and of object removal (downloaded on request)
+# search: semantic search and near-duplicates (the model is optional and downloaded on request)
+lightcraft-engine = { workspace = true, features = ["faces", "restore", "depth", "inpaint", "search", "people", "places", "autoseg"] }
 lightcraft-sysmem = { workspace = true }
 lightcraft-mcp = { workspace = true }
 lightcraft-ui-egui = { workspace = true }

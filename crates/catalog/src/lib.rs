@@ -20,6 +20,7 @@ pub mod keywords;
 pub mod local;
 pub mod lock;
 pub mod model;
+pub mod places;
 pub mod query;
 pub mod rules;
 pub mod safe_file;

@@ -1,0 +1,25 @@
+[package]
+name = "lightcraft-autoseg"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+description = "LightCraft automatic masks: SegFormer (sky, people, landscape classes) and an ISNet matting network (subject), pure Rust on candle (L3)"
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+# the networks run natively only
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+candle-core = { workspace = true }
+candle-nn = { workspace = true }
+lightcraft-fetch = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+candle-core = { workspace = true, features = ["metal"] }
+candle-nn = { workspace = true, features = ["metal"] }
+
+[dev-dependencies]
+image = { workspace = true }

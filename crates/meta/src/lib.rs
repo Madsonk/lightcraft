@@ -17,6 +17,7 @@ mod datetime;
 mod exif;
 mod gpx;
 mod iptc;
+mod lens;
 pub mod tags;
 mod xmp;
 mod xmp_merge;
@@ -89,6 +90,13 @@ pub struct Metadata {
     pub lens_serial_number: Option<String>,
     /// Min/max focal length (mm) and min/max f-number at those, as in Exif `LensSpecification`.
     pub lens_spec: Option<[f64; 4]>,
+    /// Widest aperture (f-number) of the lens at its shortest focal length, from the maker note when
+    /// Exif carries no aperture in `LensSpecification`.
+    pub lens_max_aperture: Option<f64>,
+    /// Vendor lens identifier (Canon `LensType`, …), kept for display and matching hints; 0 = unknown.
+    pub lens_type_id: Option<u32>,
+    /// Subject (focus) distance in metres (Exif `SubjectDistance`).
+    pub subject_distance: Option<f64>,
     // capture
     pub capture_time: Option<DateTime>,
     /// Seconds.
@@ -165,6 +173,9 @@ impl Metadata {
             lens_model,
             lens_serial_number,
             lens_spec,
+            lens_max_aperture,
+            lens_type_id,
+            subject_distance,
             capture_time,
             exposure_time,
             f_number,

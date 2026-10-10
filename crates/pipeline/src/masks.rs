@@ -6,7 +6,7 @@
 //! AI shapes (Sky, Subject, Background, People) use the segmentation [`Mattes`] the source carries
 //! (DNG semantic masks, e.g. iPhone ProRAW's) when it has a matching one, else a heuristic.
 
-use lightcraft_develop::{BrushStroke, LocalAdjustments, Mask, MaskOp, MaskShape, SegMask};
+use lightcraft_develop::{Aux, BrushStroke, LocalAdjustments, Mask, MaskOp, MaskShape, SegMask};
 use lightcraft_geom::{Orientation, Point};
 use lightcraft_raster::{Image, Plane, Rgb32f};
 
@@ -108,10 +108,26 @@ fn smooth(e0: f32, e1: f32, x: f32) -> f32 {
 /// The visible masks with components, evaluated in order (`mattes`: the source's, see [`Mattes`]).
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate(masks: &[Mask], frame: &Frame, w: usize, h: usize, img: &Rgb32f, log_l: &Plane, ev: f32, mattes: Option<&Mattes>) -> Vec<Evaluated> {
+    evaluate_aux(masks, frame, w, h, img, log_l, ev, mattes, &Aux::default())
+}
+
+/// [`evaluate`] with the data a render attaches to its settings (the depth map of Depth Range).
+#[allow(clippy::too_many_arguments)]
+pub fn evaluate_aux(
+    masks: &[Mask],
+    frame: &Frame,
+    w: usize,
+    h: usize,
+    img: &Rgb32f,
+    log_l: &Plane,
+    ev: f32,
+    mattes: Option<&Mattes>,
+    aux: &Aux,
+) -> Vec<Evaluated> {
     masks
         .iter()
         .filter(|m| m.visible && !m.components.is_empty())
-        .map(|m| Evaluated { id: m.id, alpha: evaluate_one(m, frame, w, h, img, log_l, ev, mattes), adjust: m.adjust })
+        .map(|m| Evaluated { id: m.id, alpha: evaluate_one_aux(m, frame, w, h, img, log_l, ev, mattes, aux), adjust: m.adjust })
         .collect()
 }
 
@@ -119,10 +135,26 @@ pub fn evaluate(masks: &[Mask], frame: &Frame, w: usize, h: usize, img: &Rgb32f,
 /// scaled by its amount.
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate_one(m: &Mask, frame: &Frame, w: usize, h: usize, img: &Rgb32f, log_l: &Plane, ev: f32, mattes: Option<&Mattes>) -> Plane {
+    evaluate_one_aux(m, frame, w, h, img, log_l, ev, mattes, &Aux::default())
+}
+
+/// [`evaluate_one`] with the render's attached data.
+#[allow(clippy::too_many_arguments)]
+pub fn evaluate_one_aux(
+    m: &Mask,
+    frame: &Frame,
+    w: usize,
+    h: usize,
+    img: &Rgb32f,
+    log_l: &Plane,
+    ev: f32,
+    mattes: Option<&Mattes>,
+    aux: &Aux,
+) -> Plane {
     let mut alpha = Plane::new(w, h);
     let mut first = true;
     for comp in &m.components {
-        let mut c = shape_alpha(&comp.shape, frame, w, h, img, log_l, ev, mattes);
+        let mut c = shape_alpha_aux(&comp.shape, frame, w, h, img, log_l, ev, mattes, aux);
         if comp.invert {
             c.data.iter_mut().for_each(|v| *v = 1.0 - *v);
         }
@@ -175,6 +207,22 @@ fn for_each_pos(frame: &Frame, w: usize, h: usize, out: &mut Plane, f: impl Fn(P
 /// The alpha plane of one component shape. AI shapes use the source's matching `mattes`, if any.
 #[allow(clippy::too_many_arguments)]
 pub fn shape_alpha(shape: &MaskShape, frame: &Frame, w: usize, h: usize, img: &Rgb32f, log_l: &Plane, ev: f32, mattes: Option<&Mattes>) -> Plane {
+    shape_alpha_aux(shape, frame, w, h, img, log_l, ev, mattes, &Aux::default())
+}
+
+/// [`shape_alpha`] with the render's attached data.
+#[allow(clippy::too_many_arguments)]
+pub fn shape_alpha_aux(
+    shape: &MaskShape,
+    frame: &Frame,
+    w: usize,
+    h: usize,
+    img: &Rgb32f,
+    log_l: &Plane,
+    ev: f32,
+    mattes: Option<&Mattes>,
+    aux: &Aux,
+) -> Plane {
     let fitting = mattes.map(|m| m.for_shape(shape)).unwrap_or_default();
     if !fitting.is_empty() {
         return matte_alpha(&fitting, frame, w, h);
@@ -270,11 +318,23 @@ pub fn shape_alpha(shape: &MaskShape, frame: &Frame, w: usize, h: usize, img: &R
             smooth_plane(&mut out, 0.015 * frame_px(frame, w));
         }
         MaskShape::Background => {
-            let mut s = shape_alpha(&MaskShape::Subject, frame, w, h, img, log_l, ev, mattes);
+            let mut s = shape_alpha_aux(&MaskShape::Subject, frame, w, h, img, log_l, ev, mattes, aux);
             s.data.iter_mut().for_each(|v| *v = 1.0 - *v);
             out = s;
         }
-        MaskShape::DepthRange { .. } | MaskShape::Landscape { .. } => {}
+        // lo..hi from the nearest (0) to the farthest (1) of the photo, with a feathered falloff;
+        // nothing selected until the depth map exists (`depth.estimate`)
+        MaskShape::DepthRange { lo, hi, feather } => {
+            if let Some(depth) = &aux.depth {
+                let near = crate::lensblur::depth_plane(depth, frame, w, h, img);
+                let (lo, hi, f) = (*lo as f32, *hi as f32, (*feather as f32).max(1e-3));
+                for (v, d) in out.data.iter_mut().zip(&near.data) {
+                    let far = 1.0 - d;
+                    *v = smooth(lo - f, lo, far) * (1.0 - smooth(hi, hi + f, far));
+                }
+            }
+        }
+        MaskShape::Landscape { .. } => {}
     }
     out
 }

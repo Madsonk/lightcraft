@@ -38,6 +38,10 @@ pub struct DevelopSettings {
     pub calibration: Calibration,
     /// Section on/off toggles (the "eye" buttons on panel headers): section id → enabled.
     pub disabled_sections: Vec<String>,
+    /// Render-time data the engine attaches (depth map, inpainted pixels): not part of the edit,
+    /// never saved.
+    #[serde(skip)]
+    pub aux: crate::depth::Aux,
 }
 
 impl Default for DevelopSettings {
@@ -69,6 +73,7 @@ impl Default for DevelopSettings {
             enhance: Enhance::default(),
             calibration: Calibration::default(),
             disabled_sections: Vec::new(),
+            aux: crate::depth::Aux::default(),
         }
     }
 }
@@ -862,6 +867,8 @@ pub enum SpotMode {
     Remove,
     Heal,
     Clone,
+    /// Filled by the inpainting model: the pixels live in the patch named by [`Spot::patch`].
+    Inpaint,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -876,11 +883,15 @@ pub struct Spot {
     pub opacity: f64,
     /// Source offset (normalized) from the target; None = auto (content-aware remove).
     pub source_offset: Option<Point>,
+    /// For [`SpotMode::Inpaint`]: the id (hex) of the inpainted pixels, kept in a file next to the
+    /// library ([`crate::InpaintPatch`]); the spot's `points` and `size` only place its pin.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
 }
 
 impl Default for Spot {
     fn default() -> Self {
-        Self { mode: SpotMode::Remove, points: Vec::new(), size: 0.02, feather: 50.0, opacity: 100.0, source_offset: None }
+        Self { mode: SpotMode::Remove, points: Vec::new(), size: 0.02, feather: 50.0, opacity: 100.0, source_offset: None, patch: None }
     }
 }
 
@@ -924,6 +935,14 @@ pub struct Enhance {
     pub denoise_on: Option<bool>,
     pub raw_details: bool,
     pub super_resolution: bool,
+    /// Strength (percent) of the optional export-time SCUNet denoise of `lightcraft-restore` (any photo, not only
+    /// Bayer raws). Separate from `denoise`, the in-pipeline AI RAW denoise, so the two never stack by accident.
+    #[serde(skip_serializing_if = "restore_denoise_off")]
+    pub restore_denoise: f64,
+}
+
+fn restore_denoise_off(v: &f64) -> bool {
+    *v == 0.0
 }
 
 impl Enhance {

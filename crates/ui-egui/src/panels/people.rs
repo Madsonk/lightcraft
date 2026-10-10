@@ -60,6 +60,26 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     if let Some(name) = app.ui.person_page.clone() {
         return super::person::show(app, ui, &name);
     }
+    let mut recognition = app.caches.people_rec.recognition;
+    ui.horizontal(|ui| {
+        ui.add_space(PAD);
+        if ui.selectable_label(!recognition, "Named in XMP").clicked() {
+            recognition = false;
+        }
+        if ui.selectable_label(recognition, "Recognition").clicked() {
+            recognition = true;
+        }
+    });
+    app.caches.people_rec.recognition = recognition;
+    app.caches.people_rec.dirty |= recognition && app.caches.people_rec.ov_is_none();
+    if recognition {
+        super::people_rec::show(app, ui);
+    } else {
+        named(app, ui);
+    }
+}
+
+fn named(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let now = ui.input(|i| i.time);
     let thumb = app.ui.thumb_size;

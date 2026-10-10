@@ -501,3 +501,92 @@ fn undated_photos_group_under_unknown_date_and_sort_together() {
     let filter_year = Filter { date: Some("2026".into()), ..Default::default() };
     assert_eq!(c.query(&filter_year, &Sort { key: SortKey::CaptureDate, ascending: false, ..Default::default() }), vec![p_dated2, p_dated1]);
 }
+
+fn face(open: f32, sharp: f32) -> FaceInfo {
+    FaceInfo { rect: [0.3, 0.2, 0.6, 0.6], score: 1.0, open: [open, open], sharp: [sharp, sharp], turn: 0.0 }
+}
+
+#[test]
+fn eye_openness_scores_follow_the_calibrated_thresholds() {
+    // 50 at the closed threshold, 100 from the open one, 0 shut
+    assert_eq!(FaceInfo::open_score(0.0), 0.0);
+    assert!((FaceInfo::open_score(EYE_CLOSED_BELOW) - 50.0).abs() < 1e-4);
+    assert_eq!(FaceInfo::open_score(EYE_OPEN_FROM), 100.0);
+    assert_eq!(FaceInfo::open_score(0.5), 100.0);
+    assert!(FaceInfo::open_score(0.10) < FaceInfo::open_score(0.20));
+    // one closed eye is enough; a turned or tiny face is not judged
+    let wink = FaceInfo { open: [0.30, 0.05], ..face(0.3, 80.0) };
+    assert!(wink.eyes_closed() && !face(0.3, 80.0).eyes_closed());
+    assert!(!FaceInfo { turn: 0.9, ..wink }.eyes_closed());
+    assert!(!FaceInfo { rect: [0.5, 0.5, 0.51, 0.52], ..wink }.eyes_closed());
+    // the wink is the worse shot, whatever its focus
+    assert!(face(0.3, 60.0).quality() > wink.quality());
+}
+
+#[test]
+fn photo_face_queries() {
+    let mut c = Catalog::new();
+    let a = photo(&mut c, "a.jpg", "2026-01-01T10:00:00");
+    assert!(c.photo(a).unwrap().faces().is_none() && !c.photo(a).unwrap().has_closed_eyes() && !c.photo(a).unwrap().has_open_eyes());
+    let faces = Some(Arc::new(vec![face(0.3, 70.0), face(0.04, 70.0)]));
+    c.apply(Op::SetAnalysis { id: a, analysis: Some(Analysis { faces, ..Default::default() }) }).unwrap();
+    let p = c.photo(a).unwrap();
+    assert_eq!(p.faces().map(<[FaceInfo]>::len), Some(2));
+    assert!(p.has_closed_eyes() && !p.has_open_eyes());
+}
+
+/// Keyword presence: `untagged` finds photos with no keyword (true) or with at least one (false),
+/// combines with the other filters, a keyword and the search token, counts match, and a filter saved
+/// before the field existed loads with it off.
+#[test]
+fn untagged_filter_finds_photos_without_keywords() {
+    let mut c = Catalog::new();
+    let mut add = |name: &str, kws: &[&str], rating: u8| {
+        let id = c.alloc_photo_id();
+        let mut p = Photo::new(id, Source::Demo { scene: 1 }, name, "JPEG", 600, 400, "2026-09-30T10:00:00");
+        p.meta.keywords = kws.iter().map(|k| k.to_string()).collect();
+        p.rating = rating;
+        c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        id
+    };
+    let a = add("a.jpg", &[], 0);
+    let b = add("b.jpg", &["travel|italy"], 3);
+    let d = add("d.jpg", &[], 4);
+    let e = add("e.jpg", &["sea"], 0);
+    let q = |f: Filter| {
+        let mut v = c.query(&f, &Sort::default());
+        v.sort();
+        v
+    };
+    assert_eq!(q(Filter::default()).len(), 4);
+    assert_eq!(q(Filter { untagged: Some(true), ..Default::default() }), vec![a, d]);
+    assert_eq!(q(Filter { untagged: Some(false), ..Default::default() }), vec![b, e]);
+    // with the other filters: the star filter narrows both ways
+    assert_eq!(q(Filter { untagged: Some(true), rating: 4, ..Default::default() }), vec![d]);
+    assert_eq!(q(Filter { untagged: Some(false), rating: 3, ..Default::default() }), vec![b]);
+    // a keyword (hierarchy included) and "has keyword" agree; with "no keyword" nothing can match
+    assert_eq!(q(Filter { untagged: Some(false), keyword: Some("travel".into()), ..Default::default() }), vec![b]);
+    assert!(q(Filter { untagged: Some(true), keyword: Some("travel".into()), ..Default::default() }).is_empty());
+    // counts, in the view the other filters leave
+    assert_eq!(c.keyword_presence_in(&Filter::default()), (2, 2));
+    assert_eq!(c.keyword_presence_in(&Filter { rating: 3, ..Default::default() }), (1, 1));
+    assert_eq!(
+        c.keyword_presence_in(&Filter { untagged: Some(true), keyword: Some("sea".into()), ..Default::default() }),
+        (2, 2),
+        "the keyword filters themselves are ignored"
+    );
+    // a deleted photo is not counted
+    c.apply(Op::SetDeleted { id: a, deleted: true }).unwrap();
+    assert_eq!(c.keyword_presence_in(&Filter::default()), (1, 2));
+    // describe
+    assert!(Filter { untagged: Some(true), ..Default::default() }.describe().contains("no keyword"));
+    assert!(Filter { untagged: Some(false), ..Default::default() }.describe().contains("has keyword"));
+    // serde: off = left out (older readers see nothing new); a filter without the field reads as off
+    let off = serde_json::to_value(Filter::default()).unwrap();
+    assert!(off.get("untagged").is_none(), "{off}");
+    let old: Filter = serde_json::from_value(serde_json::json!({"rating": 2, "keyword": "sea"})).unwrap();
+    assert_eq!(old.untagged, None);
+    let on: Filter = serde_json::from_value(serde_json::json!({"untagged": true})).unwrap();
+    assert_eq!(on.untagged, Some(true));
+    assert_eq!(serde_json::from_value::<Filter>(serde_json::to_value(&on).unwrap()).unwrap(), on);
+}

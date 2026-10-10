@@ -16,11 +16,16 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+#[cfg(feature = "avif-decode")]
+mod avif;
 mod convert;
 pub mod encode;
 pub mod exif;
+#[cfg(feature = "heif")]
 mod heif;
 pub mod icc;
+#[cfg(any(feature = "heif", feature = "avif-decode"))]
+mod isobmff_still;
 mod jpeg;
 pub mod jpeg_par;
 #[cfg(feature = "jxl")]
@@ -228,8 +233,14 @@ pub fn decode_unguarded(bytes: &[u8], format: Format, opts: &DecodeOptions) -> R
         Format::Jxl => jxl::decode(bytes, &opts),
         #[cfg(not(feature = "jxl"))]
         Format::Jxl => Err(Error::Unsupported(format, "built without the `jxl` feature")),
+        #[cfg(feature = "avif-decode")]
+        Format::Avif => avif::decode(bytes, &opts),
+        #[cfg(not(feature = "avif-decode"))]
+        Format::Avif => Err(Error::Unsupported(format, "built without the `avif-decode` feature")),
+        #[cfg(feature = "heif")]
         Format::Heif => heif::decode(bytes, &opts),
-        Format::Avif => Err(Error::Unsupported(format, "no pure-Rust, permissively licensed AV1 decoder yet")),
+        #[cfg(not(feature = "heif"))]
+        Format::Heif => Err(Error::Unsupported(format, "built without the `heif` feature")),
         Format::RawTiffLike | Format::RawOther => Err(Error::Unsupported(format, "camera raw: decode with lightcraft-raw")),
     }
 }

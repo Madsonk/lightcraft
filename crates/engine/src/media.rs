@@ -216,7 +216,12 @@ impl DecodedSource {
     /// What to render these pixels against: the decoder's facts, else `header` (the catalog's)
     /// with any stored camera tone curve.
     pub fn info_or(&self, header: SourceInfo) -> SourceInfo {
-        self.info.clone().unwrap_or_else(|| SourceInfo { camera_tone: self.camera_tone.or(header.camera_tone), ..header })
+        // the decoder knows only the lens data embedded in the file (DNG opcodes); the catalog's header adds the
+        // lens profile found in the database for the recognised camera and lens
+        match self.info.clone() {
+            Some(i) => SourceInfo { lens: i.lens.or(header.lens), ..i },
+            None => SourceInfo { camera_tone: self.camera_tone.or(header.camera_tone), ..header },
+        }
     }
 }
 
@@ -894,9 +899,9 @@ pub fn source_info(p: &Photo) -> SourceInfo {
     // balance and the display tone curve, like any other rendered file.
     if p.develops_raw() {
         let (temp, tint) = if p.relative_wb() { (6500.0, 0.0) } else { p.as_shot_wb.unwrap_or((5500.0, 0.0)) };
-        SourceInfo { raw: true, as_shot_temp: temp, as_shot_tint: tint, lens: p.embedded_lens, relative_wb: p.relative_wb(), ..Default::default() }
+        SourceInfo { raw: true, as_shot_temp: temp, as_shot_tint: tint, lens: p.effective_lens(), relative_wb: p.relative_wb(), ..Default::default() }
     } else {
-        SourceInfo::default()
+        SourceInfo { lens: p.effective_lens(), ..Default::default() }
     }
 }
 
@@ -939,6 +944,10 @@ impl crate::Session {
         let content = source_key.0 as u64;
         // Temporary "before" settings must not replace the photo's cached develop hash.
         let settings_hash = if before { settings.hash64() } else { self.media.settings_hashes.get(id, &settings) };
+        // depth map and inpainted pixels the edits refer to (they are not in the settings: their
+        // identity goes into the keys)
+        let settings = self.attach_aux(&p, settings);
+        let settings_hash = if settings.aux.is_empty() { settings_hash } else { settings_hash ^ settings.aux.key().rotate_left(13) };
         let salt = self.media.denoise_salt(id, &settings);
         let key = settings_hash
             ^ ((max_w as u64) << 40)
@@ -979,8 +988,14 @@ impl crate::Session {
     /// temporary preview while hovering a preset or profile; nothing is committed or cached).
     pub fn preview_job(&mut self, id: PhotoId, max_w: usize, max_h: usize, apply_crop: bool, settings: &DevelopSettings) -> Option<RenderJob> {
         let mut job = self.render_job(id, max_w, max_h, false, apply_crop)?;
-        job.settings = Arc::new(settings.clone());
-        job.key = settings.hash64() ^ ((max_w as u64) << 40) ^ ((max_h as u64) << 20) ^ (apply_crop as u64) ^ (job.level as u64) << 60;
+        let p = self.catalog.photo(id)?.clone();
+        job.settings = self.attach_aux(&p, Arc::new(settings.clone()));
+        job.key = settings.hash64()
+            ^ job.settings.aux.key()
+            ^ ((max_w as u64) << 40)
+            ^ ((max_h as u64) << 20)
+            ^ (apply_crop as u64)
+            ^ (job.level as u64) << 60;
         Some(job)
     }
 

@@ -160,6 +160,19 @@ pub struct Meta {
     pub lens: String,
     pub focal_mm: Option<f32>,
     pub aperture: Option<f32>,
+    /// What lens-profile recognition needs beyond the names above (all optional, absent in older catalogs):
+    /// the lens maker, its focal range and widest aperture (`[min mm, max mm, f at min, f at max]`), the
+    /// 35 mm equivalent focal length and the subject distance in metres.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub lens_make: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lens_spec: Option<[f32; 4]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lens_max_aperture: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focal_35mm: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_distance: Option<f32>,
     pub shutter: String,
     pub iso: Option<u32>,
     /// Place (sublocation, e.g. a landmark).
@@ -283,9 +296,73 @@ pub struct Photo {
     pub local_baseline: Option<u64>,
 }
 
-/// What assisted culling measured on a photo.
+/// A face found in a photo by Analyze Faces (the face model in `lightcraft-faces`). Coordinates are
+/// fractions of the upright photo (EXIF orientation applied, before the user's Rotate Left/Right
+/// and crop), like the XMP regions in [`Photo::regions`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FaceInfo {
+    /// The face's box `[x0, y0, x1, y1]`, 0..1.
+    pub rect: [f32; 4],
+    /// The model's confidence that this is a face, 0..1.
+    pub score: f32,
+    /// Eye aspect ratio (lid gap over eye width) of the image-left and image-right eye: ≈ 0.3 open,
+    /// near 0 closed.
+    pub open: [f32; 2],
+    /// Sharpness of the image-left and image-right eye, 0..100 (variance of the Laplacian on a
+    /// normalized crop of the eye).
+    pub sharp: [f32; 2],
+    /// Head turn, −1 .. 1 (0 = facing the camera).
+    pub turn: f32,
+}
+
+/// Eye aspect ratio below which an eye counts as closed (calibrated on real photos: see
+/// `docs/faces.md`).
+pub const EYE_CLOSED_BELOW: f32 = 0.15;
+/// Eye aspect ratio from which an eye counts as fully open (openness score 100).
+pub const EYE_OPEN_FROM: f32 = 0.24;
+/// Faces turned further than this (|turn|) are not judged: the far eye is hidden.
+pub const MAX_TURN: f32 = 0.55;
+/// Faces narrower than this share of the photo's long edge are not judged (too small to see the eyes).
+pub const MIN_FACE_SHARE: f32 = 0.025;
+
+impl FaceInfo {
+    /// Whether the eyes can be judged: a face of some size, not turned away.
+    pub fn eyes_judged(&self) -> bool {
+        self.turn.abs() <= MAX_TURN && (self.rect[2] - self.rect[0]).max(self.rect[3] - self.rect[1]) >= MIN_FACE_SHARE
+    }
+
+    /// Openness 0 (closed) .. 100 (wide open) of an eye, from its eye aspect ratio: 50 at the
+    /// closed threshold ([`EYE_CLOSED_BELOW`]), 100 from [`EYE_OPEN_FROM`].
+    pub fn open_score(ear: f32) -> f32 {
+        if ear < EYE_CLOSED_BELOW {
+            (50.0 * ear / EYE_CLOSED_BELOW).max(0.0)
+        } else {
+            (50.0 + 50.0 * (ear - EYE_CLOSED_BELOW) / (EYE_OPEN_FROM - EYE_CLOSED_BELOW)).min(100.0)
+        }
+    }
+
+    /// Whether at least one eye is closed (only for faces whose eyes can be judged).
+    pub fn eyes_closed(&self) -> bool {
+        self.eyes_judged() && self.open[0].min(self.open[1]) < EYE_CLOSED_BELOW
+    }
+
+    /// How good the face is for choosing between similar shots, 0..100: both eyes open and sharp.
+    /// The less open and the less sharp of the two eyes count (a wink or a blurred eye spoils it).
+    pub fn quality(&self) -> f32 {
+        let open = Self::open_score(self.open[0].min(self.open[1]));
+        let sharp = self.sharp[0].min(self.sharp[1]);
+        0.7 * open + 0.3 * sharp
+    }
+}
+
+/// What assisted culling measured on a photo.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Analysis {
+    /// The faces found in the photo: `None` until Analyze Faces ran on it, `Some` of an empty list
+    /// when it has none. Kept in the analysis (not as a new kind of change) so that older
+    /// LightCraft builds, which ignore the field, still read the library.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub faces: Option<Arc<Vec<FaceInfo>>>,
     /// Focus: 0 (blurred) .. 100 (crisp), from the detail in the photo's sharpest area.
     pub sharpness: f32,
     /// Exposure: share of clipped pixels, 0..1 (shadows + highlights).
@@ -297,6 +374,21 @@ pub struct Analysis {
 }
 
 impl Photo {
+    /// The faces Analyze Faces found (`None` until it ran on this photo).
+    pub fn faces(&self) -> Option<&[FaceInfo]> {
+        self.analysis.as_ref().and_then(|a| a.faces.as_deref()).map(Vec::as_slice)
+    }
+
+    /// Whether some face whose eyes can be judged has a closed eye.
+    pub fn has_closed_eyes(&self) -> bool {
+        self.faces().is_some_and(|f| f.iter().any(FaceInfo::eyes_closed))
+    }
+
+    /// Whether the photo has faces whose eyes can be judged and all of them are open.
+    pub fn has_open_eyes(&self) -> bool {
+        self.faces().is_some_and(|f| f.iter().any(FaceInfo::eyes_judged) && !f.iter().any(FaceInfo::eyes_closed))
+    }
+
     pub fn new(id: PhotoId, source: Source, file_name: &str, format: &str, width: u32, height: u32, imported: &str) -> Photo {
         Photo {
             id,
@@ -360,10 +452,49 @@ impl Photo {
             Some((t, tint)) => DevelopSettings::for_raw(t, tint),
             None => DevelopSettings::default(),
         };
-        if self.embedded_lens.is_some() {
+        if self.embedded_lens.is_some() || (self.kind == MediaKind::Raw && self.database_lens().is_some_and(|r| r.detection.has_corrections())) {
             d.optics.lens_profile = true;
         }
         d
+    }
+
+    /// The camera and lens this photo's metadata names, as a lens-profile lookup.
+    pub fn lens_query(&self) -> lightcraft_lens::Query {
+        let m = &self.meta;
+        // `camera` is "<make> <model>" (the model usually repeats the make: "Canon Canon EOS 5D Mark III")
+        let (make, model) = m.camera.split_once(' ').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or((String::new(), m.camera.clone()));
+        let f = |v: Option<f32>| v.map(f64::from).filter(|x| *x > 0.0);
+        lightcraft_lens::Query {
+            camera_make: make,
+            camera_model: model,
+            lens_make: m.lens_make.clone(),
+            lens_model: m.lens.clone(),
+            lens_spec: m.lens_spec.map(|s| s.map(f64::from)),
+            lens_max_aperture: f(m.lens_max_aperture),
+            focal: f(m.focal_mm),
+            focal_35: f(m.focal_35mm),
+            aperture: f(m.aperture),
+            distance: f(m.subject_distance),
+        }
+    }
+
+    /// The lens-profile database's answer for this photo (camera + lens recognised, corrections found), `None` when
+    /// no database is installed or the photo carries no camera/lens information.
+    pub fn database_lens(&self) -> Option<std::sync::Arc<lightcraft_lens::Resolved>> {
+        if self.meta.camera.is_empty() && self.meta.lens.is_empty() {
+            return None;
+        }
+        lightcraft_lens::resolve(&self.lens_query())
+    }
+
+    /// The lens corrections to apply: the ones embedded in the file (DNG opcodes) when it has them, else the
+    /// database profile of the recognised lens, else none.
+    pub fn effective_lens(&self) -> Option<lightcraft_develop::EmbeddedLens> {
+        if self.embedded_lens.is_some() {
+            return self.embedded_lens;
+        }
+        let r = self.database_lens()?;
+        embedded_from_correction(r.correction.as_ref()?, f64::from(self.width.max(1)), f64::from(self.height.max(1)))
     }
     /// In the library: not deleted and not only browsed (Local).
     pub fn in_library(&self) -> bool {
@@ -419,6 +550,21 @@ impl Album {
     pub fn is_smart(&self) -> bool {
         self.smart.is_some()
     }
+}
+
+/// The pipeline's lens data for a database correction on a `w x h` (oriented) image: the radius is the image's
+/// half-diagonal, the centre the image centre.
+pub fn embedded_from_correction(c: &lightcraft_lens::LensCorrection, w: f64, h: f64) -> Option<lightcraft_develop::EmbeddedLens> {
+    use lightcraft_develop::{EmbeddedLens, EmbeddedVignette, EmbeddedWarp};
+    let long = w.max(h);
+    if !(long.is_finite() && long > 1.0) {
+        return None;
+    }
+    let radius = (w.hypot(h) / 2.0) / long;
+    let center = lightcraft_geom::Point::new(0.5, 0.5);
+    let warp = c.planes.map(|p| EmbeddedWarp { planes: p.map(|k| [k[0], k[1], k[2], k[3], 0.0, 0.0]), center, radius });
+    let vignette = c.vignette.map(|k| EmbeddedVignette { k, center, radius });
+    (warp.is_some() || vignette.is_some()).then_some(EmbeddedLens { warp, vignette })
 }
 
 #[cfg(test)]

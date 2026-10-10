@@ -297,25 +297,87 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
         {
             control(app, ui, d, c, true);
         }
+        if lightcraft_engine::restore::AVAILABLE {
+            // applied by exports only (minutes on a full-size photo): see docs/ai-restore.md
+            control(app, ui, d, "enhance.restoreDenoise", true);
+            let t = Tokens::get(ui.ctx());
+            let hint = if lightcraft_engine::restore::denoise_installed() {
+                "Export Denoise (SCUNet) is applied when exporting and takes minutes on a full-size photo."
+            } else {
+                "Export Denoise needs its model (restore.model.download, see docs/ai-restore.md). It is applied when exporting."
+            };
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 0, bottom: 2 }).show(ui, |ui| {
+                ui.label(egui::RichText::new(crate::i18n::tr(hint)).size(11.0).color(t.text_dim));
+            });
+        }
         ui.add_space(8.0);
     });
     section(app, ui, &d, "optics", "Optics", |app, ui, d| {
-        let has_lens = app.session.catalog.photo(id).is_some_and(|p| p.embedded_lens.is_some());
+        // camera + lens recognition: read the file's lens facts once per photo (older catalogs lack them), then
+        // show what was recognised and whether a profile was found (never a made-up one)
+        let asked = egui::Id::new(("lens-detect", id.0));
+        if !ui.data(|d| d.get_temp::<bool>(asked).unwrap_or(false)) {
+            ui.data_mut(|d| d.insert_temp(asked, true));
+            let missing = app.session.catalog.photo(id).is_some_and(|p| {
+                p.meta.lens_spec.is_none() && p.meta.lens_max_aperture.is_none() && p.meta.focal_35mm.is_none() && !p.meta.camera.is_empty()
+            });
+            if missing {
+                let _ = app.run("lens.detect", json!({"ids": [id.0]}));
+            }
+        }
+        let lens_info = app.run("lens.info", json!({"id": id.0})).unwrap_or(Value::Null);
+        let has_lens = lens_info["profile"]["source"].as_str().is_some_and(|s| s != "none");
         egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 4, bottom: 4 }).show(ui, |ui| {
             let mut ca = d.optics.remove_ca;
             if ui.checkbox(&mut ca, crate::i18n::tr("Remove Chromatic Aberration")).changed() {
                 let _ = app.run("develop.merge", json!({"settings": {"optics": {"remove_ca": ca}}, "label": "Remove CA"}));
             }
             let mut lp = d.optics.lens_profile;
-            if ui.checkbox(&mut lp, crate::i18n::tr("Enable Lens Corrections")).changed() {
+            if ui.checkbox(&mut lp, crate::i18n::tr("Use Profile Corrections")).changed() {
                 let _ = app.run("develop.merge", json!({"settings": {"optics": {"lens_profile": lp}}, "label": "Lens Corrections"}));
             }
-            if lp && !has_lens {
-                ui.label(
-                    egui::RichText::new(crate::i18n::tr("No lens data embedded in this file (DNG lens opcodes only)."))
-                        .size(11.0)
-                        .color(Tokens::get(ui.ctx()).text_dim),
-                );
+            let dim = Tokens::get(ui.ctx()).text_dim;
+            let small = |ui: &mut egui::Ui, text: String| {
+                ui.label(egui::RichText::new(text).size(11.0).color(dim));
+            };
+            // the camera and lens as the file names them
+            let camera = lens_info["camera"].as_str().unwrap_or("");
+            let lens = lens_info["lensInPhoto"].as_str().unwrap_or("");
+            let shown = [camera, lens].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" \u{b7} ");
+            if !shown.is_empty() {
+                small(ui, shown);
+            }
+            // …and whether a profile was found
+            let pr = &lens_info["profile"];
+            let parts: Vec<&str> = [("distortion", "distortion"), ("lateralCa", "chromatic aberration"), ("vignetting", "vignetting")]
+                .iter()
+                .filter(|(k, _)| pr[*k].as_bool() == Some(true))
+                .map(|(_, l)| *l)
+                .collect();
+            match pr["source"].as_str() {
+                Some("embedded") => small(ui, format!("{} {}", crate::i18n::tr("Profile embedded in the file:"), parts.join(", "))),
+                Some("database") => {
+                    let name = pr["lens"].as_str().unwrap_or("");
+                    let mut line = format!("{} {} ({})", crate::i18n::tr("Profile:"), name, parts.join(", "));
+                    if pr["confidence"].as_str() == Some("probable") {
+                        line.push_str(" \u{2013} probable");
+                    }
+                    small(ui, line);
+                    if let Some(note) = pr["note"].as_str().filter(|n| !n.is_empty()) {
+                        small(ui, note.to_string());
+                    }
+                }
+                _ => {
+                    let note = pr["note"].as_str().unwrap_or("");
+                    let mut note = note.to_string();
+                    if let Some(first) = note.get(..1).map(str::to_uppercase) {
+                        note.replace_range(..1, &first);
+                    }
+                    small(ui, format!("{} {}", crate::i18n::tr("No profile found for this lens."), note));
+                }
+            }
+            if has_lens && !lp {
+                small(ui, crate::i18n::tr("A profile is available: tick the box to apply it.").to_string());
             }
         });
         if d.optics.lens_profile {

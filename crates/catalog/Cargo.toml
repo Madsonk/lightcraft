@@ -11,6 +11,9 @@ workspace = true
 [dependencies]
 lightcraft-develop = { workspace = true }
 lightcraft-meta = { workspace = true }
+lightcraft-lens = { workspace = true }
+lightcraft-places = { workspace = true, optional = true }
+lightcraft-geom = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -20,3 +23,7 @@ web-time = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+
+[features]
+# Photos without a place keyword are placed by their GPS position (offline reverse geocoding). Off for the web build.
+places = ["dep:lightcraft-places"]

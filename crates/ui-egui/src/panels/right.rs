@@ -334,6 +334,7 @@ fn remove(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
             lightcraft_develop::SpotMode::Heal => "Heal",
             lightcraft_develop::SpotMode::Clone => "Clone",
             lightcraft_develop::SpotMode::Remove => "Remove",
+            lightcraft_develop::SpotMode::Inpaint => "Inpaint",
         };
         super::edit::sub_title(ui, &crate::i18n::tr_format!("{mode} spot {} of {}", i + 1, d.spots.len(), mode = mode));
     }
@@ -621,7 +622,7 @@ fn info(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                 }
             });
         }
-        if let Some(a) = p.analysis {
+        if let Some(a) = &p.analysis {
             let mut line = crate::i18n::tr_format!("Focus {:.0}", a.sharpness);
             if a.clipped > 0.02 {
                 line.push_str(&crate::i18n::tr_format!(" · {:.0}% clipped", a.clipped * 100.0));
@@ -631,6 +632,38 @@ fn info(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
             }
             ui.add_space(4.0);
             ui.label(egui::RichText::new(line).color(t.text_dim));
+            // Analyze Faces: one line per face with how open and how sharp its eyes are
+            if let Some(faces) = a.faces.as_deref() {
+                let judged = faces.iter().filter(|f| f.eyes_judged()).count();
+                let closed = faces.iter().filter(|f| f.eyes_closed()).count();
+                let head = match (faces.len(), closed) {
+                    (0, _) => crate::i18n::tr("No faces").to_string(),
+                    (n, 0) => format!("{n} {}", if n == 1 { "face" } else { "faces" }),
+                    (n, c) => format!("{n} {} · eyes closed on {c}", if n == 1 { "face" } else { "faces" }),
+                };
+                ui.label(egui::RichText::new(head).color(if closed > 0 { t.caution } else { t.text_dim }));
+                let mut order: Vec<usize> = (0..faces.len()).filter(|&i| faces[i].eyes_judged()).collect();
+                order.sort_by(|&a, &b| faces[a].rect[0].total_cmp(&faces[b].rect[0]));
+                for (k, &i) in order.iter().enumerate().take(12) {
+                    let f = &faces[i];
+                    let (l, r) = (lightcraft_catalog::FaceInfo::open_score(f.open[0]), lightcraft_catalog::FaceInfo::open_score(f.open[1]));
+                    let line = format!(
+                        "  {}: eyes {:.0} / {:.0} open · {:.0} / {:.0} sharp{}",
+                        k + 1,
+                        l,
+                        r,
+                        f.sharp[0],
+                        f.sharp[1],
+                        if f.eyes_closed() { " · closed" } else { "" }
+                    );
+                    ui.label(egui::RichText::new(line).size(11.0).color(if f.eyes_closed() { t.caution } else { t.text_dim }));
+                }
+                if judged < faces.len() {
+                    ui.label(
+                        egui::RichText::new(format!("  {} small or turned away: not judged", faces.len() - judged)).size(11.0).color(t.text_dim),
+                    );
+                }
+            }
         }
         // offline originals / smart previews
         // (cached answers, checked off the UI thread: unknown counts as online / no smart preview)
@@ -777,7 +810,7 @@ fn keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                         let _ = app.run("photo.setMeta", json!({"removeKeywords": [k]}));
                     }
                     if ui.button(crate::i18n::tr("Show Photos with Keyword")).clicked() {
-                        let _ = app.run("library.filter", json!({"keyword": k}));
+                        let _ = app.run("library.filter", json!({"keyword": k, "untagged": serde_json::Value::Null}));
                     }
                     ui.separator();
                     if ui.button(crate::i18n::tr("Rename Keyword…")).clicked() {
@@ -833,7 +866,97 @@ fn keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                 }
             });
         }
+        ui.add_space(10.0);
+        suggested_keywords(app, ui, id);
     });
+}
+
+/// The keywords suggested for a photo by the controlled vocabulary (zero-shot on the search
+/// model) and by what the library has learned of the user's own keywords. Nothing is added until
+/// a chip is clicked (or "Add all"); the "automatically" box is off by default.
+fn suggested_keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
+    let t = Tokens::get(ui.ctx());
+    let sid = egui::Id::new("kw-ai-suggest");
+    let cached: Option<(u64, Vec<(String, f64, String)>)> = ui.data(|d| d.get_temp(sid));
+    let note_id = egui::Id::new("kw-ai-note");
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(crate::i18n::tr("Suggested keywords")).color(t.text_dim));
+        let r = crate::widgets::text_button(ui, "kwSuggestRun", "Suggest", false).on_hover_text(crate::i18n::tr(
+            "Looks at the photo with the search model (the first use loads it: about a minute). Nothing is added until you click a keyword.",
+        ));
+        if r.clicked() {
+            match app.run("keywords.suggest", json!({"ids": [id.0], "includeExisting": false})) {
+                Ok(v) => {
+                    let list: Vec<(String, f64, String)> = v["photos"][0]["suggestions"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|x| {
+                            Some((x["keyword"].as_str()?.to_string(), x["score"].as_f64()?, x["source"].as_str().unwrap_or("").to_string()))
+                        })
+                        .collect();
+                    let note = if v["unindexed"].as_u64().unwrap_or(0) > 0 {
+                        crate::i18n::tr("This photo is not indexed yet: run Search ▸ Index Photos.").to_string()
+                    } else if list.is_empty() {
+                        crate::i18n::tr("No keyword reached the threshold.").to_string()
+                    } else {
+                        String::new()
+                    };
+                    ui.data_mut(|d| {
+                        d.insert_temp(sid, (id.0, list));
+                        d.insert_temp(note_id, note);
+                    });
+                }
+                Err(e) => ui.data_mut(|d| {
+                    d.insert_temp(sid, (id.0, Vec::<(String, f64, String)>::new()));
+                    d.insert_temp(note_id, e);
+                }),
+            }
+        }
+    });
+    let note: String = ui.data(|d| d.get_temp(note_id)).unwrap_or_default();
+    if !note.is_empty() {
+        ui.label(egui::RichText::new(note).color(t.text_dim).size(11.5));
+    }
+    if let Some((pid, list)) = cached.filter(|c| c.0 == id.0 && !c.1.is_empty()) {
+        let mut accepted: Option<String> = None;
+        let mut all = false;
+        ui.horizontal_wrapped(|ui| {
+            for (k, score, source) in &list {
+                let label = format!("+ {}  {:.0}%", k.replace('|', " › "), score * 100.0);
+                let r = ui.add(egui::Button::new(egui::RichText::new(label).color(t.text_label)).corner_radius(10.0)).on_hover_text(source.as_str());
+                register(ui.ctx(), format!("kwSuggested:{k}"), r.rect);
+                if r.clicked() {
+                    accepted = Some(k.clone());
+                }
+            }
+        });
+        if crate::widgets::text_button(ui, "kwSuggestAll", "Add all", false).clicked() {
+            all = true;
+        }
+        let todo: Vec<String> = if all { list.iter().map(|x| x.0.clone()).collect() } else { accepted.iter().cloned().collect() };
+        if !todo.is_empty() {
+            let _ = app.run("keywords.accept", json!({"ids": [id.0], "keywords": todo}));
+            let rest: Vec<(String, f64, String)> = list.into_iter().filter(|x| !todo.contains(&x.0)).collect();
+            ui.data_mut(|d| d.insert_temp(sid, (pid, rest)));
+        }
+    }
+    let auto_id = egui::Id::new("kw-auto-accept");
+    let mut auto: bool = match ui.data(|d| d.get_temp::<bool>(auto_id)) {
+        Some(b) => b,
+        None => {
+            let b = app.run("keywords.settings", json!({})).ok().and_then(|v| v["autoAccept"].as_bool()).unwrap_or(false);
+            ui.data_mut(|d| d.insert_temp(auto_id, b));
+            b
+        }
+    };
+    let changed = ui
+        .checkbox(&mut auto, crate::i18n::tr("Add suggestions above 90 % automatically"))
+        .on_hover_text(crate::i18n::tr("Off by default. When on, Suggest also adds the keywords at or above the threshold."))
+        .changed();
+    if changed && app.run("keywords.settings", json!({"autoAccept": auto})).is_ok() {
+        ui.data_mut(|d| d.insert_temp(auto_id, auto));
+    }
 }
 
 /// The keyword set: pick a set, then nine buttons (⌥1–⌥9) that toggle its keywords on the

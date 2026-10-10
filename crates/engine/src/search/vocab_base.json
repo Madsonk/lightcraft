@@ -1,0 +1,1457 @@
+{
+ "version": 1,
+ "entries": [
+  {
+   "keyword": "Food|Dessert",
+   "fr": "Plat|Dessert",
+   "category": "Food",
+   "phrase": "a dessert",
+   "prompts": [
+    "a photo of a dessert",
+    "a sweet dessert on a plate"
+   ]
+  },
+  {
+   "keyword": "Food|Pastry",
+   "fr": "Plat|Pâtisserie",
+   "category": "Food",
+   "phrase": "pastries",
+   "prompts": [
+    "a photo of pastries",
+    "cakes and pastries in a bakery display"
+   ]
+  },
+  {
+   "keyword": "Food|Cake",
+   "fr": "Plat|Gâteau",
+   "category": "Food",
+   "phrase": "a cake",
+   "prompts": [
+    "a photo of a cake",
+    "a decorated birthday cake"
+   ]
+  },
+  {
+   "keyword": "Food|Cookies",
+   "fr": "Plat|Cookies",
+   "category": "Food",
+   "phrase": "cookies",
+   "prompts": [
+    "a photo of cookies",
+    "chocolate chip cookies"
+   ]
+  },
+  {
+   "keyword": "Food|Bread",
+   "fr": "Plat|Pain",
+   "category": "Food",
+   "phrase": "bread",
+   "prompts": [
+    "a photo of bread",
+    "a loaf of bread, baguette"
+   ]
+  },
+  {
+   "keyword": "Food|Crepes",
+   "fr": "Plat|Crêpes",
+   "category": "Food",
+   "phrase": "crepes",
+   "prompts": [
+    "a photo of crepes",
+    "a pancake with toppings"
+   ]
+  },
+  {
+   "keyword": "Food|Burger",
+   "fr": "Plat|Burger",
+   "category": "Food",
+   "phrase": "a burger",
+   "prompts": [
+    "a photo of a hamburger",
+    "a burger with fries"
+   ]
+  },
+  {
+   "keyword": "Food|Fries",
+   "fr": "Plat|Frites",
+   "category": "Food",
+   "phrase": "french fries",
+   "prompts": [
+    "a photo of french fries"
+   ]
+  },
+  {
+   "keyword": "Food|Pizza",
+   "fr": "Plat|Pizza",
+   "category": "Food",
+   "phrase": "a pizza",
+   "prompts": [
+    "a photo of a pizza"
+   ]
+  },
+  {
+   "keyword": "Food|Sandwich",
+   "fr": "Plat|Sandwich",
+   "category": "Food",
+   "phrase": "a sandwich",
+   "prompts": [
+    "a photo of a sandwich",
+    "a panini or bagel sandwich"
+   ]
+  },
+  {
+   "keyword": "Food|Salad",
+   "fr": "Plat|Salade",
+   "category": "Food",
+   "phrase": "a salad",
+   "prompts": [
+    "a photo of a salad",
+    "a bowl of fresh salad"
+   ]
+  },
+  {
+   "keyword": "Food|Meat dish",
+   "fr": "Plat|Plat de viande",
+   "category": "Food",
+   "phrase": "a meat dish",
+   "prompts": [
+    "a photo of a meat dish",
+    "grilled meat on a plate"
+   ]
+  },
+  {
+   "keyword": "Food|Fish dish",
+   "fr": "Plat|Plat de poisson",
+   "category": "Food",
+   "phrase": "a fish dish",
+   "prompts": [
+    "a photo of a fish dish",
+    "grilled fish and seafood"
+   ]
+  },
+  {
+   "keyword": "Food|Rice dish",
+   "fr": "Plat|Plat de riz",
+   "category": "Food",
+   "phrase": "a rice dish",
+   "prompts": [
+    "a photo of a rice dish",
+    "rice with sauce on a plate"
+   ]
+  },
+  {
+   "keyword": "Food|Soup",
+   "fr": "Plat|Soupe",
+   "category": "Food",
+   "phrase": "a soup",
+   "prompts": [
+    "a photo of a bowl of soup"
+   ]
+  },
+  {
+   "keyword": "Food|Plated meal",
+   "fr": "Plat|Assiette",
+   "category": "Food",
+   "phrase": "a plated meal",
+   "prompts": [
+    "a photo of a plated meal in a restaurant",
+    "a dish served on a plate, top view"
+   ]
+  },
+  {
+   "keyword": "Food|Buffet",
+   "fr": "Plat|Buffet",
+   "category": "Food",
+   "phrase": "a buffet",
+   "prompts": [
+    "a photo of a buffet with many dishes"
+   ]
+  },
+  {
+   "keyword": "Food|Street food",
+   "fr": "Plat|Street food",
+   "category": "Food",
+   "phrase": "street food",
+   "prompts": [
+    "a photo of street food",
+    "a food truck serving food"
+   ]
+  },
+  {
+   "keyword": "Food|Fruit",
+   "fr": "Plat|Fruits",
+   "category": "Food",
+   "phrase": "fresh fruit",
+   "prompts": [
+    "a photo of fresh fruit",
+    "a basket of fruit"
+   ]
+  },
+  {
+   "keyword": "Food|Vegetables",
+   "fr": "Plat|Légumes",
+   "category": "Food",
+   "phrase": "vegetables",
+   "prompts": [
+    "a photo of vegetables",
+    "a market stall with vegetables"
+   ]
+  },
+  {
+   "keyword": "Food|Ice cream",
+   "fr": "Plat|Glace",
+   "category": "Food",
+   "phrase": "an ice cream",
+   "prompts": [
+    "a photo of ice cream"
+   ]
+  },
+  {
+   "keyword": "Food|Chocolate",
+   "fr": "Plat|Chocolat",
+   "category": "Food",
+   "phrase": "chocolate",
+   "prompts": [
+    "a photo of chocolate"
+   ]
+  },
+  {
+   "keyword": "Food|Coffee",
+   "fr": "Plat|Café",
+   "category": "Food",
+   "phrase": "a coffee",
+   "prompts": [
+    "a photo of a cup of coffee"
+   ]
+  },
+  {
+   "keyword": "Food|Juice",
+   "fr": "Plat|Jus",
+   "category": "Food",
+   "phrase": "a juice",
+   "prompts": [
+    "a photo of a glass of fruit juice",
+    "bottled juice drinks"
+   ]
+  },
+  {
+   "keyword": "Food|Cocktail",
+   "fr": "Plat|Cocktail",
+   "category": "Food",
+   "phrase": "a cocktail",
+   "prompts": [
+    "a photo of a cocktail in a glass"
+   ]
+  },
+  {
+   "keyword": "Food|Drink",
+   "fr": "Plat|Boisson",
+   "category": "Food",
+   "phrase": "drinks",
+   "prompts": [
+    "a photo of drinks on a table",
+    "bottles of drinks"
+   ]
+  },
+  {
+   "keyword": "Food|Wine",
+   "fr": "Plat|Vin",
+   "category": "Food",
+   "phrase": "wine",
+   "prompts": [
+    "a photo of wine glasses and a wine bottle"
+   ]
+  },
+  {
+   "keyword": "Food|Beer",
+   "fr": "Plat|Bière",
+   "category": "Food",
+   "phrase": "beer",
+   "prompts": [
+    "a photo of a glass of beer"
+   ]
+  },
+  {
+   "keyword": "Food|Spices",
+   "fr": "Plat|Épices",
+   "category": "Food",
+   "phrase": "spices",
+   "prompts": [
+    "a photo of spices",
+    "bowls of colourful spices"
+   ]
+  },
+  {
+   "keyword": "Food|Cooking",
+   "fr": "Plat|Cuisine",
+   "category": "Food",
+   "phrase": "cooking",
+   "prompts": [
+    "a photo of someone cooking",
+    "a chef preparing food in a kitchen"
+   ]
+  },
+  {
+   "keyword": "Food|Food truck",
+   "fr": "Plat|Food truck",
+   "category": "Food",
+   "phrase": "a food truck",
+   "prompts": [
+    "a photo of a food truck",
+    "a food stand at a market"
+   ]
+  },
+  {
+   "keyword": "Subject|Portrait",
+   "fr": "Sujet|Portrait",
+   "category": "Subject",
+   "phrase": "a portrait",
+   "prompts": [
+    "a portrait photo of a person",
+    "a close-up portrait of a face"
+   ]
+  },
+  {
+   "keyword": "Subject|Man",
+   "fr": "Sujet|Homme",
+   "category": "Subject",
+   "phrase": "a man",
+   "prompts": [
+    "a photo of a man"
+   ]
+  },
+  {
+   "keyword": "Subject|Woman",
+   "fr": "Sujet|Femme",
+   "category": "Subject",
+   "phrase": "a woman",
+   "prompts": [
+    "a photo of a woman"
+   ]
+  },
+  {
+   "keyword": "Subject|Child",
+   "fr": "Sujet|Enfant",
+   "category": "Subject",
+   "phrase": "a child",
+   "prompts": [
+    "a photo of a child",
+    "a kid playing"
+   ]
+  },
+  {
+   "keyword": "Subject|Baby",
+   "fr": "Sujet|Bébé",
+   "category": "Subject",
+   "phrase": "a baby",
+   "prompts": [
+    "a photo of a baby"
+   ]
+  },
+  {
+   "keyword": "Subject|Teenager",
+   "fr": "Sujet|Adolescent",
+   "category": "Subject",
+   "phrase": "a teenager",
+   "prompts": [
+    "a photo of a teenager"
+   ]
+  },
+  {
+   "keyword": "Subject|Elderly person",
+   "fr": "Sujet|Personne âgée",
+   "category": "Subject",
+   "phrase": "an elderly person",
+   "prompts": [
+    "a photo of an elderly person"
+   ]
+  },
+  {
+   "keyword": "Subject|Couple",
+   "fr": "Sujet|Couple",
+   "category": "Subject",
+   "phrase": "a couple",
+   "prompts": [
+    "a photo of a couple",
+    "two people embracing"
+   ]
+  },
+  {
+   "keyword": "Subject|Group",
+   "fr": "Sujet|Groupe",
+   "category": "Subject",
+   "phrase": "a group of people",
+   "prompts": [
+    "a group photo of several people",
+    "friends posing together"
+   ]
+  },
+  {
+   "keyword": "Subject|Family",
+   "fr": "Sujet|Famille",
+   "category": "Subject",
+   "phrase": "a family",
+   "prompts": [
+    "a family photo with parents and children"
+   ]
+  },
+  {
+   "keyword": "Subject|Crowd",
+   "fr": "Sujet|Foule",
+   "category": "Subject",
+   "phrase": "a crowd",
+   "prompts": [
+    "a photo of a crowd of people"
+   ]
+  },
+  {
+   "keyword": "Subject|Selfie",
+   "fr": "Sujet|Selfie",
+   "category": "Subject",
+   "phrase": "a selfie",
+   "prompts": [
+    "a selfie photo"
+   ]
+  },
+  {
+   "keyword": "Subject|Self portrait mirror",
+   "fr": "Sujet|Photo miroir",
+   "category": "Subject",
+   "phrase": "a person in a mirror",
+   "prompts": [
+    "a photo of a person taking a picture in a mirror"
+   ]
+  },
+  {
+   "keyword": "Subject|Wedding",
+   "fr": "Sujet|Mariage",
+   "category": "Subject",
+   "phrase": "a wedding",
+   "prompts": [
+    "a wedding photo",
+    "a bride and groom"
+   ]
+  },
+  {
+   "keyword": "Subject|Dancing",
+   "fr": "Sujet|Danse",
+   "category": "Subject",
+   "phrase": "people dancing",
+   "prompts": [
+    "a photo of people dancing"
+   ]
+  },
+  {
+   "keyword": "Subject|Sport",
+   "fr": "Sujet|Sport",
+   "category": "Subject",
+   "phrase": "sport",
+   "prompts": [
+    "a photo of people playing sport"
+   ]
+  },
+  {
+   "keyword": "Subject|Musician",
+   "fr": "Sujet|Musicien",
+   "category": "Subject",
+   "phrase": "a musician",
+   "prompts": [
+    "a photo of a musician playing an instrument"
+   ]
+  },
+  {
+   "keyword": "Subject|Speaker",
+   "fr": "Sujet|Intervenant",
+   "category": "Subject",
+   "phrase": "a speaker",
+   "prompts": [
+    "a photo of a person speaking on stage with a microphone"
+   ]
+  },
+  {
+   "keyword": "Subject|Model",
+   "fr": "Sujet|Mannequin",
+   "category": "Subject",
+   "phrase": "a model",
+   "prompts": [
+    "a fashion photo of a model posing"
+   ]
+  },
+  {
+   "keyword": "Subject|Hands",
+   "fr": "Sujet|Mains",
+   "category": "Subject",
+   "phrase": "hands",
+   "prompts": [
+    "a close-up photo of hands"
+   ]
+  },
+  {
+   "keyword": "Subject|Pet",
+   "fr": "Sujet|Animal de compagnie",
+   "category": "Subject",
+   "phrase": "a pet",
+   "prompts": [
+    "a photo of a pet dog or cat"
+   ]
+  },
+  {
+   "keyword": "Subject|Dog",
+   "fr": "Sujet|Chien",
+   "category": "Subject",
+   "phrase": "a dog",
+   "prompts": [
+    "a photo of a dog"
+   ]
+  },
+  {
+   "keyword": "Subject|Cat",
+   "fr": "Sujet|Chat",
+   "category": "Subject",
+   "phrase": "a cat",
+   "prompts": [
+    "a photo of a cat"
+   ]
+  },
+  {
+   "keyword": "Subject|Bird",
+   "fr": "Sujet|Oiseau",
+   "category": "Subject",
+   "phrase": "a bird",
+   "prompts": [
+    "a photo of a bird"
+   ]
+  },
+  {
+   "keyword": "Subject|Horse",
+   "fr": "Sujet|Cheval",
+   "category": "Subject",
+   "phrase": "a horse",
+   "prompts": [
+    "a photo of a horse"
+   ]
+  },
+  {
+   "keyword": "Subject|Wildlife",
+   "fr": "Sujet|Faune",
+   "category": "Subject",
+   "phrase": "wildlife",
+   "prompts": [
+    "a photo of a wild animal in nature"
+   ]
+  },
+  {
+   "keyword": "Subject|Insect",
+   "fr": "Sujet|Insecte",
+   "category": "Subject",
+   "phrase": "an insect",
+   "prompts": [
+    "a macro photo of an insect"
+   ]
+  },
+  {
+   "keyword": "Scene|Beach",
+   "fr": "Scène|Plage",
+   "category": "Scene",
+   "phrase": "a beach",
+   "prompts": [
+    "a photo of a beach",
+    "sand and sea with palm trees"
+   ]
+  },
+  {
+   "keyword": "Scene|Sea",
+   "fr": "Scène|Mer",
+   "category": "Scene",
+   "phrase": "the sea",
+   "prompts": [
+    "a photo of the sea and waves"
+   ]
+  },
+  {
+   "keyword": "Scene|Mountain",
+   "fr": "Scène|Montagne",
+   "category": "Scene",
+   "phrase": "mountains",
+   "prompts": [
+    "a photo of mountains"
+   ]
+  },
+  {
+   "keyword": "Scene|Forest",
+   "fr": "Scène|Forêt",
+   "category": "Scene",
+   "phrase": "a forest",
+   "prompts": [
+    "a photo of a forest"
+   ]
+  },
+  {
+   "keyword": "Scene|Countryside",
+   "fr": "Scène|Campagne",
+   "category": "Scene",
+   "phrase": "the countryside",
+   "prompts": [
+    "a photo of fields and countryside"
+   ]
+  },
+  {
+   "keyword": "Scene|Garden",
+   "fr": "Scène|Jardin",
+   "category": "Scene",
+   "phrase": "a garden",
+   "prompts": [
+    "a photo of a garden with plants and flowers"
+   ]
+  },
+  {
+   "keyword": "Scene|Flowers",
+   "fr": "Scène|Fleurs",
+   "category": "Scene",
+   "phrase": "flowers",
+   "prompts": [
+    "a photo of flowers"
+   ]
+  },
+  {
+   "keyword": "Scene|River or lake",
+   "fr": "Scène|Rivière ou lac",
+   "category": "Scene",
+   "phrase": "a river or lake",
+   "prompts": [
+    "a photo of a river or a lake"
+   ]
+  },
+  {
+   "keyword": "Scene|Waterfall",
+   "fr": "Scène|Cascade",
+   "category": "Scene",
+   "phrase": "a waterfall",
+   "prompts": [
+    "a photo of a waterfall"
+   ]
+  },
+  {
+   "keyword": "Scene|Sunset",
+   "fr": "Scène|Coucher de soleil",
+   "category": "Scene",
+   "phrase": "a sunset",
+   "prompts": [
+    "a photo of a sunset",
+    "orange sky at dusk"
+   ]
+  },
+  {
+   "keyword": "Scene|Sky and clouds",
+   "fr": "Scène|Ciel et nuages",
+   "category": "Scene",
+   "phrase": "sky and clouds",
+   "prompts": [
+    "a photo of clouds in the sky"
+   ]
+  },
+  {
+   "keyword": "Scene|Night",
+   "fr": "Scène|Nuit",
+   "category": "Scene",
+   "phrase": "a night scene",
+   "prompts": [
+    "a photo taken at night",
+    "city lights in the dark"
+   ]
+  },
+  {
+   "keyword": "Scene|Snow",
+   "fr": "Scène|Neige",
+   "category": "Scene",
+   "phrase": "snow",
+   "prompts": [
+    "a photo of snow"
+   ]
+  },
+  {
+   "keyword": "Scene|Rain",
+   "fr": "Scène|Pluie",
+   "category": "Scene",
+   "phrase": "rain",
+   "prompts": [
+    "a photo of rain"
+   ]
+  },
+  {
+   "keyword": "Scene|City street",
+   "fr": "Scène|Rue",
+   "category": "Scene",
+   "phrase": "a city street",
+   "prompts": [
+    "a photo of a city street"
+   ]
+  },
+  {
+   "keyword": "Scene|Cityscape",
+   "fr": "Scène|Ville",
+   "category": "Scene",
+   "phrase": "a cityscape",
+   "prompts": [
+    "an aerial view of a city with buildings"
+   ]
+  },
+  {
+   "keyword": "Scene|Architecture",
+   "fr": "Scène|Architecture",
+   "category": "Scene",
+   "phrase": "architecture",
+   "prompts": [
+    "a photo of modern architecture"
+   ]
+  },
+  {
+   "keyword": "Scene|Historic building",
+   "fr": "Scène|Monument",
+   "category": "Scene",
+   "phrase": "a historic building",
+   "prompts": [
+    "a photo of an old historic building or monument"
+   ]
+  },
+  {
+   "keyword": "Scene|Church",
+   "fr": "Scène|Église",
+   "category": "Scene",
+   "phrase": "a church",
+   "prompts": [
+    "a photo of a church"
+   ]
+  },
+  {
+   "keyword": "Scene|Mosque",
+   "fr": "Scène|Mosquée",
+   "category": "Scene",
+   "phrase": "a mosque",
+   "prompts": [
+    "a photo of a mosque"
+   ]
+  },
+  {
+   "keyword": "Scene|Bridge",
+   "fr": "Scène|Pont",
+   "category": "Scene",
+   "phrase": "a bridge",
+   "prompts": [
+    "a photo of a bridge"
+   ]
+  },
+  {
+   "keyword": "Scene|Market",
+   "fr": "Scène|Marché",
+   "category": "Scene",
+   "phrase": "a market",
+   "prompts": [
+    "a photo of a market with stalls"
+   ]
+  },
+  {
+   "keyword": "Scene|Restaurant",
+   "fr": "Scène|Restaurant",
+   "category": "Scene",
+   "phrase": "a restaurant",
+   "prompts": [
+    "a photo of the inside of a restaurant"
+   ]
+  },
+  {
+   "keyword": "Scene|Cafe",
+   "fr": "Scène|Café-terrasse",
+   "category": "Scene",
+   "phrase": "a cafe",
+   "prompts": [
+    "a photo of a cafe terrace"
+   ]
+  },
+  {
+   "keyword": "Scene|Shop",
+   "fr": "Scène|Boutique",
+   "category": "Scene",
+   "phrase": "a shop",
+   "prompts": [
+    "a photo of a shop front and shelves"
+   ]
+  },
+  {
+   "keyword": "Scene|Kitchen",
+   "fr": "Scène|Cuisine (pièce)",
+   "category": "Scene",
+   "phrase": "a kitchen",
+   "prompts": [
+    "a photo of a kitchen"
+   ]
+  },
+  {
+   "keyword": "Scene|Living room",
+   "fr": "Scène|Salon",
+   "category": "Scene",
+   "phrase": "a living room",
+   "prompts": [
+    "a photo of a living room with a sofa"
+   ]
+  },
+  {
+   "keyword": "Scene|Bedroom",
+   "fr": "Scène|Chambre",
+   "category": "Scene",
+   "phrase": "a bedroom",
+   "prompts": [
+    "a photo of a bedroom"
+   ]
+  },
+  {
+   "keyword": "Scene|Office",
+   "fr": "Scène|Bureau",
+   "category": "Scene",
+   "phrase": "an office",
+   "prompts": [
+    "a photo of an office with desks and computers"
+   ]
+  },
+  {
+   "keyword": "Scene|Stage",
+   "fr": "Scène|Scène",
+   "category": "Scene",
+   "phrase": "a stage",
+   "prompts": [
+    "a photo of a stage with lights"
+   ]
+  },
+  {
+   "keyword": "Scene|Concert",
+   "fr": "Scène|Concert",
+   "category": "Scene",
+   "phrase": "a concert",
+   "prompts": [
+    "a photo of a concert with lights and an audience"
+   ]
+  },
+  {
+   "keyword": "Scene|Conference",
+   "fr": "Scène|Conférence",
+   "category": "Scene",
+   "phrase": "a conference",
+   "prompts": [
+    "a photo of a conference room with an audience"
+   ]
+  },
+  {
+   "keyword": "Scene|Exhibition",
+   "fr": "Scène|Salon / exposition",
+   "category": "Scene",
+   "phrase": "an exhibition",
+   "prompts": [
+    "a photo of an exhibition hall with stands"
+   ]
+  },
+  {
+   "keyword": "Scene|Stand",
+   "fr": "Scène|Stand",
+   "category": "Scene",
+   "phrase": "a stand",
+   "prompts": [
+    "a photo of a trade show booth or market stand"
+   ]
+  },
+  {
+   "keyword": "Scene|Party",
+   "fr": "Scène|Fête",
+   "category": "Scene",
+   "phrase": "a party",
+   "prompts": [
+    "a photo of a party with balloons and decorations"
+   ]
+  },
+  {
+   "keyword": "Scene|Fairground",
+   "fr": "Scène|Fête foraine",
+   "category": "Scene",
+   "phrase": "a fairground",
+   "prompts": [
+    "a photo of a fairground with rides"
+   ]
+  },
+  {
+   "keyword": "Scene|Playground",
+   "fr": "Scène|Aire de jeux",
+   "category": "Scene",
+   "phrase": "a playground",
+   "prompts": [
+    "a photo of a playground"
+   ]
+  },
+  {
+   "keyword": "Scene|Pool",
+   "fr": "Scène|Piscine",
+   "category": "Scene",
+   "phrase": "a swimming pool",
+   "prompts": [
+    "a photo of a swimming pool"
+   ]
+  },
+  {
+   "keyword": "Scene|Park",
+   "fr": "Scène|Parc",
+   "category": "Scene",
+   "phrase": "a park",
+   "prompts": [
+    "a photo of a city park with trees"
+   ]
+  },
+  {
+   "keyword": "Scene|Road",
+   "fr": "Scène|Route",
+   "category": "Scene",
+   "phrase": "a road",
+   "prompts": [
+    "a photo of a road"
+   ]
+  },
+  {
+   "keyword": "Scene|Airport",
+   "fr": "Scène|Aéroport",
+   "category": "Scene",
+   "phrase": "an airport",
+   "prompts": [
+    "a photo of an airport"
+   ]
+  },
+  {
+   "keyword": "Scene|Station",
+   "fr": "Scène|Gare",
+   "category": "Scene",
+   "phrase": "a train station",
+   "prompts": [
+    "a photo of a train station platform"
+   ]
+  },
+  {
+   "keyword": "Scene|Interior",
+   "fr": "Scène|Intérieur",
+   "category": "Scene",
+   "phrase": "an interior",
+   "prompts": [
+    "a photo of an indoor room"
+   ]
+  },
+  {
+   "keyword": "Scene|Outdoor",
+   "fr": "Scène|Extérieur",
+   "category": "Scene",
+   "phrase": "outdoors",
+   "prompts": [
+    "a photo taken outdoors in daylight"
+   ]
+  },
+  {
+   "keyword": "Scene|Landscape",
+   "fr": "Scène|Paysage",
+   "category": "Scene",
+   "phrase": "a landscape",
+   "prompts": [
+    "a landscape photo"
+   ]
+  },
+  {
+   "keyword": "Scene|Aerial",
+   "fr": "Scène|Vue aérienne",
+   "category": "Scene",
+   "phrase": "an aerial view",
+   "prompts": [
+    "an aerial photo taken from above or a drone"
+   ]
+  },
+  {
+   "keyword": "Object|Aircraft",
+   "fr": "Objet|Avion",
+   "category": "Object",
+   "phrase": "an aircraft",
+   "prompts": [
+    "a photo of an aeroplane",
+    "a plane in the sky"
+   ]
+  },
+  {
+   "keyword": "Object|Helicopter",
+   "fr": "Objet|Hélicoptère",
+   "category": "Object",
+   "phrase": "a helicopter",
+   "prompts": [
+    "a photo of a helicopter"
+   ]
+  },
+  {
+   "keyword": "Object|Car",
+   "fr": "Objet|Voiture",
+   "category": "Object",
+   "phrase": "a car",
+   "prompts": [
+    "a photo of a car"
+   ]
+  },
+  {
+   "keyword": "Object|Motorcycle",
+   "fr": "Objet|Moto",
+   "category": "Object",
+   "phrase": "a motorcycle",
+   "prompts": [
+    "a photo of a motorcycle"
+   ]
+  },
+  {
+   "keyword": "Object|Bicycle",
+   "fr": "Objet|Vélo",
+   "category": "Object",
+   "phrase": "a bicycle",
+   "prompts": [
+    "a photo of a bicycle"
+   ]
+  },
+  {
+   "keyword": "Object|Bus or train",
+   "fr": "Objet|Bus ou train",
+   "category": "Object",
+   "phrase": "a bus or train",
+   "prompts": [
+    "a photo of a bus or a train"
+   ]
+  },
+  {
+   "keyword": "Object|Boat",
+   "fr": "Objet|Bateau",
+   "category": "Object",
+   "phrase": "a boat",
+   "prompts": [
+    "a photo of a boat"
+   ]
+  },
+  {
+   "keyword": "Object|Truck",
+   "fr": "Objet|Camion",
+   "category": "Object",
+   "phrase": "a truck",
+   "prompts": [
+    "a photo of a truck or van"
+   ]
+  },
+  {
+   "keyword": "Object|Phone",
+   "fr": "Objet|Téléphone",
+   "category": "Object",
+   "phrase": "a phone",
+   "prompts": [
+    "a photo of a smartphone"
+   ]
+  },
+  {
+   "keyword": "Object|Computer",
+   "fr": "Objet|Ordinateur",
+   "category": "Object",
+   "phrase": "a computer",
+   "prompts": [
+    "a photo of a laptop computer"
+   ]
+  },
+  {
+   "keyword": "Object|Camera",
+   "fr": "Objet|Appareil photo",
+   "category": "Object",
+   "phrase": "a camera",
+   "prompts": [
+    "a photo of a camera"
+   ]
+  },
+  {
+   "keyword": "Object|Screen",
+   "fr": "Objet|Écran",
+   "category": "Object",
+   "phrase": "a screen",
+   "prompts": [
+    "a photo of a screen or television"
+   ]
+  },
+  {
+   "keyword": "Object|Book",
+   "fr": "Objet|Livre",
+   "category": "Object",
+   "phrase": "a book",
+   "prompts": [
+    "a photo of a book"
+   ]
+  },
+  {
+   "keyword": "Object|Document",
+   "fr": "Objet|Document",
+   "category": "Object",
+   "phrase": "a document",
+   "prompts": [
+    "a photo of a printed document or paper"
+   ]
+  },
+  {
+   "keyword": "Object|Poster",
+   "fr": "Objet|Affiche",
+   "category": "Object",
+   "phrase": "a poster",
+   "prompts": [
+    "a photo of a poster or sign"
+   ]
+  },
+  {
+   "keyword": "Object|Sign",
+   "fr": "Objet|Panneau",
+   "category": "Object",
+   "phrase": "a sign",
+   "prompts": [
+    "a photo of a sign with text"
+   ]
+  },
+  {
+   "keyword": "Object|Screenshot",
+   "fr": "Objet|Capture d écran",
+   "category": "Object",
+   "phrase": "a screenshot",
+   "prompts": [
+    "a screenshot of a phone or computer screen"
+   ]
+  },
+  {
+   "keyword": "Object|Product",
+   "fr": "Objet|Produit",
+   "category": "Object",
+   "phrase": "a product",
+   "prompts": [
+    "a product photo on a plain background"
+   ]
+  },
+  {
+   "keyword": "Object|Packaging",
+   "fr": "Objet|Emballage",
+   "category": "Object",
+   "phrase": "packaging",
+   "prompts": [
+    "a photo of product packaging and labels"
+   ]
+  },
+  {
+   "keyword": "Object|Bottle",
+   "fr": "Objet|Bouteille",
+   "category": "Object",
+   "phrase": "a bottle",
+   "prompts": [
+    "a photo of a bottle"
+   ]
+  },
+  {
+   "keyword": "Object|Jewelry",
+   "fr": "Objet|Bijoux",
+   "category": "Object",
+   "phrase": "jewelry",
+   "prompts": [
+    "a photo of jewelry"
+   ]
+  },
+  {
+   "keyword": "Object|Clothing",
+   "fr": "Objet|Vêtements",
+   "category": "Object",
+   "phrase": "clothing",
+   "prompts": [
+    "a photo of clothes on a hanger or a rack"
+   ]
+  },
+  {
+   "keyword": "Object|Shoes",
+   "fr": "Objet|Chaussures",
+   "category": "Object",
+   "phrase": "shoes",
+   "prompts": [
+    "a photo of shoes"
+   ]
+  },
+  {
+   "keyword": "Object|Bag",
+   "fr": "Objet|Sac",
+   "category": "Object",
+   "phrase": "a bag",
+   "prompts": [
+    "a photo of a handbag"
+   ]
+  },
+  {
+   "keyword": "Object|Furniture",
+   "fr": "Objet|Meuble",
+   "category": "Object",
+   "phrase": "furniture",
+   "prompts": [
+    "a photo of furniture"
+   ]
+  },
+  {
+   "keyword": "Object|Toy",
+   "fr": "Objet|Jouet",
+   "category": "Object",
+   "phrase": "a toy",
+   "prompts": [
+    "a photo of a toy"
+   ]
+  },
+  {
+   "keyword": "Object|Plant",
+   "fr": "Objet|Plante",
+   "category": "Object",
+   "phrase": "a plant",
+   "prompts": [
+    "a photo of a potted plant"
+   ]
+  },
+  {
+   "keyword": "Object|Tree",
+   "fr": "Objet|Arbre",
+   "category": "Object",
+   "phrase": "a tree",
+   "prompts": [
+    "a photo of a tree"
+   ]
+  },
+  {
+   "keyword": "Object|Tools",
+   "fr": "Objet|Outils",
+   "category": "Object",
+   "phrase": "tools",
+   "prompts": [
+    "a photo of tools"
+   ]
+  },
+  {
+   "keyword": "Object|Machine",
+   "fr": "Objet|Machine",
+   "category": "Object",
+   "phrase": "a machine",
+   "prompts": [
+    "a photo of an industrial machine"
+   ]
+  },
+  {
+   "keyword": "Object|Musical instrument",
+   "fr": "Objet|Instrument de musique",
+   "category": "Object",
+   "phrase": "a musical instrument",
+   "prompts": [
+    "a photo of a musical instrument"
+   ]
+  },
+  {
+   "keyword": "Object|Balloons",
+   "fr": "Objet|Ballons",
+   "category": "Object",
+   "phrase": "balloons",
+   "prompts": [
+    "a photo of balloons"
+   ]
+  },
+  {
+   "keyword": "Object|Candles",
+   "fr": "Objet|Bougies",
+   "category": "Object",
+   "phrase": "candles",
+   "prompts": [
+    "a photo of candles"
+   ]
+  },
+  {
+   "keyword": "Object|Gift",
+   "fr": "Objet|Cadeau",
+   "category": "Object",
+   "phrase": "a gift",
+   "prompts": [
+    "a photo of a gift box"
+   ]
+  },
+  {
+   "keyword": "Object|Flag",
+   "fr": "Objet|Drapeau",
+   "category": "Object",
+   "phrase": "a flag",
+   "prompts": [
+    "a photo of a flag"
+   ]
+  },
+  {
+   "keyword": "Object|Statue",
+   "fr": "Objet|Statue",
+   "category": "Object",
+   "phrase": "a statue",
+   "prompts": [
+    "a photo of a statue or sculpture"
+   ]
+  },
+  {
+   "keyword": "Object|Painting",
+   "fr": "Objet|Peinture",
+   "category": "Object",
+   "phrase": "a painting",
+   "prompts": [
+    "a photo of a painting or artwork"
+   ]
+  },
+  {
+   "keyword": "Mood|Candid",
+   "fr": "Ambiance|Spontané",
+   "category": "Mood",
+   "phrase": "a candid moment",
+   "prompts": [
+    "a candid photo of people laughing"
+   ]
+  },
+  {
+   "keyword": "Mood|Joyful",
+   "fr": "Ambiance|Joyeux",
+   "category": "Mood",
+   "phrase": "a joyful moment",
+   "prompts": [
+    "a photo of people smiling and happy"
+   ]
+  },
+  {
+   "keyword": "Mood|Calm",
+   "fr": "Ambiance|Calme",
+   "category": "Mood",
+   "phrase": "a calm scene",
+   "prompts": [
+    "a calm and peaceful photo"
+   ]
+  },
+  {
+   "keyword": "Mood|Dramatic",
+   "fr": "Ambiance|Dramatique",
+   "category": "Mood",
+   "phrase": "a dramatic scene",
+   "prompts": [
+    "a dramatic photo with strong contrast"
+   ]
+  },
+  {
+   "keyword": "Mood|Moody",
+   "fr": "Ambiance|Sombre",
+   "category": "Mood",
+   "phrase": "a moody scene",
+   "prompts": [
+    "a dark and moody photo"
+   ]
+  },
+  {
+   "keyword": "Mood|Cozy",
+   "fr": "Ambiance|Chaleureux",
+   "category": "Mood",
+   "phrase": "a cozy scene",
+   "prompts": [
+    "a warm and cozy photo"
+   ]
+  },
+  {
+   "keyword": "Mood|Elegant",
+   "fr": "Ambiance|Élégant",
+   "category": "Mood",
+   "phrase": "an elegant scene",
+   "prompts": [
+    "an elegant and refined photo"
+   ]
+  },
+  {
+   "keyword": "Mood|Minimal",
+   "fr": "Ambiance|Minimaliste",
+   "category": "Mood",
+   "phrase": "a minimal composition",
+   "prompts": [
+    "a minimalist photo with a lot of empty space"
+   ]
+  },
+  {
+   "keyword": "Mood|Colorful",
+   "fr": "Ambiance|Coloré",
+   "category": "Mood",
+   "phrase": "a colourful scene",
+   "prompts": [
+    "a very colourful photo"
+   ]
+  },
+  {
+   "keyword": "Mood|Black and white",
+   "fr": "Ambiance|Noir et blanc",
+   "category": "Mood",
+   "phrase": "a black and white photo",
+   "prompts": [
+    "a black and white photograph"
+   ]
+  },
+  {
+   "keyword": "Mood|Silhouette",
+   "fr": "Ambiance|Silhouette",
+   "category": "Mood",
+   "phrase": "a silhouette",
+   "prompts": [
+    "a silhouette against the sky"
+   ]
+  },
+  {
+   "keyword": "Mood|Backlit",
+   "fr": "Ambiance|Contre-jour",
+   "category": "Mood",
+   "phrase": "a backlit scene",
+   "prompts": [
+    "a backlit photo with sun flare"
+   ]
+  },
+  {
+   "keyword": "Mood|Golden hour",
+   "fr": "Ambiance|Heure dorée",
+   "category": "Mood",
+   "phrase": "golden hour light",
+   "prompts": [
+    "a photo in warm golden hour light"
+   ]
+  },
+  {
+   "keyword": "Mood|Blurry",
+   "fr": "Ambiance|Flou",
+   "category": "Mood",
+   "phrase": "a blurry photo",
+   "prompts": [
+    "a blurry out-of-focus photo"
+   ]
+  },
+  {
+   "keyword": "Mood|Festive",
+   "fr": "Ambiance|Festif",
+   "category": "Mood",
+   "phrase": "a festive scene",
+   "prompts": [
+    "a festive celebration"
+   ]
+  },
+  {
+   "keyword": "Mood|Close-up",
+   "fr": "Ambiance|Gros plan",
+   "category": "Mood",
+   "phrase": "a close-up",
+   "prompts": [
+    "a close-up macro photo"
+   ]
+  },
+  {
+   "keyword": "Mood|Flat lay",
+   "fr": "Ambiance|Vue du dessus",
+   "category": "Mood",
+   "phrase": "a top view",
+   "prompts": [
+    "a flat lay photo taken from directly above"
+   ]
+  }
+ ]
+}

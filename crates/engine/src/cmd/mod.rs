@@ -4,6 +4,7 @@
 //! delete), `album.*`, `develop.*` (settings), `crop.*`, `mask.*`, `preset.*`, `version.*`,
 //! `edit.*` (undo/redo), and queries (`catalog.query`, `photo.inspect`, `develop.get`…).
 
+mod autoseg;
 mod before;
 pub(crate) mod browse;
 mod color;
@@ -12,25 +13,35 @@ mod cull;
 pub mod curves;
 pub(crate) mod denoise;
 mod develop;
+mod dust;
 mod edit;
 mod export;
 pub(crate) mod face_detect;
 mod face_models;
 mod face_recognize;
+mod facemesh;
 pub mod filters;
+mod gallery;
 pub mod keywords;
+pub mod lens;
 pub mod library;
 pub mod lut_profiles;
 pub mod manage;
-mod masks;
+pub(crate) mod masks;
 mod merge;
 pub mod metadata;
 pub mod missing;
 mod organize;
+mod people;
+mod places;
+mod portrait;
 mod prefs;
 mod preset_files;
 pub mod previews;
 mod query;
+mod restore;
+mod search;
+mod taste;
 mod xmp;
 
 use serde::Serialize;
@@ -125,12 +136,19 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(color::specs());
         v.extend(curves::specs());
         v.extend(masks::specs());
+        v.extend(restore::specs());
+        v.extend(crate::ai::specs());
         v.extend(organize::specs());
         v.extend(keywords::specs());
         v.extend(manage::specs());
         v.extend(previews::specs());
         v.extend(lut_profiles::specs());
         v.extend(cull::specs());
+        v.extend(facemesh::specs());
+        v.extend(search::specs());
+        v.extend(taste::specs());
+        v.extend(people::specs());
+        v.extend(places::specs());
         v.extend(convert::specs());
         v.extend(convert::edit_specs());
         v.extend(merge::specs());
@@ -138,6 +156,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(xmp::specs());
         v.extend(preset_files::specs());
         v.extend(prefs::specs());
+        v.extend(lens::specs());
         v.extend(export::specs());
         v.extend(before::specs());
         v.extend(browse::specs());
@@ -148,6 +167,10 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(face_models::specs());
         v.extend(face_detect::specs());
         v.extend(face_recognize::specs());
+        v.extend(dust::specs());
+        v.extend(gallery::specs());
+        v.extend(autoseg::specs());
+        v.extend(portrait::specs());
         v
     })
 }

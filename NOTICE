@@ -22,6 +22,13 @@ The port was modified by the LightCraft contributors (2026): translated from Pyt
 Rust on candle and restructured; each ported file says so. Because of this, crates/segment is
 licensed under the Apache License 2.0 only (LICENSE-APACHE), not under the MIT option.
 
+crates/search (lightcraft-search) ports the SigLIP model code of Hugging Face Transformers
+(src/transformers/models/siglip), Copyright The HuggingFace Team and Google, licensed under the Apache
+License 2.0, translated to Rust on candle by the LightCraft contributors (2026). It is licensed under the
+Apache License 2.0 only. The SigLIP 2 weights (google/siglip2-base-patch16-224, Apache License 2.0 per its
+model card) are not part of LightCraft and are never distributed with it: a user downloads them only when
+they choose to. See docs/semantic-search.md.
+
 The SAM 3 weights are not part of LightCraft and are never distributed with it. A user downloads
 the facebook/sam3 checkpoint only when they choose to (in the app, or by hand), under Meta's SAM
 License (https://github.com/facebookresearch/sam3/blob/main/LICENSE), a separate, non-OSI
@@ -35,9 +42,75 @@ Commercial use is subject to those terms, including applicable source, licence a
 notice obligations on redistribution. Enabling that offer in releases remains a
 maintainer decision. The ONNX reader and CPU/GPU executor are our Rust implementation;
 no darktable, RawSpeed, LibRaw or other GPL decoder/runtime code is included.
+crates/faces (lightcraft-faces) runs Google's MediaPipe Face Landmarker (BlazeFace detector and Face
+Mesh V2) and follows MediaPipe's published face landmarker graph (https://github.com/google-ai-edge/mediapipe,
+Apache License 2.0). Its TensorFlow Lite interpreter, kernels and zip reader are adapted from EffectCraft's
+effectcraft-segment (same authors, MIT OR Apache-2.0), and read the .tflite FlatBuffer as laid out by the
+TensorFlow Lite schema (Apache License 2.0). The face model file (face_landmarker.task, Apache License 2.0,
+Google LLC) is not part of LightCraft and is never distributed with it: a user downloads it only when they
+choose to (in the app, or by hand), checked against its published SHA-256. See docs/faces.md.
+crates/restore (lightcraft-restore) ports two inference networks, translated from Python/PyTorch to
+Rust on candle and modified by the LightCraft contributors (2026); each ported file says so:
+SCUNet (https://github.com/cszn/SCUNet, models/network_scunet.py, Copyright Kai Zhang et al.,
+Apache License 2.0; its Swin blocks derive from SwinIR, Apache-2.0) and SPAN
+(https://github.com/hongyuanyu/SPAN, basicsr/archs/span_arch.py, Apache License 2.0, built on
+BasicSR, Copyright 2018-2020 BasicSR Authors). crates/restore/src/pt.rs (a PyTorch checkpoint
+reader) comes from the sibling EffectCraft project (MIT OR Apache-2.0). Because of the ports,
+crates/restore is licensed under the Apache License 2.0 only (LICENSE-APACHE).
+
+The AI denoise and super-resolution weights are not part of LightCraft and are never distributed
+with it. A user downloads them only when they choose to: scunet_color_real_psnr.pth from the
+SCUNet authors' KAIR release (no separate licence stated; see docs/ai-restore.md) and
+2xNomosUni_span_multijpg.safetensors by Philip Hofmann, licensed CC BY 4.0
+(https://creativecommons.org/licenses/by/4.0/; https://huggingface.co/Phips/2xNomosUni_span_multijpg).
+
+crates/depth (lightcraft-depth) ports the Depth Anything V2 network code of Hugging Face Transformers
+(https://github.com/huggingface/transformers, src/transformers/models/depth_anything and dinov2),
+Copyright The HuggingFace Team, licensed under the Apache License 2.0. The port was modified by the
+LightCraft contributors (2026): translated from Python/PyTorch to Rust on candle and restructured; the
+file says so. Because of this, crates/depth is licensed under the Apache License 2.0 only (LICENSE-APACHE),
+not under the MIT option.
+
+The Depth Anything V2 Small weights (depth-anything/Depth-Anything-V2-Small-hf, Apache License 2.0,
+Copyright the Depth Anything authors, https://github.com/DepthAnything/Depth-Anything-V2) are not part of
+LightCraft and are never distributed with it. A user downloads them only when they choose to (SHA-256
+checked). The larger V2 models (Base, Large, Giant) are CC-BY-NC-4.0 and are never used. See
+docs/depth-inpaint.md.
+
+crates/inpaint (lightcraft-inpaint) runs MI-GAN (Picsart AI Research, MIT License, code and weights:
+https://github.com/Picsart-AI-Research/MI-GAN) from its ONNX export with a small interpreter of its own, on
+candle. The model file is not part of LightCraft and is never distributed with it; a user downloads it
+only when they choose to (SHA-256 checked). MI-GAN was trained on Places2 and FFHQ; see docs/depth-inpaint.md
+for what that means for the weights.
 
 Builds made with craft-fonts (the optional CRAFT_FONTS_DIR build input; all official releases)
 also embed the fonts listed in https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md
 (the Japanese fonts BIZ UDPGothic, BIZ UDMincho and Shippori Mincho; the web build embeds only BIZ
 UDPGothic Regular), under the SIL Open Font License 1.1. Release packages include each font's
 licence as OFL-<family>.txt.
+
+crates/lens (lightcraft-lens) reads the lens calibrations of the lensfun project's lens database
+(https://lensfun.github.io/, repository lensfun/lensfun, data/db/*.xml, revision
+43f9e001ab66c4fcdd4f400463f13b72f94b2288), licensed under the Creative Commons Attribution-ShareAlike 3.0
+licence (CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/). Only the database's data files are
+used (converted to crates/lens/data/lens-profiles.json.z by crates/lens/examples/build_db.rs: XML to
+compact JSON, focal range and widest aperture filled from the lens names where the entry lacked them);
+none of the lensfun library's code (LGPL) is read, linked or copied. The converted data file remains a
+separate file under CC BY-SA 3.0 (ShareAlike applies to adaptations of it); see crates/lens/data/README.md.
+
+crates/people (lightcraft-people) runs InsightFace's ArcFace face-recognition networks (w600k_r50 of the buffalo_l
+pack, w600k_mbf of the buffalo_s pack; https://github.com/deepinsight/insightface) from their ONNX files with the
+interpreter of crates/inpaint. The weights are released by InsightFace for non-commercial research purposes only;
+they are not part of LightCraft and are never distributed with it: a user downloads them only when they choose to
+(SHA-256 checked), after being shown these terms. No InsightFace code is copied; the alignment template is a list
+of ten coordinates.
+
+
+crates/places (lightcraft-places) resolves GPS positions to country / region / city offline with data from
+GeoNames (https://www.geonames.org/), licensed under the Creative Commons Attribution 4.0 licence (CC BY 4.0,
+https://creativecommons.org/licenses/by/4.0/). Files used: cities1000.zip, countryInfo.txt and
+admin1CodesASCII.txt from https://download.geonames.org/export/dump/ (retrieved 2026-10-09), converted to
+crates/places/data/places-cities.bin by crates/places/examples/build_db.rs (tab-separated text to a compact
+binary table; kept per place: name, position, country, first-level division, population; all other columns
+dropped). Required attribution: "Place data from GeoNames (https://www.geonames.org/), CC BY 4.0, converted by
+LightCraft." The data file stays a separate file loaded at run time; see crates/places/data/README.md.

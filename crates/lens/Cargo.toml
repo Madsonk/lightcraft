@@ -1,0 +1,17 @@
+[package]
+name = "lightcraft-lens"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LightCraft lens profiles: camera + lens recognition and distortion / vignetting / chromatic aberration corrections from a profile database (L1)"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+miniz_oxide = { workspace = true }
+
+[dev-dependencies]
+quick-xml = { workspace = true }

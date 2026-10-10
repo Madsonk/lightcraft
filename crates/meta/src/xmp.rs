@@ -694,6 +694,10 @@ mod tests {
             lens_model: Some("24-70mm".into()),
             lens_serial_number: Some("LS".into()),
             lens_spec: Some([24.0, 70.0, 2.8, 2.8]),
+            // maker-note facts and subject distance are read from Exif only (not part of the XMP interchange)
+            lens_max_aperture: None,
+            lens_type_id: None,
+            subject_distance: None,
             capture_time: DateTime::parse_iso("2022-05-06T07:08:09.123-04:00"),
             exposure_time: Some(1.0 / 125.0),
             f_number: Some(5.6),

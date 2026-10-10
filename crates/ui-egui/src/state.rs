@@ -18,6 +18,8 @@ pub enum ViewMode {
     Reference,
     /// A card per person named on faces (close-up, name, photo count).
     People,
+    /// The places photos were taken at: list, geotag, naming, suggestions.
+    Places,
 }
 
 /// The right-hand tool/panel shown next to the tool strip.
@@ -144,6 +146,9 @@ pub struct AppSettings {
     /// drawn at, up to the photo's own pixels and [`LOUPE_EDGE_CEILING`]). Not the old
     /// `previewEdge` key: its 2560 px default was the soft-image bug (issue #323).
     pub preview_limit: u32,
+    /// Resolution of the loupe while a slider is dragged, as a percentage of the display's real
+    /// pixels (100 = as sharp as at rest; lower trades sharpness for speed on slow machines).
+    pub drag_preview: u32,
     /// Edit in External Editor: the application ("" = the system's default for TIFF files).
     pub external_editor: String,
     /// Memory the caches may hold together, in MB (0 = automatic; `app.memoryBudget`).
@@ -166,6 +171,7 @@ impl Default for AppSettings {
             confirm_delete: false,
             gpu: true,
             preview_limit: 0,
+            drag_preview: 100,
             external_editor: String::new(),
             memory_mb: 0,
             film_names: true,
@@ -234,6 +240,18 @@ impl AppSettings {
     /// The edge Build Standard-Sized Previews uses.
     pub fn standard_preview_edge(&self) -> u32 {
         if self.preview_limit == 0 { STANDARD_PREVIEW_EDGE } else { self.preview_limit }
+    }
+}
+
+/// Loupe resolutions offered while a slider is dragged (percent of the display's pixels): sharp,
+/// balanced, fast. Anything below 100 shows a stretched, softer image until the slider is released.
+pub const DRAG_PREVIEWS: [u32; 3] = [100, 75, 60];
+
+impl AppSettings {
+    /// The fraction of the display's pixels the loupe is rendered at: 1.0 at rest and, by default,
+    /// while a slider is dragged (a drag render is never softer than the settled one).
+    pub fn preview_scale(&self, interacting: bool) -> f32 {
+        if interacting { self.drag_preview.clamp(40, 100) as f32 / 100.0 } else { 1.0 }
     }
 }
 
@@ -385,6 +403,12 @@ pub struct UiState {
     /// A SAM 3 download was started from the app (to report its end once).
     #[serde(skip)]
     pub sam_downloading: bool,
+    /// The face model download was started from the app (to report its end once), and Analyze
+    /// Faces was running at the last frame (to report its end once).
+    #[serde(skip)]
+    pub faces_downloading: bool,
+    #[serde(skip)]
+    pub faces_running: bool,
     /// When to start the zoomed-in detail pass of an AI mask (app time) and which mask: set by
     /// each click or description, so the pass runs once the clicking stops.
     #[serde(skip)]
@@ -652,6 +676,13 @@ pub enum Dialog {
         #[serde(default)]
         error: Option<String>,
     },
+    /// Analyze Faces needs the face model (3.8 MB, Apache-2.0, Google), which isn't installed: offer
+    /// to download it (size, licence, progress), then run Analyze Faces.
+    FacemeshModel {
+        /// Why the download couldn't start (shown in the dialog).
+        #[serde(default)]
+        error: Option<String>,
+    },
     /// Confirm moving photos to Recently Deleted.
     ConfirmDelete {
         count: usize,
@@ -729,6 +760,8 @@ impl Default for UiState {
             describe: None,
             detail_due: None,
             sam_downloading: false,
+            faces_downloading: false,
+            faces_running: false,
             renaming_component: None,
             quit: false,
             dragging_photos: None,
@@ -818,6 +851,9 @@ impl UiState {
         self.fullscreen = false;
         if !crate::state::PREVIEW_LIMITS.contains(&self.settings.preview_limit) {
             self.settings.preview_limit = AppSettings::default().preview_limit;
+        }
+        if !crate::state::DRAG_PREVIEWS.contains(&self.settings.drag_preview) {
+            self.settings.drag_preview = AppSettings::default().drag_preview;
         }
         match self.settings.startup_view {
             StartupView::Last => {}
