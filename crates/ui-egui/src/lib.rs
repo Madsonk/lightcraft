@@ -38,6 +38,8 @@ pub mod widgets;
 #[cfg(test)]
 mod tests_curve;
 #[cfg(test)]
+mod tests_dnd;
+#[cfg(test)]
 mod tests_filmstrip;
 #[cfg(test)]
 mod tests_grid;
@@ -59,8 +61,6 @@ mod tests_offline;
 mod tests_panels;
 #[cfg(test)]
 mod tests_people;
-#[cfg(test)]
-mod tests_dnd;
 #[cfg(test)]
 mod tests_places;
 #[cfg(test)]
