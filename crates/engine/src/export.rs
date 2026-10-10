@@ -1324,6 +1324,24 @@ pub fn export_formats(
     o: &ExportOptions,
     formats: &[(ExportFormat, u8)],
 ) -> Result<(Vec<(ExportFormat, Vec<u8>)>, usize, usize), String> {
+    prepare_formats(session, id, o, formats)?.run()
+}
+
+/// [`export_formats`] set up from the session: [`PreparedFormats::run`] does the heavy part
+/// (decode, render, encode) without it, so it can run on another thread.
+pub struct PreparedFormats {
+    job: crate::media::RenderJob,
+    meta: Option<Metadata>,
+    opts: ExportOptions,
+    formats: Vec<(ExportFormat, u8)>,
+}
+
+pub fn prepare_formats(
+    session: &mut crate::Session,
+    id: lightcraft_catalog::PhotoId,
+    o: &ExportOptions,
+    formats: &[(ExportFormat, u8)],
+) -> Result<PreparedFormats, String> {
     let p = session.catalog.photo(id).ok_or("no such photo")?;
     if let Some((f, _)) = formats.iter().find(|(f, _)| !f.is_rendered()) {
         return Err(format!("{f:?} is not a rendered format"));
@@ -1331,14 +1349,20 @@ pub fn export_formats(
     let (w, h) = output_size(p, o);
     let meta = export_metadata(p, o);
     let job = session.export_job(id, w, h, o.effective_space(), o.effective_depth())?;
-    let restore = crate::restore::Request::from_settings(&job.settings);
-    let r = crate::restore::apply(job.run().rendered?, restore)?;
-    let mut out = Vec::new();
-    for (f, q) in formats {
-        let oo = ExportOptions { format: *f, quality: *q, ..o.clone() };
-        out.push((*f, encode_rendered(&r, &oo, meta.as_ref())?));
+    Ok(PreparedFormats { job, meta, opts: o.clone(), formats: formats.to_vec() })
+}
+
+impl PreparedFormats {
+    pub fn run(self) -> Result<(Vec<(ExportFormat, Vec<u8>)>, usize, usize), String> {
+        let restore = crate::restore::Request::from_settings(&self.job.settings);
+        let r = crate::restore::apply(self.job.run().rendered?, restore)?;
+        let mut out = Vec::new();
+        for (f, q) in &self.formats {
+            let oo = ExportOptions { format: *f, quality: *q, ..self.opts.clone() };
+            out.push((*f, encode_rendered(&r, &oo, self.meta.as_ref())?));
+        }
+        Ok((out, r.image.width, r.image.height))
     }
-    Ok((out, r.image.width, r.image.height))
 }
 
 /// One photo's export, set up from the session ([`prepare_export`]). [`PreparedExport::run`] does

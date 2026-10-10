@@ -7,7 +7,7 @@ use lightcraft_catalog::PhotoId;
 use serde_json::{Value, json};
 
 use super::{CommandSpec, bad, bool_or, cmd, f64_or, str_param};
-use crate::export::{ExportFormat, ExportOptions, MetadataPolicy, Resize, SharpenFor, export_formats};
+use crate::export::{ExportFormat, ExportOptions, MetadataPolicy, PreparedFormats, Resize, SharpenFor, prepare_formats};
 use crate::gallery::{Entry, Variant, alt_text};
 use crate::presets::slug;
 use crate::{Result, Session};
@@ -30,7 +30,43 @@ fn write(path: &Path, bytes: &[u8]) -> Result<()> {
     std::fs::write(path, bytes).map_err(|e| crate::EngineError::Other(format!("{}: {e}", path.display())))
 }
 
-fn export(s: &mut Session, p: &Value) -> Result<Value> {
+/// A web gallery set up from the session: [`Plan::run`] renders and writes it without the session,
+/// so the app can run it on a worker thread (with progress and a Cancel) while the command
+/// itself ([`export`]) just runs it at once.
+pub struct Plan {
+    dir: String,
+    title: String,
+    base_url: String,
+    widths: Vec<u32>,
+    formats: Vec<ExportFormat>,
+    photos: Vec<PlanPhoto>,
+}
+
+struct PlanPhoto {
+    id: PhotoId,
+    name: String,
+    stem: String,
+    alt: String,
+    alt_source: &'static str,
+    caption: String,
+    /// One render per width, in order; the first that could not be set up ends the list.
+    rungs: Vec<std::result::Result<PreparedFormats, String>>,
+}
+
+impl Plan {
+    /// How many photos the gallery has.
+    pub fn photos(&self) -> usize {
+        self.photos.len()
+    }
+
+    /// The folder it is written in.
+    pub fn dir(&self) -> &str {
+        &self.dir
+    }
+}
+
+/// Read the parameters and the photos; nothing is rendered or written yet.
+pub fn plan(s: &mut Session, p: &Value) -> Result<Plan> {
     const C: &str = "gallery.export";
     let dir = str_param(p, "dir").filter(|d| !d.trim().is_empty()).ok_or_else(|| bad(C, "missing `dir` (the folder to write the gallery in)"))?;
     s.check_write_target(&format!("{}/index.html", dir.trim_end_matches('/'))).map_err(|e| bad(C, e))?;
@@ -62,9 +98,8 @@ fn export(s: &mut Session, p: &Value) -> Result<Value> {
     let base_url =
         str_param(p, "baseUrl").map(|u| if u.is_empty() || u.ends_with('/') { u.to_string() } else { format!("{u}/") }).unwrap_or_default();
     let keep_gps = bool_or(p, "keepLocation", false);
-    let root = Path::new(dir);
-    let (mut entries, mut failed, mut used, mut total) = (Vec::new(), Vec::<Value>::new(), HashSet::new(), 0usize);
-    let t0 = web_time::Instant::now();
+    let fm: Vec<(ExportFormat, u8)> = formats.iter().map(|f| (*f, if *f == ExportFormat::Avif { avif_q } else { jpeg_q })).collect();
+    let (mut photos, mut used) = (Vec::new(), HashSet::new());
     for id in &ids {
         let Some(ph) = s.catalog.photo(*id) else { continue };
         let stem = ph.file_name.rsplit_once('.').map_or(ph.file_name.as_str(), |(a, _)| a).to_string();
@@ -75,8 +110,7 @@ fn export(s: &mut Session, p: &Value) -> Result<Value> {
             name = format!("{name}-{}", id.0);
             used.insert(name.clone());
         }
-        let mut entry = Entry { id: id.0, name: name.clone(), alt, alt_source, caption, width: 0, height: 0, variants: Vec::new() };
-        let mut err = None;
+        let mut rungs = Vec::new();
         for w in &widths {
             let o = ExportOptions {
                 resize: Some(Resize { value: *w as f32, ..Resize::long_edge(*w) }),
@@ -85,55 +119,105 @@ fn export(s: &mut Session, p: &Value) -> Result<Value> {
                 remove_location: !keep_gps,
                 ..Default::default()
             };
-            let fm: Vec<(ExportFormat, u8)> = formats.iter().map(|f| (*f, if *f == ExportFormat::Avif { avif_q } else { jpeg_q })).collect();
-            match export_formats(s, *id, &o, &fm) {
-                Ok((files, fw, fh)) => {
-                    // (a photo smaller than a rung is not enlarged: that rung repeats the previous size)
-                    if entry.variants.iter().any(|v| v.width == fw && v.mime == mime(files[0].0)) {
-                        continue;
-                    }
-                    entry.width = entry.width.max(fw);
-                    entry.height = entry.height.max(fh);
-                    for (f, bytes) in files {
-                        let file = format!("img/{name}-{fw}.{}", f.extension());
-                        write(&root.join(&file), &bytes)?;
-                        total += bytes.len();
-                        entry.variants.push(Variant { file, mime: mime(f), width: fw, height: fh, bytes: bytes.len() });
-                    }
-                }
-                Err(e) => {
-                    err = Some(e);
-                    break;
-                }
+            let r = prepare_formats(s, *id, &o, &fm);
+            let failed = r.is_err();
+            rungs.push(r);
+            if failed {
+                break;
             }
         }
-        match err {
-            Some(e) => failed.push(json!([id.0, e])),
-            None => entries.push(entry),
+        photos.push(PlanPhoto { id: *id, name, stem, alt, alt_source, caption, rungs });
+    }
+    Ok(Plan { dir: dir.to_string(), title, base_url, widths, formats, photos })
+}
+
+impl Plan {
+    /// Render and write the gallery. `progress(done, current file)` is called before each photo
+    /// and once at the end; when it returns `false` the run stops after the photo in hand and the
+    /// pages are not written (`{cancelled: true}`; the images already written stay in `img/`).
+    pub fn run(self, progress: &mut dyn FnMut(usize, &str) -> bool) -> Result<Value> {
+        const C: &str = "gallery.export";
+        let Plan { dir, title, base_url, widths, formats, photos } = self;
+        let root = Path::new(&dir);
+        let total_photos = photos.len();
+        let (mut entries, mut failed, mut total) = (Vec::new(), Vec::<Value>::new(), 0usize);
+        let mut cancelled = false;
+        let t0 = web_time::Instant::now();
+        for (i, ph) in photos.into_iter().enumerate() {
+            if !progress(i, &ph.stem) {
+                cancelled = true;
+                break;
+            }
+            let name = ph.name;
+            let mut entry = Entry {
+                id: ph.id.0,
+                name: name.clone(),
+                alt: ph.alt,
+                alt_source: ph.alt_source,
+                caption: ph.caption,
+                width: 0,
+                height: 0,
+                variants: Vec::new(),
+            };
+            let mut err = None;
+            for rung in ph.rungs {
+                match rung.and_then(PreparedFormats::run) {
+                    Ok((files, fw, fh)) => {
+                        // (a photo smaller than a rung is not enlarged: that rung repeats the previous size)
+                        if entry.variants.iter().any(|v| v.width == fw && v.mime == mime(files[0].0)) {
+                            continue;
+                        }
+                        entry.width = entry.width.max(fw);
+                        entry.height = entry.height.max(fh);
+                        for (f, bytes) in files {
+                            let file = format!("img/{name}-{fw}.{}", f.extension());
+                            write(&root.join(&file), &bytes)?;
+                            total += bytes.len();
+                            entry.variants.push(Variant { file, mime: mime(f), width: fw, height: fh, bytes: bytes.len() });
+                        }
+                    }
+                    Err(e) => {
+                        err = Some(e);
+                        break;
+                    }
+                }
+            }
+            match err {
+                Some(e) => failed.push(json!([ph.id.0, e])),
+                None => entries.push(entry),
+            }
         }
+        progress(total_photos, "");
+        if cancelled {
+            return Ok(json!({"cancelled": true, "dir": dir, "photos": entries.len(), "total": total_photos, "failed": failed}));
+        }
+        if entries.is_empty() {
+            return Err(bad(C, format!("no photo could be exported: {failed:?}")));
+        }
+        write(&root.join("index.html"), crate::gallery::page(&title, &entries, &base_url).as_bytes())?;
+        write(&root.join("snippet.html"), crate::gallery::snippet(&entries).as_bytes())?;
+        let manifest = serde_json::to_vec_pretty(&crate::gallery::manifest(&title, &entries)).unwrap_or_default();
+        write(&root.join("gallery.json"), &manifest)?;
+        let files: usize = entries.iter().map(|e| e.variants.len()).sum();
+        Ok(json!({
+            "dir": dir, "photos": entries.len(), "files": files, "bytes": total, "seconds": (t0.elapsed().as_secs_f64() * 10.0).round() / 10.0,
+            "widths": widths, "formats": formats.iter().map(|f| f.extension()).collect::<Vec<_>>(),
+            "index": root.join("index.html").display().to_string(), "failed": failed,
+            "altFromFilename": entries.iter().filter(|e| e.alt_source == "filename").count(),
+        }))
     }
-    if entries.is_empty() {
-        return Err(bad(C, format!("no photo could be exported: {failed:?}")));
-    }
-    write(&root.join("index.html"), crate::gallery::page(&title, &entries, &base_url).as_bytes())?;
-    write(&root.join("snippet.html"), crate::gallery::snippet(&entries).as_bytes())?;
-    let manifest = serde_json::to_vec_pretty(&crate::gallery::manifest(&title, &entries)).unwrap_or_default();
-    write(&root.join("gallery.json"), &manifest)?;
-    let files: usize = entries.iter().map(|e| e.variants.len()).sum();
-    Ok(json!({
-        "dir": dir, "photos": entries.len(), "files": files, "bytes": total, "seconds": (t0.elapsed().as_secs_f64() * 10.0).round() / 10.0,
-        "widths": widths, "formats": formats.iter().map(|f| f.extension()).collect::<Vec<_>>(),
-        "index": root.join("index.html").display().to_string(), "failed": failed,
-        "altFromFilename": entries.iter().filter(|e| e.alt_source == "filename").count(),
-    }))
+}
+
+fn export(s: &mut Session, p: &Value) -> Result<Value> {
+    plan(s, p)?.run(&mut |_, _| true)
 }
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![cmd!(
         query "gallery.export",
         "Export Web Gallery…",
-        ["File", "Export Web Gallery…"],
-        None,
+        ["File"],
+        Some("Cmd+Alt+G"),
         "{dir, ids?, title?, widths?: [480,960,1600,2400], formats?: [avif, webp, jpeg] (avif+jpeg; a JPEG fallback is always written), quality? (JPEG 82), avifQuality? (55), baseUrl? (for the JSON-LD), keepLocation?: bool (GPS is removed by default)} — a static web gallery of the selection (else the view): each photo rendered once per width and encoded in each format (never enlarged), `index.html` (responsive <picture>/srcset, lazy loading, lightbox, JSON-LD ImageGallery, no external request), `snippet.html` (the grid alone, for an Odoo page), `gallery.json`, `img/`. Alt text from caption, title, keywords, else the file name (reported). Writes nothing outside `dir` → {dir, photos, files, bytes, seconds, widths, formats, index, failed, altFromFilename}",
         super::always,
         export
@@ -196,6 +280,48 @@ mod tests {
         let r = s.execute("gallery.export", &json!({"dir": dir.to_str().unwrap(), "ids": [first], "widths": [150], "formats": ["nope"]})).unwrap();
         assert_eq!(r["formats"], json!(["jpg"]));
         assert_eq!(r["files"], 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_planned_gallery_gives_the_same_files_and_reports_progress() {
+        let mut s = Session::with_demo();
+        let ids: Vec<u64> = s.visible_cloned().iter().take(3).map(|i| i.0).collect();
+        let (a, b) = (temp("plan-a"), temp("plan-b"));
+        let params = |d: &std::path::Path| json!({"dir": d.to_str().unwrap(), "ids": ids, "widths": [200], "formats": []});
+        let direct = s.execute("gallery.export", &params(&a)).unwrap();
+        let plan = plan(&mut s, &params(&b)).unwrap();
+        assert_eq!((plan.photos(), plan.dir()), (3, b.to_str().unwrap()));
+        let mut seen = Vec::new();
+        let via_plan = plan
+            .run(&mut |done, name| {
+                seen.push((done, name.to_string()));
+                true
+            })
+            .unwrap();
+        // before each photo, then once more at the end
+        assert_eq!(seen.iter().map(|(d, _)| *d).collect::<Vec<_>>(), vec![0, 1, 2, 3], "{seen:?}");
+        assert!(seen[..3].iter().all(|(_, n)| !n.is_empty()) && seen[3].1.is_empty());
+        for k in ["photos", "files", "bytes"] {
+            assert_eq!(direct[k], via_plan[k], "{k}");
+        }
+        for f in ["index.html", "snippet.html", "gallery.json"] {
+            assert_eq!(std::fs::read(a.join(f)).unwrap().len() > 0, b.join(f).is_file(), "{f}");
+        }
+        let _ = (std::fs::remove_dir_all(&a), std::fs::remove_dir_all(&b));
+    }
+
+    #[test]
+    fn cancelling_a_planned_gallery_stops_after_the_photo_in_hand_and_writes_no_page() {
+        let mut s = Session::with_demo();
+        let ids: Vec<u64> = s.visible_cloned().iter().take(4).map(|i| i.0).collect();
+        let dir = temp("cancel");
+        let plan = plan(&mut s, &json!({"dir": dir.to_str().unwrap(), "ids": ids, "widths": [150], "formats": []})).unwrap();
+        // a Cancel pressed while the second photo is being made
+        let r = plan.run(&mut |done, _| done < 2).unwrap();
+        assert_eq!(r["cancelled"], true, "{r}");
+        assert_eq!((r["photos"].as_u64(), r["total"].as_u64()), (Some(2), Some(4)), "{r}");
+        assert!(!dir.join("index.html").exists() && dir.join("img").is_dir());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

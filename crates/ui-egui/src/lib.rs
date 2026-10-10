@@ -7,12 +7,13 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 /// The version shown to people (About, System Info, `--version`): the upstream release plus the local build tag.
-pub const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-local-ia-v8");
+pub const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-local-ia-v9");
 
 pub mod control;
 pub mod credits;
 pub mod export_task;
 pub mod headless;
+pub mod heavy;
 pub mod i18n;
 pub mod icons;
 pub mod import;
@@ -75,6 +76,8 @@ mod tests_switch_library;
 mod tests_titlebar;
 #[cfg(test)]
 mod tests_unsaved;
+#[cfg(test)]
+mod tests_v9;
 #[cfg(test)]
 mod tests_zoom;
 
@@ -259,6 +262,13 @@ pub struct LightcraftApp {
     pub tasks: tasks::Tasks,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
     pub last_export_result: Option<Value>,
+    /// What each finished heavy task (web gallery, dust from a series, suggested keywords) ended
+    /// with, by label (`ui.inspect` → `lastTask`).
+    pub last_task: std::collections::BTreeMap<String, Value>,
+    /// Photo ▸ Sorting Help: the last answers of its three helpers.
+    pub sorting: panels::sorting_help::State,
+    /// The "Resume" bar shown at launch.
+    pub resume: panels::resume::State,
     /// The look the loupe shows while the pointer rests on a preset or profile (set by the
     /// panels each frame; nothing is committed, no history entry).
     pub hover_preview: Option<HoverPreview>,
@@ -329,6 +339,9 @@ impl LightcraftApp {
             export: None,
             tasks: Default::default(),
             last_export_result: None,
+            last_task: Default::default(),
+            sorting: Default::default(),
+            resume: Default::default(),
             hover_preview: None,
             window_is_fullscreen: false,
             gpu_applied: None,
@@ -1019,6 +1032,8 @@ impl LightcraftApp {
         import::scan_progress(self, &ctx);
         lightroom_import::progress(self, &ctx);
         export_task::poll(self, &ctx);
+        tasks::show(self, &ctx);
+        panels::resume::show(self, &ctx);
         pick::poll(self, &ctx);
         panels::grid::drag_feedback(self, &ctx);
         panels::left::album_drag_feedback(self, &ctx);

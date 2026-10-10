@@ -448,3 +448,30 @@ fn the_new_decisions_are_saved_with_the_library_and_an_old_people_file_still_loa
 fn people_json_from(p: &Path) -> Value {
     serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap()
 }
+
+#[test]
+fn a_sync_that_changes_nothing_leaves_no_step_to_undo() {
+    let (mut s, ids) = session();
+    named(&mut s, &ids);
+    // a decision to come back to: Cleo's only face is "unknown person", so the photo loses her keyword
+    let f = faces(&mut s, ids[6])[0].0.clone();
+    s.execute("people.unknown", &json!({"face": f})).unwrap();
+    assert!(!has(&s, ids[6], "People|Cleo"));
+    let steps = s.undo.len();
+    let sy = s.execute("people.sync", &json!({})).unwrap();
+    assert_eq!((sy["added"].as_u64(), sy["removed"].as_u64()), (Some(0), Some(0)), "{sy}");
+    assert_eq!(s.undo.len(), steps, "no catalog step either");
+    // `people.undo` takes back the decision before the sync, not an empty "Tag people"
+    let r = s.execute("people.undo", &json!({})).unwrap();
+    assert_ne!(r["undone"], "Tag people", "{r}");
+    assert!(has(&s, ids[6], "People|Cleo"), "{r}");
+    // a sync that does change something is still one undoable step
+    let awa = person(&mut s, "Awa");
+    s.execute("people.tagPhotos", &json!({"person": awa, "ids": [ids[6].0]})).unwrap();
+    s.execute("photo.setMeta", &json!({"ids": [ids[0].0], "removeKeywords": ["People|Awa"]})).unwrap();
+    let sy = s.execute("people.sync", &json!({})).unwrap();
+    assert_eq!(sy["added"], 1, "{sy}");
+    let r = s.execute("people.undo", &json!({})).unwrap();
+    assert_eq!(r["undone"], "Tag people", "{r}");
+    assert!(!has(&s, ids[0], "People|Awa"));
+}

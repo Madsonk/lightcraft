@@ -9,6 +9,165 @@ use crate::state::RightPanel;
 use crate::theme::Tokens;
 use crate::widgets::icon_button;
 
+/// One tool of the strip: its widget id (`icon:{id}`), icon, short label under it, tooltip, and the
+/// command that opens it.
+struct Tool {
+    id: &'static str,
+    icon: Icon,
+    label: &'static str,
+    tip: &'static str,
+    command: &'static str,
+    panel: Option<RightPanel>,
+    needs_photo: bool,
+}
+
+const RETOUCH: &[Tool] = &[
+    Tool {
+        id: "presets",
+        icon: Icon::Presets,
+        label: "Presets",
+        tip: "Presets: one-click looks (Shift+P)",
+        command: "panel.presets",
+        panel: None,
+        needs_photo: true,
+    },
+    Tool {
+        id: "edit",
+        icon: Icon::Sliders,
+        label: "Edit",
+        tip: "Edit: light, colour, effects, detail, optics (E)",
+        command: "panel.edit",
+        panel: Some(RightPanel::Edit),
+        needs_photo: true,
+    },
+    Tool {
+        id: "crop",
+        icon: Icon::Crop,
+        label: "Crop",
+        tip: "Crop & Rotate: crop, straighten, aspect (C)",
+        command: "panel.crop",
+        panel: Some(RightPanel::Crop),
+        needs_photo: true,
+    },
+    Tool {
+        id: "remove",
+        icon: Icon::Eraser,
+        label: "Remove",
+        tip: "Remove: heal, clone, dust spots; dust from a series and portrait retouch (H)",
+        command: "panel.remove",
+        panel: Some(RightPanel::Remove),
+        needs_photo: true,
+    },
+    Tool {
+        id: "masking",
+        icon: Icon::Mask,
+        label: "Masking",
+        tip: "Masking: local adjustments on the subject, the sky, a brush or a gradient (M)",
+        command: "panel.masking",
+        panel: Some(RightPanel::Masking),
+        needs_photo: true,
+    },
+    Tool {
+        id: "redeye",
+        icon: Icon::Eye,
+        label: "Red Eye",
+        tip: "Red Eye: fix red pupils",
+        command: "panel.redeye",
+        panel: Some(RightPanel::RedEye),
+        needs_photo: true,
+    },
+];
+
+const HISTORY: &[Tool] = &[
+    Tool {
+        id: "versions",
+        icon: Icon::Versions,
+        label: "Versions",
+        tip: "Versions: named snapshots of this photo's edits (Shift+V)",
+        command: "panel.versions",
+        panel: Some(RightPanel::Versions),
+        needs_photo: true,
+    },
+    Tool {
+        id: "activity",
+        icon: Icon::Activity,
+        label: "History",
+        tip: "History & Activity: every step, undo any of them (Y)",
+        command: "panel.activity",
+        panel: Some(RightPanel::Activity),
+        needs_photo: false,
+    },
+];
+
+const ORGANIZE: &[Tool] = &[
+    Tool {
+        id: "keywords",
+        icon: Icon::Tag,
+        label: "Keywords",
+        tip: "Keywords: add, paint and suggest keywords (K)",
+        command: "panel.keywords",
+        panel: Some(RightPanel::Keywords),
+        needs_photo: true,
+    },
+    Tool {
+        id: "info",
+        icon: Icon::Info,
+        label: "Info",
+        tip: "Info: camera, lens, exposure, file, metadata (I)",
+        command: "panel.info",
+        panel: Some(RightPanel::Info),
+        needs_photo: true,
+    },
+];
+
+/// Height of a tool: the icon box and the label under it.
+const TOOL_H: f32 = 44.0;
+
+fn tool(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, tool: &Tool, has_photo: bool) {
+    let on = match tool.panel {
+        Some(p) => app.ui.right == p || (p == RightPanel::Edit && app.ui.right == RightPanel::Profiles),
+        None => app.ui.presets,
+    };
+    let enabled = has_photo || !tool.needs_photo;
+    let (r, resp) = ui.allocate_exact_size(vec2(t.strip_w, TOOL_H), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let tip = crate::i18n::tr(tool.tip);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, tip));
+    crate::widgets::register(ui.ctx(), format!("icon:{}", tool.id), r);
+    let p = ui.painter();
+    let sq = egui::Rect::from_center_size(egui::pos2(r.center().x, r.top() + 17.0), vec2(30.0, 30.0));
+    if on {
+        p.rect_filled(sq, 4.0, t.tool_active);
+    } else if resp.hovered() && enabled {
+        p.rect_filled(sq, 4.0, t.hover.gamma_multiply(0.7));
+    }
+    let color = if !enabled {
+        t.text_disabled
+    } else if on {
+        t.pick
+    } else if resp.hovered() {
+        t.text
+    } else {
+        t.icon
+    };
+    crate::icons::paint(p, egui::Rect::from_center_size(sq.center(), vec2(20.0, 20.0)), tool.icon, color);
+    p.text(
+        egui::pos2(r.center().x, r.bottom() - 6.0),
+        egui::Align2::CENTER_CENTER,
+        crate::i18n::tr(tool.label),
+        t.font(9.0),
+        if on { t.text } else { t.text_dim },
+    );
+    if resp.on_hover_text(tip).clicked() {
+        let _ = app.run(tool.command, json!({}));
+    }
+}
+
+/// A group's small title.
+fn caption(ui: &mut egui::Ui, t: &Tokens, text: &str) {
+    let (r, _) = ui.allocate_exact_size(vec2(t.strip_w, 14.0), egui::Sense::hover());
+    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, crate::i18n::tr(text), t.font(9.0), t.text_dim);
+}
+
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::right("tool_strip")
@@ -17,62 +176,46 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         .frame(
             egui::Frame::NONE
                 .fill(t.chrome)
-                .inner_margin(egui::Margin { left: 0, right: 0, top: 8, bottom: 8 })
+                .inner_margin(egui::Margin { left: 0, right: 0, top: 6, bottom: 6 })
                 .stroke(egui::Stroke::new(1.0, t.divider)),
         )
         .show(ui, |ui| {
             let has_photo = app.session.active().is_some();
+            // the groups: retouch (what changes the photo), history (what it went through),
+            // organize (what describes it); behaviour and shortcuts are the same as before
             ui.vertical_centered(|ui| {
-                ui.spacing_mut().item_spacing.y = 6.0;
-                let sz = vec2(t.strip_w, 40.0);
-                if icon_button(ui, "presets", Icon::Presets, sz, app.ui.presets, has_photo, "Presets (Shift+P)").clicked() {
-                    let _ = app.run("panel.presets", json!({}));
-                }
-                for (id, icon, panel, tip) in [
-                    ("edit", Icon::Sliders, RightPanel::Edit, "Edit (E)"),
-                    ("crop", Icon::Crop, RightPanel::Crop, "Crop & Rotate (C)"),
-                    ("remove", Icon::Eraser, RightPanel::Remove, "Remove (H)"),
-                    ("masking", Icon::Mask, RightPanel::Masking, "Masking (M)"),
-                    ("redeye", Icon::Eye, RightPanel::RedEye, "Red Eye"),
-                ] {
-                    let on = app.ui.right == panel || (panel == RightPanel::Edit && app.ui.right == RightPanel::Profiles);
-                    if icon_button(ui, id, icon, sz, on, has_photo, tip).clicked() {
-                        let _ = app.run(&format!("panel.{id}"), json!({}));
-                    }
-                    if id == "edit" {
-                        separator(ui, &t);
-                    }
+                ui.spacing_mut().item_spacing.y = 0.0;
+                caption(ui, &t, "Retouch");
+                for x in RETOUCH {
+                    tool(app, ui, &t, x, has_photo);
                 }
                 separator(ui, &t);
-                if icon_button(ui, "versions", Icon::Versions, sz, app.ui.right == RightPanel::Versions, has_photo, "Versions (Shift+V)").clicked() {
-                    let _ = app.run("panel.versions", json!({}));
+                caption(ui, &t, "History");
+                for x in HISTORY {
+                    tool(app, ui, &t, x, has_photo);
                 }
-                if icon_button(ui, "activity", Icon::Activity, sz, app.ui.right == RightPanel::Activity, true, "History & Activity (Y)").clicked() {
-                    let _ = app.run("panel.activity", json!({}));
-                }
-                if icon_button(ui, "more", Icon::More, sz, false, true, "More").clicked() {
-                    app.ui.dialog = Some(crate::state::Dialog::About);
+                separator(ui, &t);
+                caption(ui, &t, "Organize");
+                for x in ORGANIZE {
+                    tool(app, ui, &t, x, has_photo);
                 }
             });
-            // bottom icons
+            // About, alone at the bottom
             let bottom = ui.max_rect().bottom();
             let mut child = ui.new_child(
                 egui::UiBuilder::new()
-                    .max_rect(egui::Rect::from_min_max(egui::pos2(ui.max_rect().left(), bottom - 96.0), ui.max_rect().right_bottom())),
+                    .max_rect(egui::Rect::from_min_max(egui::pos2(ui.max_rect().left(), bottom - 46.0), ui.max_rect().right_bottom())),
             );
             child.vertical_centered(|ui| {
-                let sz = vec2(t.strip_w, 40.0);
-                if icon_button(ui, "keywords", Icon::Tag, sz, app.ui.right == RightPanel::Keywords, has_photo, "Keywords (K)").clicked() {
-                    let _ = app.run("panel.keywords", json!({}));
-                }
-                if icon_button(ui, "info", Icon::Info, sz, app.ui.right == RightPanel::Info, has_photo, "Info (I)").clicked() {
-                    let _ = app.run("panel.info", json!({}));
+                if icon_button(ui, "more", Icon::More, vec2(t.strip_w, 40.0), false, true, "About LightCraft and the project's links").clicked() {
+                    app.ui.dialog = Some(crate::state::Dialog::About);
                 }
             });
         });
 }
 
 fn separator(ui: &mut egui::Ui, t: &Tokens) {
+    ui.add_space(4.0);
     let (r, _) = ui.allocate_exact_size(vec2(t.strip_w - 16.0, 1.0), egui::Sense::hover());
     ui.painter().rect_filled(r, 0.0, t.button_border.gamma_multiply(0.7));
 }

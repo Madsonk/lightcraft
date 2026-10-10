@@ -105,6 +105,19 @@ impl Searcher {
 }
 
 impl Searcher {
+    /// A second handle on the same model, index and run, for a worker thread (the model folders as
+    /// they are now; the model is loaded once for both). Its download state is its own.
+    pub fn share(&self) -> Searcher {
+        Searcher {
+            dir: self.dir.clone(),
+            mirrors_file: self.mirrors_file.clone(),
+            #[cfg(feature = "search")]
+            core: self.core.share(),
+            #[cfg(feature = "search")]
+            taste_mem: std::sync::Mutex::new(self.taste_mem()),
+        }
+    }
+
     /// Whether this build can search by meaning at all.
     pub const AVAILABLE: bool = cfg!(feature = "search");
 
@@ -166,5 +179,49 @@ impl Searcher {
     }
     pub fn cancel_job(&self) -> bool {
         false
+    }
+}
+
+/// `keywords.suggest` in two halves for a frontend that wants to wait for the model without
+/// freezing: [`SuggestJob::new`] reads the session, [`SuggestJob::run`] (any thread) loads the model
+/// if needed and scores the photos, [`SuggestJob::finish`] writes what the `autoAccept` setting
+/// lets through and returns what the command returns.
+pub struct SuggestJob {
+    #[cfg(feature = "search")]
+    plan: keywords::SuggestPlan,
+}
+
+/// What [`SuggestJob::run`] found.
+pub struct SuggestFound {
+    #[cfg(feature = "search")]
+    out: keywords::SuggestOutcome,
+}
+
+impl SuggestJob {
+    pub fn new(s: &mut crate::Session, p: &serde_json::Value) -> Result<SuggestJob, String> {
+        #[cfg(feature = "search")]
+        return keywords::plan_suggest(s, p).map(|plan| SuggestJob { plan }).map_err(|e| e.to_string());
+        #[cfg(not(feature = "search"))]
+        {
+            let _ = (s, p);
+            Err(UNAVAILABLE.into())
+        }
+    }
+
+    pub fn run(self) -> Result<SuggestFound, String> {
+        #[cfg(feature = "search")]
+        return self.plan.run().map(|out| SuggestFound { out }).map_err(|e| e.to_string());
+        #[cfg(not(feature = "search"))]
+        Err(UNAVAILABLE.into())
+    }
+
+    pub fn finish(s: &mut crate::Session, found: SuggestFound) -> Result<serde_json::Value, String> {
+        #[cfg(feature = "search")]
+        return keywords::finish_suggest(s, found.out).map_err(|e| e.to_string());
+        #[cfg(not(feature = "search"))]
+        {
+            let _ = (s, found);
+            Err(UNAVAILABLE.into())
+        }
     }
 }

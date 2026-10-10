@@ -64,7 +64,7 @@ struct VocabFile {
     removed: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub auto_accept: bool,
@@ -209,11 +209,10 @@ struct TextCache {
 
 /// Centroid (mean of the prompt embeddings, renormalised) of each entry and the model's
 /// `(scale, bias)`, cached on disk by prompt (so the model is only loaded when a prompt is new).
-fn centroids(s: &mut Session, entries: &[Entry]) -> Result<(Vec<Vec<f32>>, (f32, f32))> {
-    let dir = store_dir(s);
-    let model = s.searcher.with_store(dir.clone(), |st| st.model.clone()).map_err(other)?;
+fn centroids(g: &Searcher, dir: &Option<PathBuf>, entries: &[Entry]) -> Result<(Vec<Vec<f32>>, (f32, f32))> {
+    let model = g.with_store(dir.clone(), |st| st.model.clone()).map_err(other)?;
     let cache_name = format!("vocab-text-{model}.json");
-    let mut cache: TextCache = read_json(&dir, &cache_name);
+    let mut cache: TextCache = read_json(dir, &cache_name);
     let mut need: Vec<String> = Vec::new();
     for e in entries {
         for pr in &e.prompts {
@@ -225,20 +224,20 @@ fn centroids(s: &mut Session, entries: &[Entry]) -> Result<(Vec<Vec<f32>>, (f32,
     if !need.is_empty() || cache.scale == 0.0 {
         for chunk in need.chunks(32) {
             let refs: Vec<&str> = chunk.iter().map(String::as_str).collect();
-            let v = s.searcher.embed_texts(&refs).map_err(other)?;
+            let v = g.embed_texts(&refs).map_err(other)?;
             for (p, v) in chunk.iter().zip(v) {
                 cache.embeddings.insert(p.clone(), v);
             }
         }
         // the model is loaded now: read its calibration off two probabilities (taken where the
         // sigmoid is not saturated)
-        let (p0, p1) = (s.searcher.probability(0.05), s.searcher.probability(0.15));
+        let (p0, p1) = (g.probability(0.05), g.probability(0.15));
         if let (Some(p0), Some(p1)) = (p0, p1) {
             let logit = |p: f32| (p.clamp(1e-7, 1.0 - 1e-7) / (1.0 - p.clamp(1e-7, 1.0 - 1e-7))).ln();
             cache.scale = (logit(p1) - logit(p0)) / 0.1;
             cache.bias = logit(p0) - cache.scale * 0.05;
         }
-        write_json(&dir, &cache_name, &cache)?;
+        write_json(dir, &cache_name, &cache)?;
     }
     let cent = entries
         .iter()
@@ -278,22 +277,20 @@ struct Cand {
 }
 
 /// Per entry, mean and standard deviation of the cosine over every vector of the index.
-fn library_stats(s: &mut Session, cent: &[Vec<f32>]) -> Result<Vec<(f32, f32)>> {
-    let dir = store_dir(s);
-    s.searcher
-        .with_store(dir, |st| {
-            let vs: Vec<&[f32]> = st.vectors.iter().map(|(_, v)| v).collect();
-            let n = vs.len().max(1) as f64;
-            cent.par_iter()
-                .map(|c| {
-                    let cs: Vec<f64> = vs.iter().map(|v| lightcraft_search::index::dot(v, c) as f64).collect();
-                    let m = cs.iter().sum::<f64>() / n;
-                    let sd = (cs.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / n).sqrt();
-                    (m as f32, (sd as f32).max(1e-4))
-                })
-                .collect()
-        })
-        .map_err(other)
+fn library_stats(g: &Searcher, dir: &Option<PathBuf>, cent: &[Vec<f32>]) -> Result<Vec<(f32, f32)>> {
+    g.with_store(dir.clone(), |st| {
+        let vs: Vec<&[f32]> = st.vectors.iter().map(|(_, v)| v).collect();
+        let n = vs.len().max(1) as f64;
+        cent.par_iter()
+            .map(|c| {
+                let cs: Vec<f64> = vs.iter().map(|v| lightcraft_search::index::dot(v, c) as f64).collect();
+                let m = cs.iter().sum::<f64>() / n;
+                let sd = (cs.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / n).sqrt();
+                (m as f32, (sd as f32).max(1e-4))
+            })
+            .collect()
+    })
+    .map_err(other)
 }
 
 /// Map a z-score to 0..1 so that the rule's threshold is 0.5.
@@ -510,24 +507,34 @@ struct Prepared {
 }
 
 fn prepare(s: &mut Session, p: &Value) -> Result<Prepared> {
-    s.searcher.model_dir().map_err(other)?;
-    let entries = entries_of(s);
-    let (cent, (scale, bias)) = centroids(s, &entries)?;
-    let stats = library_stats(s, &cent)?;
     let dir = store_dir(s);
-    let pf: ProbeFile = read_json(&dir, "keyword-probes.json");
-    let model = s.searcher.with_store(dir, |st| st.model.clone()).map_err(other)?;
+    prepare_with(&s.searcher, &dir, entries_of(s), settings_of(s).language, p)
+}
+
+/// [`prepare`] from what it needs of the session (the model, the folder, the vocabulary), so it
+/// can also run on a worker thread.
+fn prepare_with(g: &Searcher, dir: &Option<PathBuf>, entries: Vec<Entry>, lang: String, p: &Value) -> Result<Prepared> {
+    g.model_dir().map_err(other)?;
+    let (cent, (scale, bias)) = centroids(g, dir, &entries)?;
+    let stats = library_stats(g, dir, &cent)?;
+    let pf: ProbeFile = read_json(dir, "keyword-probes.json");
+    let model = g.with_store(dir.clone(), |st| st.model.clone()).map_err(other)?;
     let probes = if pf.embedding == model { pf.probes } else { Vec::new() };
-    Ok(Prepared {
-        entries,
-        cent,
-        stats,
-        probes,
-        lang: settings_of(s).language,
-        p_min: f64_or(p, "minProbability", P_MIN as f64).clamp(0.0, 1.0) as f32,
-        scale,
-        bias,
-    })
+    Ok(Prepared { entries, cent, stats, probes, lang, p_min: f64_or(p, "minProbability", P_MIN as f64).clamp(0.0, 1.0) as f32, scale, bias })
+}
+
+type Keyed = Vec<(PhotoId, u64, Vec<String>)>;
+
+/// The photos that can be looked up (not videos) with the key of their content and keywords.
+fn keyed_of(s: &Session, ids: &[PhotoId]) -> Keyed {
+    ids.iter()
+        .filter_map(|i| {
+            s.catalog
+                .photo(*i)
+                .filter(|p| p.kind != MediaKind::Video)
+                .map(|p| (*i, lightcraft_search::key_of(&crate::media::content_key(p)), p.meta.keywords.clone()))
+        })
+        .collect()
 }
 
 /// Suggestions per photo: `(id, existing keywords, candidates sorted by score)`.
@@ -540,18 +547,20 @@ fn suggest_for(
     cats: &Option<Vec<String>>,
 ) -> Result<(Vec<(PhotoId, Vec<Cand>)>, usize)> {
     let dir = store_dir(s);
-    let keyed: Vec<(PhotoId, u64, Vec<String>)> = ids
-        .iter()
-        .filter_map(|i| {
-            s.catalog
-                .photo(*i)
-                .filter(|p| p.kind != MediaKind::Video)
-                .map(|p| (*i, lightcraft_search::key_of(&crate::media::content_key(p)), p.meta.keywords.clone()))
-        })
-        .collect();
-    let vs: Vec<(PhotoId, Vec<f32>, Vec<String>)> = s
-        .searcher
-        .with_store(dir, |st| keyed.iter().filter_map(|(i, k, kw)| st.vectors.get(*k).map(|v| (*i, v.to_vec(), kw.clone()))).collect())
+    suggest_keyed(&s.searcher, &dir, prep, keyed_of(s, ids), include_existing, threshold, cats)
+}
+
+fn suggest_keyed(
+    g: &Searcher,
+    dir: &Option<PathBuf>,
+    prep: &Prepared,
+    keyed: Keyed,
+    include_existing: bool,
+    threshold: f32,
+    cats: &Option<Vec<String>>,
+) -> Result<(Vec<(PhotoId, Vec<Cand>)>, usize)> {
+    let vs: Vec<(PhotoId, Vec<f32>, Vec<String>)> = g
+        .with_store(dir.clone(), |st| keyed.iter().filter_map(|(i, k, kw)| st.vectors.get(*k).map(|v| (*i, v.to_vec(), kw.clone()))).collect())
         .map_err(other)?;
     let missing = keyed.len() - vs.len();
     let (sc, bi) = (prep.scale, prep.bias);
@@ -573,15 +582,59 @@ fn suggest_for(
     Ok((out, missing))
 }
 
-pub fn suggest(s: &mut Session, p: &Value) -> Result<Value> {
-    let prep = prepare(s, p)?;
-    let st = settings_of(s);
-    let threshold = f64_or(p, "threshold", 0.5).clamp(0.0, 1.0) as f32;
-    let limit = f64_or(p, "limit", 8.0).clamp(1.0, 50.0) as usize;
-    let cats: Option<Vec<String>> =
-        p.get("categories").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect());
+/// `keywords.suggest` set up from the session: [`SuggestPlan::run`] loads the model if needed and
+/// scores the photos without it (so the app can run it on a worker thread), then
+/// [`finish_suggest`] writes what the `autoAccept` setting lets through and builds the answer.
+pub struct SuggestPlan {
+    searcher: Searcher,
+    dir: Option<PathBuf>,
+    entries: Vec<Entry>,
+    lang: String,
+    params: Value,
+    keyed: Keyed,
+    include_existing: bool,
+    threshold: f32,
+    cats: Option<Vec<String>>,
+    limit: usize,
+    settings: Settings,
+}
+
+/// What [`SuggestPlan::run`] found.
+pub struct SuggestOutcome {
+    res: Vec<(PhotoId, Vec<Cand>)>,
+    missing: usize,
+    limit: usize,
+    settings: Settings,
+}
+
+pub fn plan_suggest(s: &mut Session, p: &Value) -> Result<SuggestPlan> {
+    let settings = settings_of(s);
     let ids = s.targets(p);
-    let (res, missing) = suggest_for(s, &prep, &ids, bool_or(p, "includeExisting", false), threshold, &cats)?;
+    Ok(SuggestPlan {
+        searcher: s.searcher.share(),
+        dir: store_dir(s),
+        entries: entries_of(s),
+        lang: settings.language.clone(),
+        params: p.clone(),
+        keyed: keyed_of(s, &ids),
+        include_existing: bool_or(p, "includeExisting", false),
+        threshold: f64_or(p, "threshold", 0.5).clamp(0.0, 1.0) as f32,
+        cats: p.get("categories").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()),
+        limit: f64_or(p, "limit", 8.0).clamp(1.0, 50.0) as usize,
+        settings,
+    })
+}
+
+impl SuggestPlan {
+    pub fn run(self) -> Result<SuggestOutcome> {
+        let prep = prepare_with(&self.searcher, &self.dir, self.entries, self.lang, &self.params)?;
+        let (res, missing) = suggest_keyed(&self.searcher, &self.dir, &prep, self.keyed, self.include_existing, self.threshold, &self.cats)?;
+        Ok(SuggestOutcome { res, missing, limit: self.limit, settings: self.settings })
+    }
+}
+
+pub fn finish_suggest(s: &mut Session, out: SuggestOutcome) -> Result<Value> {
+    let SuggestOutcome { res, missing, limit, settings: st } = out;
     let mut applied = 0usize;
     if st.auto_accept {
         let mut by_kw: BTreeMap<String, Vec<u64>> = BTreeMap::new();
@@ -603,6 +656,11 @@ pub fn suggest(s: &mut Session, p: &Value) -> Result<Value> {
         "unindexed": missing,
         "note": "Suggestions only: `keywords.accept` adds the chosen ones.",
     }))
+}
+
+pub fn suggest(s: &mut Session, p: &Value) -> Result<Value> {
+    let out = plan_suggest(s, p)?.run()?;
+    finish_suggest(s, out)
 }
 
 pub fn accept(s: &mut Session, p: &Value) -> Result<Value> {

@@ -289,6 +289,85 @@ fn crop(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     }
 }
 
+/// Dust from a whole series and portrait retouch: the same commands as Photo ▸ Remove Dust From
+/// Series and Photo ▸ Portrait Retouch, where one looks for a distraction to remove.
+fn series_and_portrait(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &lightcraft_develop::DevelopSettings) {
+    let t = Tokens::get(ui.ctx());
+    let n = app.session.selection.ids.len().max(1);
+    let (scope, series_ok) = if n > 1 {
+        (format!("the {n} selected photos"), true)
+    } else {
+        (format!("the {} photos in view", app.session.visible_cloned().len()), app.session.visible_cloned().len() >= 3)
+    };
+    ui.add_space(8.0);
+    ui.separator();
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new(crate::i18n::tr("Dust on every photo of a shoot")).font(t.semibold(12.5)).color(t.text));
+    ui.label(
+        egui::RichText::new(format!("Finds the spots that sit at the same place on most of {scope} (dust on the sensor, not scenery) and heals them on all of them, in one undo step."))
+            .size(11.5)
+            .color(t.text_dim),
+    );
+    if app.session.selection.ids.len() < 2 && app.session.visible_cloned().len() > 60 {
+        ui.label(
+            egui::RichText::new("Tip: select the photos of one shoot first; the whole view mixes cameras and sizes.").size(11.5).color(t.caution),
+        );
+    }
+    let running = app.tasks.is_running(crate::heavy::DUST);
+    ui.horizontal(|ui| {
+        let r =
+            ui.add_enabled(series_ok && !running, egui::Button::new(egui::RichText::new(crate::i18n::tr("Dust From Series")).font(t.semibold(11.5))));
+        crate::widgets::register(ui.ctx(), "button:dustSeries", r.rect);
+        let r = r.on_hover_text(crate::i18n::tr("Remove Dust From Series: needs at least 3 photos (select them, or filter the view to one shoot)"));
+        if r.clicked() {
+            match app.run("dust.apply", json!({"background": true})) {
+                Ok(_) => {}
+                Err(e) => app.toast(ui.ctx(), e),
+            }
+        }
+        if running {
+            ui.spinner();
+        }
+    });
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new(crate::i18n::tr("Portrait")).font(t.semibold(12.5)).color(t.text));
+    ui.label(
+        egui::RichText::new("Finds the faces and adds editable masks for skin (texture kept), eyes, teeth and lips on this photo or the selected photos. Nothing is retouched beyond those masks.")
+            .size(11.5)
+            .color(t.text_dim),
+    );
+    let has_portrait = d.masks.iter().any(|m| m.name.starts_with("Portrait: "));
+    ui.horizontal(|ui| {
+        let r = ui.add(egui::Button::new(egui::RichText::new(crate::i18n::tr("Portrait Retouch")).font(t.semibold(11.5))));
+        crate::widgets::register(ui.ctx(), "button:portraitRetouch", r.rect);
+        let r = r.on_hover_text(crate::i18n::tr("Portrait Retouch (Cmd+Alt+P), also in the Photo menu"));
+        if r.clicked() {
+            match app.run("portrait.retouch", json!({})) {
+                Ok(v) => {
+                    let faces = v["faces"].as_u64().unwrap_or(0);
+                    app.toast(
+                        ui.ctx(),
+                        if faces == 0 {
+                            "No face found".to_string()
+                        } else {
+                            format!(
+                                "Portrait retouch: {faces} face{} in {} photo{}",
+                                if faces == 1 { "" } else { "s" },
+                                v["photos"].as_array().map_or(0, Vec::len),
+                                if v["photos"].as_array().map_or(0, Vec::len) == 1 { "" } else { "s" }
+                            )
+                        },
+                    );
+                }
+                Err(e) => app.toast(ui.ctx(), e),
+            }
+        }
+        if has_portrait && crate::widgets::text_button(ui, "portraitClear", "Remove Portrait Retouch", false).clicked() {
+            let _ = app.run("portrait.clear", json!({}));
+        }
+    });
+}
+
 fn remove(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     let d = app.session.develop_of(id).unwrap_or_default();
     header(ui, "Remove");
@@ -324,6 +403,7 @@ fn remove(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         ui.add_space(4.0);
         ui.label(egui::RichText::new(crate::i18n::tr("Paint over a distraction on the photo to remove it.")).color(Tokens::get(ui.ctx()).text_dim));
+        series_and_portrait(app, ui, &d);
     });
     // brush settings; with a spot selected they edit that spot too
     let sel = app.session.active_spot.and_then(|i| d.spots.get(i).map(|sp| (i, sp.clone())));
@@ -874,73 +954,19 @@ fn keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
 /// The keywords suggested for a photo by the controlled vocabulary (zero-shot on the search
 /// model) and by what the library has learned of the user's own keywords. Nothing is added until
 /// a chip is clicked (or "Add all"); the "automatically" box is off by default.
-fn suggested_keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
+fn suggested_keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, _id: PhotoId) {
     let t = Tokens::get(ui.ctx());
-    let sid = egui::Id::new("kw-ai-suggest");
-    let cached: Option<(u64, Vec<(String, f64, String)>)> = ui.data(|d| d.get_temp(sid));
-    let note_id = egui::Id::new("kw-ai-note");
+    // the helper itself (run in the background, with its measured reliability and the keywords to
+    // click) lives in Photo ▸ Sorting Help, next to Assisted Culling and Suggested picks
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(crate::i18n::tr("Suggested keywords")).color(t.text_dim));
         let r = crate::widgets::text_button(ui, "kwSuggestRun", "Suggest", false).on_hover_text(crate::i18n::tr(
-            "Looks at the photo with the search model (the first use loads it: about a minute). Nothing is added until you click a keyword.",
+            "Opens Sorting Help: the search model looks at the photos (the first use loads it: about a minute). Nothing is added until you click a keyword.",
         ));
         if r.clicked() {
-            match app.run("keywords.suggest", json!({"ids": [id.0], "includeExisting": false})) {
-                Ok(v) => {
-                    let list: Vec<(String, f64, String)> = v["photos"][0]["suggestions"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|x| {
-                            Some((x["keyword"].as_str()?.to_string(), x["score"].as_f64()?, x["source"].as_str().unwrap_or("").to_string()))
-                        })
-                        .collect();
-                    let note = if v["unindexed"].as_u64().unwrap_or(0) > 0 {
-                        crate::i18n::tr("This photo is not indexed yet: run Search ▸ Index Photos.").to_string()
-                    } else if list.is_empty() {
-                        crate::i18n::tr("No keyword reached the threshold.").to_string()
-                    } else {
-                        String::new()
-                    };
-                    ui.data_mut(|d| {
-                        d.insert_temp(sid, (id.0, list));
-                        d.insert_temp(note_id, note);
-                    });
-                }
-                Err(e) => ui.data_mut(|d| {
-                    d.insert_temp(sid, (id.0, Vec::<(String, f64, String)>::new()));
-                    d.insert_temp(note_id, e);
-                }),
-            }
+            let _ = app.run("dialog.cull", json!({"section": "keywords"}));
         }
     });
-    let note: String = ui.data(|d| d.get_temp(note_id)).unwrap_or_default();
-    if !note.is_empty() {
-        ui.label(egui::RichText::new(note).color(t.text_dim).size(11.5));
-    }
-    if let Some((pid, list)) = cached.filter(|c| c.0 == id.0 && !c.1.is_empty()) {
-        let mut accepted: Option<String> = None;
-        let mut all = false;
-        ui.horizontal_wrapped(|ui| {
-            for (k, score, source) in &list {
-                let label = format!("+ {}  {:.0}%", k.replace('|', " › "), score * 100.0);
-                let r = ui.add(egui::Button::new(egui::RichText::new(label).color(t.text_label)).corner_radius(10.0)).on_hover_text(source.as_str());
-                register(ui.ctx(), format!("kwSuggested:{k}"), r.rect);
-                if r.clicked() {
-                    accepted = Some(k.clone());
-                }
-            }
-        });
-        if crate::widgets::text_button(ui, "kwSuggestAll", "Add all", false).clicked() {
-            all = true;
-        }
-        let todo: Vec<String> = if all { list.iter().map(|x| x.0.clone()).collect() } else { accepted.iter().cloned().collect() };
-        if !todo.is_empty() {
-            let _ = app.run("keywords.accept", json!({"ids": [id.0], "keywords": todo}));
-            let rest: Vec<(String, f64, String)> = list.into_iter().filter(|x| !todo.contains(&x.0)).collect();
-            ui.data_mut(|d| d.insert_temp(sid, (pid, rest)));
-        }
-    }
     let auto_id = egui::Id::new("kw-auto-accept");
     let mut auto: bool = match ui.data(|d| d.get_temp::<bool>(auto_id)) {
         Some(b) => b,

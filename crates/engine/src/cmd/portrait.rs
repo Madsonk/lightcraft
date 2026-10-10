@@ -164,8 +164,8 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "portrait.retouch",
             "Portrait Retouch",
-            ["Photo", "Portrait Retouch"],
-            None,
+            ["Photo"],
+            Some("Cmd+Alt+P"),
             "{id?|ids?, skin?: 0..100 (40), eyes?: 0..100 (30), teeth?: 0..100 (30), lips?: 0..100 (0), maxFaces?: 1..4 (4, biggest first), refine?: 0..100 (0)} — find the faces (face model: facemesh.model.status) and add one mask per region — \"Portrait: Skin\" (texture and clarity down, noise reduction: smoothing that keeps eyes, brows and lips sharp), \"Portrait: Eyes\" (brighter, crisper), \"Portrait: Teeth\" (whiter; only on open mouths), \"Portrait: Lips\" — each carrying local adjustments scaled by its amount, so everything stays editable in the Masking panel. Running it again replaces its own masks; one undo step per photo → {photos: [{id, faces, skippedFaces, masks: [{mask, region, faces, amount}]}], faces}",
             has_active,
             retouch
@@ -173,7 +173,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "portrait.clear",
             "Remove Portrait Retouch",
-            [],
+            ["Photo"],
             None,
             "{id?|ids?} — remove the masks portrait.retouch added (named \"Portrait: …\"), keeping every other mask → {removed}",
             has_active,

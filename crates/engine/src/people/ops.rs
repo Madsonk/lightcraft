@@ -410,10 +410,13 @@ fn decision<R>(s: &mut Session, label: &str, f: impl FnOnce(&mut Session) -> Res
     }
     let committed = (added > 0).then_some(s.undo.len());
     with_slot(s, |sl| {
+        // a decision that changed nothing (people.sync with every photo already tagged) leaves no
+        // step: `people.undo` must undo the decision before it, not an empty one
+        let nothing_changed = added == 0 && sl.history.last().is_some_and(|e| e.state == sl.state);
         if let Some(e) = sl.history.last_mut() {
             e.committed = committed;
         }
-        if r.is_err() {
+        if r.is_err() || nothing_changed {
             sl.history.pop();
         }
     })?;

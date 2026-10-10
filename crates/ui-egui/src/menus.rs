@@ -58,6 +58,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.survey", "Survey", Some("N"), "View"),
     ("view.people", "People", None, "View"),
     ("view.person", "Show Person", None, ""),
+    // arms the "Resume" bar again (the desktop app arms it at launch)
+    ("view.resumeBar", "Show Resume Bar", None, ""),
     ("view.places", "Places", None, "View"),
     ("view.faceBoxes", "Face Boxes", None, "View"),
     ("view.reference", "Reference View", Some("Shift+R"), "View"),
@@ -174,7 +176,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("app.systemInfo", "System Info…", None, "Help"),
     ("app.openLogFolder", "Open Log Folder", None, "Help"),
     ("app.whatsNew", "What's New", None, "Help"),
-    ("dialog.cull", "Assisted Culling…", None, "Photo"),
+    ("dialog.cull", "Sorting Help…", Some("Cmd+Alt+A"), "Photo"),
     ("app.help", "LightCraft Help", Some("F1"), "Help"),
     ("app.discord", "Join the ArtCraft Discord…", None, "Help"),
     ("app.feedback", "Send Feedback…", None, "Help"),
@@ -331,7 +333,17 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             }
             app.ui.person_from = None;
             app.ui.view = ViewMode::People;
-            Ok(json!({"people": app.session.catalog.people().len()}))
+            // faces were found and nobody is named (here or in XMP): "No named people yet" would be
+            // the whole answer, so open on Recognition, where they can be named
+            let named_in_xmp = app.session.catalog.people().len();
+            if app.ui.settings.people_recognition_first && named_in_xmp == 0 {
+                app.caches.people_rec.recognition |= faces_to_name(app);
+            }
+            Ok(json!({"people": named_in_xmp}))
+        }
+        "view.resumeBar" => {
+            app.resume.arm();
+            Ok(Value::Null)
         }
         "view.person" => {
             // {name}: one person's page in the People view: their faces, and the faces that look like them
@@ -989,7 +1001,9 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             Ok(r)
         }
         "dialog.cull" => {
-            app.ui.dialog = Some(Dialog::Cull { reject_below: 0.0, pick_best: true });
+            // {section?: "culling" | "picks" | "keywords"}: the helper's own entry points open it there
+            let section = p.get("section").and_then(Value::as_str).and_then(crate::panels::sorting_help::Section::parse).unwrap_or_default();
+            crate::panels::sorting_help::open(app, section);
             Ok(Value::Null)
         }
         "app.whatsNew" => {
@@ -1163,18 +1177,18 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             }
             Ok(json!({"background": true}))
         }
-        "gallery.export" if p.get("dir").is_none() => {
-            // a folder to write the gallery in, then the engine command (the window waits: each photo is rendered at every width)
-            let Some(dir) = app.services.pick_folder.as_mut().and_then(|f| f()) else { return Some(Ok(Value::Null)) };
+        "gallery.export" if p.get("dir").is_none() || crate::heavy::wanted(p) => {
+            // a folder to write the gallery in (when none is given), then the engine's plan run on a
+            // worker thread: each photo is rendered at every width, with a progress panel and Cancel
             let mut params = p.as_object().cloned().unwrap_or_default();
-            params.insert("dir".into(), json!(dir));
-            let r = app.run("gallery.export", Value::Object(params));
-            if let Ok(v) = &r {
-                let n = v["photos"].as_u64().unwrap_or(0);
-                app.toast(&egui::Context::default(), format!("Web gallery: {n} photo{} in {dir}", if n == 1 { "" } else { "s" }));
+            if p.get("dir").is_none() {
+                let Some(dir) = app.services.pick_folder.as_mut().and_then(|f| f()) else { return Some(Ok(Value::Null)) };
+                params.insert("dir".into(), json!(dir));
             }
-            r
+            crate::heavy::gallery(app, &Value::Object(params))
         }
+        "dust.apply" if crate::heavy::wanted(p) && p.get("spots").is_none() => crate::heavy::dust(app, p),
+        "keywords.suggest" if crate::heavy::wanted(p) => crate::heavy::suggest(app, p),
         "photo.tagFromTracklog" => {
             // a GPX file → GPS for the selected photos by capture time (one undo step)
             let path = match p.get("path").and_then(Value::as_str) {
@@ -1579,4 +1593,15 @@ fn show_in_finder(app: &mut LightcraftApp) -> Result<Value, String> {
     let reveal = app.services.reveal.as_mut().ok_or("not available here")?;
     reveal(&path)?;
     Ok(json!({"path": path}))
+}
+
+/// Faces are indexed in this library and no person has a name yet.
+fn faces_to_name(app: &mut LightcraftApp) -> bool {
+    // (a library on disk without an index folder: nothing was ever looked for, and asking would only create it)
+    if app.session.library.as_ref().is_some_and(|l| !l.dir.join("people").is_dir()) {
+        return false;
+    }
+    let Ok(s) = app.session.execute("people.status", &json!({})) else { return false };
+    let i = &s["index"];
+    i["faces"].as_u64().unwrap_or(0) > 0 && i["named"].as_u64().unwrap_or(0) == 0
 }

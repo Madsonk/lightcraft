@@ -16,9 +16,12 @@ pixels are merged into spots, and long thin runs (edges, wires) are dropped.
 
 - `dust.detect {ids?, sensitivity?: 0..100 (50), limit?}` → `{photos, analysed, skipped, frame, spots:
   [{x, y, radius, seen, judged}]}`. Changes nothing.
-- `dust.apply {ids?, sensitivity?, limit?, spots?, remove?}` (Photo ▸ Remove Dust From Selection):
+- `dust.apply {ids?, sensitivity?, limit?, spots?, remove?}` (Photo ▸ Remove Dust From Series, and the *Dust From Series* button of the Remove panel):
   a heal spot (source picked automatically) on each dust spot on **every** photo of the series, skipping
-  places already healed; one undo step for the whole series.
+  places already healed; one undo step for the whole series. With `background: true` (what the menu
+  and the button send) the app renders and searches the sample on a worker thread, with a progress
+  panel and a Cancel button (nothing is changed when it is cancelled), then heals the series by
+  calling `dust.apply` with the spots it found.
 
 Photos of another size or orientation than the first form another series (dust sits elsewhere in a
 portrait frame): they are counted in `skipped`. The spots are placed in the uncropped frame; with a

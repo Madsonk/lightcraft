@@ -1,7 +1,10 @@
 # Web gallery export
 
 `gallery.export` (File ▸ Export Web Gallery…) writes a static web gallery of the selected photos (else
-the photos in view) to a folder: nothing to host but files, no external request, no tracking.
+the photos in view) to a folder: nothing to host but files, no external request, no tracking. The
+menu item (File ▸ Export Web Gallery…, ⌥⌘G) asks for the folder and runs the export on a worker thread
+with a progress panel and a Cancel button (stopping after the photo in hand, no page written); the
+command with `dir` answers when the files are written, as before, unless `background: true` is given.
 
 ```
 gallery/

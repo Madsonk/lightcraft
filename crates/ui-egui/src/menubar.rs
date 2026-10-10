@@ -81,6 +81,7 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "dialog.export",
             "app.exportPrevious",
             "@Export with Preset",
+            "gallery.export",
             "---",
             "library.toggleAutoWriteXmp",
             "@Previews",
@@ -186,6 +187,11 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "develop.treatment",
             "develop.reset",
             "dialog.createPreset",
+            "---",
+            "dialog.cull",
+            "portrait.retouch",
+            "portrait.clear",
+            "dust.apply",
             "---",
             "photo.saveMetadataToFile",
             "photo.readMetadataFromFile",
@@ -588,7 +594,9 @@ fn expanded(app: &LightcraftApp, name: &str) -> Option<Vec<MenuNode>> {
 fn node(app: &LightcraftApp, e: &MenuEntry) -> MenuNode {
     // Shift+P picks and advances in Library; don't advertise it on Presets in those views.
     let shortcut = if e.id == "panel.presets" && crate::shortcuts::library_grid(app) { None } else { e.shortcut.as_deref() };
-    item(&e.id, Value::Null, live_label(app, &e.id, &e.label), shortcut, e.enabled, checked(app, &e.id))
+    // the slow ones run in the background (progress panel, Cancel): see `crate::heavy`
+    let params = if e.id == "dust.apply" { json!({"background": true}) } else { Value::Null };
+    item(&e.id, params, live_label(app, &e.id, &e.label), shortcut, e.enabled, checked(app, &e.id))
 }
 
 /// Drop leading, trailing and doubled separators (also inside submenus) and empty submenus.

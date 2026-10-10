@@ -103,10 +103,20 @@ beyond the keyword precision above (130 of 144 sample photos got a sentence; a w
 a wrong sentence): review before publishing.
 
 ## 3. UI
-- Keywords panel: **Suggested keywords** → *Suggest* (loads the search model on first use, about a
-  minute, the window waits) → click a chip to add it, *Add all*, and the off-by-default box
-  "Add suggestions above 90 % automatically".
-- Filter bar: **Suggested picks** → the unrated photos in view the taste model likes best.
+**Photo ▸ Sorting Help** (⌥⌘A) gathers the three helpers in one window: *Assisted Culling*, *Suggested
+picks* and *Suggested keywords*, each with how well it was measured to work (the numbers above) and
+the same commands underneath; nothing is rated, flagged or keyworded until a button says so.
+- *Suggested keywords* → *Suggest* runs `keywords.suggest` in the background for the selection (loads
+  the search model on first use, about a minute; the window stays usable, Cancel drops the answer) →
+  click a chip to add it (one undo step per keyword), *Add all*. The Keywords panel keeps the off-by-
+  default box "Add suggestions above 90 % automatically", and its *Suggest* button opens Sorting Help
+  at this section.
+- *Suggested picks* → *Show Suggested Picks* filters the grid to the unrated photos the taste model
+  likes best, after the warning about its measured skill. The filter bar's **Suggested picks** button
+  opens Sorting Help at this section.
+- Control channel: `dialog.cull {section?: "culling" | "picks" | "keywords"}` opens it;
+  `keywords.suggest {background: true, wait?: true}` runs the same in the background (`ui.inspect` →
+  `taskProgress`, `lastTask`).
 
 ## 4. Commands
 `taste.train`, `taste.status`, `culling.suggest`, `culling.accept`, `keywords.suggest`,

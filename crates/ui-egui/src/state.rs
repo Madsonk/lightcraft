@@ -161,6 +161,10 @@ pub struct AppSettings {
     pub grid_badges: GridBadges,
     /// Shortcuts the user changed (Help ▸ Keyboard Shortcuts): command id → shortcut, `""` = none.
     pub keymap: crate::shortcuts::Keymap,
+    /// A discreet "Resume" bar when the app opens (the last view is kept either way).
+    pub resume_bar: bool,
+    /// View ▸ People opens on Recognition when faces were found and nobody is named yet.
+    pub people_recognition_first: bool,
 }
 
 impl Default for AppSettings {
@@ -178,6 +182,8 @@ impl Default for AppSettings {
             film_badges: true,
             grid_badges: GridBadges::Auto,
             keymap: Default::default(),
+            resume_bar: true,
+            people_recognition_first: true,
         }
     }
 }
@@ -602,9 +608,9 @@ pub enum Dialog {
     },
     /// Help ▸ What's New.
     WhatsNew,
-    /// Photo ▸ Assisted Culling: reject photos below this focus score (0 = none), pick the best
-    /// of each burst.
-    Cull {
+    /// Photo ▸ Sorting Help: Assisted Culling (reject photos below this focus score, 0 = none;
+    /// pick the best of each burst), Suggested picks and Suggested keywords in one window.
+    SortingHelp {
         reject_below: f32,
         pick_best: bool,
     },

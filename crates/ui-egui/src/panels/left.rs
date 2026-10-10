@@ -28,7 +28,7 @@ fn note_width(ui: &egui::Ui, w: f32) {
     });
 }
 
-fn row(
+pub(super) fn row(
     app: &mut LightcraftApp,
     ui: &mut egui::Ui,
     id: &str,
@@ -146,7 +146,7 @@ fn disclosure_triangle(ui: &mut egui::Ui, row: &egui::Response, indent: f32, ope
 /// A collapsible section header (Albums, Local, By Date, Keywords): the bold title with a
 /// disclosure chevron after it; a click folds or unfolds the section (kept in the UI state, so it
 /// survives restarts). Returns the header's rect and whether the section is now open.
-fn sidebar_section_header(app: &mut LightcraftApp, ui: &mut egui::Ui, id: &str, title: &str) -> (Rect, bool) {
+pub(super) fn sidebar_section_header(app: &mut LightcraftApp, ui: &mut egui::Ui, id: &str, title: &str) -> (Rect, bool) {
     let t = Tokens::get(ui.ctx());
     let title = crate::i18n::tr(title);
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
@@ -258,6 +258,8 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 }
                 albums_tree(app, ui, &kids, None, 0.0, &open_to);
             }
+            // People and Places right below the albums: who and where are how photos are looked for
+            super::people_places::sections(app, ui);
             ui.add_space(10.0);
             local_section(app, ui);
             // By date
@@ -1268,16 +1270,24 @@ fn keywords_section(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             let v = if u == Some(false) { serde_json::Value::Null } else { json!(false) };
             let _ = app.run("library.filter", json!({"untagged": v, "keyword": serde_json::Value::Null}));
         }
-        keyword_rows(app, ui, &tree, 0.0);
+        // People and Places have their own sections above
+        for n in tree.iter().filter(|n| !super::people_places::owns(&n.path)) {
+            keyword_rows(app, ui, std::slice::from_ref(n), 0.0);
+        }
     }
 }
 
-fn keyword_rows(app: &mut LightcraftApp, ui: &mut egui::Ui, nodes: &[KeywordNode], indent: f32) {
+pub(super) fn keyword_rows(app: &mut LightcraftApp, ui: &mut egui::Ui, nodes: &[KeywordNode], indent: f32) {
+    keyword_rows_with(app, ui, nodes, indent, Icon::Tag)
+}
+
+/// [`keyword_rows`] with the icon the rows carry (People and Places are keywords of their own).
+pub(super) fn keyword_rows_with(app: &mut LightcraftApp, ui: &mut egui::Ui, nodes: &[KeywordNode], indent: f32, icon: Icon) {
     for n in nodes {
         let open_id = egui::Id::new(("kw-open", n.path.to_lowercase()));
         let mut open: bool = ui.data(|d| d.get_temp(open_id)).unwrap_or(false);
         let sel = app.session.filter.keyword.as_deref().is_some_and(|k| k.eq_ignore_ascii_case(&n.path));
-        let resp = row(app, ui, &format!("keyword:{}", n.path), Icon::Tag, &n.name, Some(n.count), sel, indent);
+        let resp = row(app, ui, &format!("keyword:{}", n.path), icon, &n.name, Some(n.count), sel, indent);
         if !n.children.is_empty() {
             let tr =
                 disclosure_triangle(ui, &resp, indent, open, egui::Id::new(("kw-tri", n.path.to_lowercase())), format!("keywordToggle:{}", n.path));
@@ -1317,7 +1327,7 @@ fn keyword_rows(app: &mut LightcraftApp, ui: &mut egui::Ui, nodes: &[KeywordNode
             }
         });
         if open && !n.children.is_empty() {
-            keyword_rows(app, ui, &n.children, indent + 16.0);
+            keyword_rows_with(app, ui, &n.children, indent + 16.0, icon);
         }
     }
 }

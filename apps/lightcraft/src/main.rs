@@ -749,6 +749,8 @@ fn main() -> eframe::Result {
                 let rx = control_server::start(port, cc.egui_ctx.clone());
                 app = app.with_control(rx);
             }
+            // a plain launch (no files to import, no library problem) shows the Resume bar
+            let plain_launch = problem.is_none() && files.is_empty();
             if let Some(mut p) = problem {
                 // imported once the user has chosen where (into the library, or the temporary session)
                 p.pending_import = files;
@@ -761,6 +763,9 @@ fn main() -> eframe::Result {
                     log::warn!("import at launch: {e}");
                 }
                 app.ui.view = lightcraft_ui_egui::state::ViewMode::PhotoGrid;
+            }
+            if plain_launch {
+                app.resume.arm();
             }
             // native menu bar generated from the command registry (macOS; elsewhere the menus are
             // drawn in the window's top bar). LIGHTCRAFT_NO_NATIVE_MENU=1 keeps the in-window menus.

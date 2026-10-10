@@ -132,6 +132,13 @@ fn general_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
             &mut app.ui.settings.startup_view,
         );
     });
+    check(ui, "settings.resumeBar", &mut app.ui.settings.resume_bar, "Show a Resume bar when LightCraft opens");
+    check(
+        ui,
+        "settings.peopleRecognitionFirst",
+        &mut app.ui.settings.people_recognition_first,
+        "Open People on Recognition when faces are found but nobody is named yet",
+    );
     heading(ui, t, crate::i18n::tr("Culling"));
     check(ui, "settings.autoAdvance", &mut app.ui.auto_advance, "Auto Advance: move to the next photo after rating or flagging");
     check(ui, "settings.confirmDelete", &mut app.ui.settings.confirm_delete, "Confirm before moving photos to Recently Deleted");

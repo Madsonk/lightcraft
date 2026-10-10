@@ -195,8 +195,7 @@ fn photos_dragged_from_the_grid_land_on_albums_keywords_people_and_places_and_no
     shot(&mut h, "dnd_photos_after.png");
 
     // People ▸ Undo takes the drop on a person back in one step: the keyword and the hand-filing
-    // (the first undo is the no-change sync of the test, itself a recorded decision)
-    h.app.run("people.undo", json!({})).unwrap();
+    // (the sync above changed nothing, so it left no step of its own to undo first)
     h.app.run("people.undo", json!({})).unwrap();
     h.settle(SETTLE);
     assert!(pics.iter().all(|p| !kws(&h, *p).contains(&"People|Awa".to_string())), "undone");

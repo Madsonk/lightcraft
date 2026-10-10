@@ -128,6 +128,19 @@ pub struct Core {
     download: Downloader,
 }
 
+impl Core {
+    /// Another handle on the same model, index and run (the download state is not shared).
+    pub(super) fn share(&self) -> Core {
+        Core {
+            embedder: self.embedder.clone(),
+            gpu: self.gpu.clone(),
+            store: self.store.clone(),
+            job: self.job.clone(),
+            download: Downloader::default(),
+        }
+    }
+}
+
 /// 8-bit sRGB of a decoded source (the sources are linear).
 fn srgb8(img: &lightcraft_raster::Rgb32f) -> Vec<u8> {
     let mut out = Vec::with_capacity(img.data.len() * 3);
