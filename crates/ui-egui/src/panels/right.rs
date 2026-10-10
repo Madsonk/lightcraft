@@ -1055,6 +1055,7 @@ fn versions(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     header(ui, "Versions");
     let t = Tokens::get(ui.ctx());
     padded(ui, |ui| {
+        super::proposals::section(app, ui);
         if text_button(ui, "versionCreate", crate::i18n::tr("Create Version"), false).clicked() {
             let _ = app.run("version.create", json!({}));
         }

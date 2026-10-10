@@ -24,6 +24,7 @@ lightcraft-raw = { workspace = true }
 lightcraft-denoise-core = { workspace = true }
 lightcraft-denoise = { workspace = true, optional = true }
 lightcraft-meta = { workspace = true }
+lightcraft-retouch = { workspace = true }
 lightcraft-faces = { workspace = true }
 lightcraft-lens = { workspace = true }
 miniz_oxide = { workspace = true }

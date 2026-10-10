@@ -27,7 +27,7 @@ struct Faces {
 }
 
 #[cfg(feature = "faces")]
-fn landmarker(s: &Session) -> Result<std::sync::Arc<lightcraft_facemesh::FaceLandmarker>> {
+pub(crate) fn landmarker(s: &Session) -> Result<std::sync::Arc<lightcraft_facemesh::FaceLandmarker>> {
     use std::sync::{Arc, Mutex, PoisonError};
     static CACHE: Mutex<Option<(std::path::PathBuf, Arc<lightcraft_facemesh::FaceLandmarker>)>> = Mutex::new(None);
     let file = s.facemesh.model_file().ok_or_else(|| bad("portrait.retouch", "no folder is set for the face model"))?;

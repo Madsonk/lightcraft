@@ -7,7 +7,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 /// The version shown to people (About, System Info, `--version`): the upstream release plus the local build tag.
-pub const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-local-ia-v9");
+pub const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-local-ia-v10");
 
 pub mod control;
 pub mod credits;
@@ -76,6 +76,8 @@ mod tests_switch_library;
 mod tests_titlebar;
 #[cfg(test)]
 mod tests_unsaved;
+#[cfg(test)]
+mod tests_v10;
 #[cfg(test)]
 mod tests_v9;
 #[cfg(test)]

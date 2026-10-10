@@ -34,7 +34,7 @@ pub mod missing;
 mod organize;
 mod people;
 mod places;
-mod portrait;
+pub(crate) mod portrait;
 mod prefs;
 mod preset_files;
 pub mod previews;
@@ -171,6 +171,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(gallery::specs());
         v.extend(autoseg::specs());
         v.extend(portrait::specs());
+        v.extend(crate::retouch::specs());
         v
     })
 }

@@ -24,6 +24,7 @@ pub mod person;
 pub mod places;
 pub mod presets;
 pub mod profiles;
+pub mod proposals;
 pub mod resume;
 pub mod right;
 pub mod rules_editor;

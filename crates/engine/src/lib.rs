@@ -61,6 +61,7 @@ pub mod rename;
 pub mod restore;
 #[cfg(feature = "restore")]
 mod restore_torch;
+pub mod retouch;
 pub mod search;
 pub mod segment;
 pub mod sidecar;

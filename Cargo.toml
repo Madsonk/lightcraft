@@ -45,6 +45,7 @@ lightcraft-taste = { path = "crates/taste" }
 lightcraft-people = { path = "crates/people" }
 lightcraft-places = { path = "crates/places" }
 lightcraft-autoseg = { path = "crates/autoseg" }
+lightcraft-retouch = { path = "crates/retouch" }
 
 # foundation
 thiserror = "2"
