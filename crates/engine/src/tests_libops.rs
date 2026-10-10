@@ -551,3 +551,79 @@ fn choosing_random_starts_a_fresh_shuffle() {
     assert_eq!(s.sort.seed, 42, "an explicit seed is honoured");
     assert!(s.sort.seed < 1 << 53);
 }
+
+/// "No keyword" / "Has keyword": the filter, its counts, select-all on the filtered view and a
+/// batch keyword that empties it; works with stars, chips and saved presets, and an old preset
+/// without the field still applies.
+#[test]
+fn keyword_presence_filter_and_labelling_flow() {
+    let mut s = Session::with_demo();
+    let all = s.visible_cloned();
+    let n = all.len();
+    assert!(n > 6);
+    let count = |s: &Session, tagged: bool| s.catalog.photos().filter(|p| p.in_library() && p.meta.keywords.is_empty() != tagged).count();
+    // the demo photos all carry keywords: strip the last four, then give three of the others new ones
+    let strip: Vec<u64> = all.iter().rev().take(4).map(|p| p.0).collect();
+    s.execute("photo.setMeta", &json!({"ids": strip, "keywords": []})).unwrap();
+    let ids: Vec<u64> = all.iter().take(3).map(|p| p.0).collect();
+    s.execute("photo.setMeta", &json!({"ids": [ids[0], ids[1]], "keywords": ["travel|italy"]})).unwrap();
+    s.execute("photo.setMeta", &json!({"ids": [ids[2]], "keywords": ["sea"]})).unwrap();
+    let (untagged, tagged) = (count(&s, false), count(&s, true));
+    assert_eq!(untagged + tagged, n);
+    assert!(tagged >= 3 && untagged == 4, "{untagged} {tagged}");
+
+    let c = s.execute("keyword.untagged", &json!({})).unwrap();
+    assert_eq!((c["untagged"].as_u64(), c["tagged"].as_u64(), c["total"].as_u64()), (Some(untagged as u64), Some(tagged as u64), Some(n as u64)));
+
+    let r = s.execute("library.filter", &json!({"untagged": true})).unwrap();
+    assert_eq!(r["count"].as_u64(), Some(untagged as u64));
+    assert!(s.visible_cloned().iter().all(|id| s.catalog.photo(*id).unwrap().meta.keywords.is_empty()));
+    let chips = crate::view::filter_chips(&s.filter, &s.catalog);
+    assert_eq!(chips.iter().filter(|c| c.label == "No keyword").count(), 1);
+    // the counts ignore the keyword filters, so they stay put while the filter is on
+    assert_eq!(s.keyword_presence(), (untagged, tagged));
+
+    let r = s.execute("library.filter", &json!({"untagged": false})).unwrap();
+    assert_eq!(r["count"].as_u64(), Some(tagged as u64));
+    // with a keyword (hierarchy included)
+    s.execute("library.filter", &json!({"untagged": null, "keyword": "travel"})).unwrap();
+    assert_eq!(s.visible().len(), 2);
+    s.execute("library.filter", &json!({"untagged": false})).unwrap();
+    assert_eq!(s.visible().len(), 2, "has keyword + keyword travel");
+    s.execute("library.filter", &json!({"untagged": true})).unwrap();
+    assert_eq!(s.visible().len(), 0, "no keyword + keyword travel: nothing");
+    s.execute("library.clearFilter", &json!({})).unwrap();
+    assert_eq!(s.visible().len(), n);
+
+    // with stars: the same count as a direct count
+    s.execute("photo.rate", &json!({"ids": [ids[2]], "rating": 4})).unwrap();
+    let direct =
+        |s: &Session, none: bool| s.catalog.photos().filter(|p| p.in_library() && p.rating >= 4 && p.meta.keywords.is_empty() == none).count();
+    s.execute("library.filter", &json!({"untagged": true, "rating": 4})).unwrap();
+    assert_eq!(s.visible().len(), direct(&s, true));
+    s.execute("library.filter", &json!({"untagged": false})).unwrap();
+    assert_eq!(s.visible().len(), direct(&s, false));
+    assert!(s.visible_cloned().contains(&lightcraft_catalog::PhotoId(ids[2])));
+    s.execute("library.clearFilter", &json!({})).unwrap();
+
+    // saved filter preset round-trips
+    s.execute("library.filter", &json!({"untagged": true})).unwrap();
+    s.execute("filter.savePreset", &json!({"name": "To keyword"})).unwrap();
+    s.execute("library.clearFilter", &json!({})).unwrap();
+    s.execute("filter.applyPreset", &json!({"name": "To keyword"})).unwrap();
+    assert_eq!(s.filter.untagged, Some(true));
+    assert_eq!(s.visible().len(), untagged);
+
+    // labelling flow: No keyword + select all (on the filtered view) + a keyword for all of them
+    s.execute("library.clearFilter", &json!({})).unwrap();
+    s.execute("library.filter", &json!({"untagged": true})).unwrap();
+    let r = s.execute("library.selectAll", &json!({})).unwrap();
+    assert_eq!(r["selected"].as_u64(), Some(untagged as u64), "select all takes the filtered view, not the whole library");
+    s.execute("photo.setMeta", &json!({"addKeywords": ["batch"]})).unwrap();
+    assert_eq!(s.visible().len(), 0, "every photo got a keyword: the view is empty");
+    assert_eq!(s.keyword_presence(), (0, n));
+    assert_eq!(count(&s, false), 0);
+    // undo brings them back into the filter
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.visible().len(), untagged);
+}

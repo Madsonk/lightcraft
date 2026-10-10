@@ -39,6 +39,17 @@ pub struct Filter {
     pub date: Option<String>,
     /// A keyword; hierarchical keywords match their children too (`travel` finds `travel|italy`).
     pub keyword: Option<String>,
+    /// Keyword presence: `true` = photos with no keyword at all ("untagged", to find what still
+    /// needs keywording), `false` = photos with at least one keyword, `None` = no constraint.
+    /// Combines with `keyword` (both must hold) and every other field. Absent from older saved
+    /// filters and presets, which then load unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub untagged: Option<bool>,
+    /// A place: a keyword path under `Places` (`Places|France` finds `Places|France|New Aquitaine|Poitiers`), or
+    /// `none` for photos with no place. A photo's place is its `Places` keyword, else the place its GPS resolves to
+    /// (see [`crate::places`]). Absent from older saved filters, which then load unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub place: Option<String>,
     /// A person: photos with a named face region of this name (case-insensitive), as read from XMP.
     pub person: Option<String>,
     /// Faces found by Analyze Faces: `any` (at least one face), `none` (analyzed, no face),
@@ -198,8 +209,14 @@ impl Filter {
         if let Some(e) = self.edited {
             v.push(if e { "edited".into() } else { "unedited".into() });
         }
+        match self.untagged {
+            Some(true) => v.push("no keyword".into()),
+            Some(false) => v.push("has keyword".into()),
+            None => {}
+        }
         for (name, val) in [
             ("keyword", &self.keyword),
+            ("place", &self.place),
             ("person", &self.person),
             ("faces", &self.faces),
             ("camera", &self.camera),
@@ -319,6 +336,14 @@ impl Filter {
         {
             return false;
         }
+        if self.untagged.is_some_and(|u| u != p.meta.keywords.is_empty()) {
+            return false;
+        }
+        if let Some(pl) = &self.place
+            && !crate::places::matches(p, pl)
+        {
+            return false;
+        }
         if let Some(n) = &self.person
             && !has_person(p, n)
         {
@@ -392,6 +417,22 @@ impl Catalog {
             }
         }
         m.into_iter().collect()
+    }
+
+    /// Among the photos `filter` lets through (its `keyword` and `untagged` aside): how many have
+    /// no keyword and how many have at least one. What the keyword pickers show next to "No
+    /// keyword" / "Has keyword", so each count is what picking it would leave in the grid.
+    pub fn keyword_presence_in(&self, filter: &Filter) -> (usize, usize) {
+        let filter = Filter { keyword: None, untagged: None, ..filter.clone() };
+        let (mut none, mut some) = (0, 0);
+        for p in self.photos().filter(|p| filter.matches(p, self)) {
+            if p.meta.keywords.is_empty() {
+                none += 1;
+            } else {
+                some += 1;
+            }
+        }
+        (none, some)
     }
 
     /// The people named on faces in the library (MWG regions read from XMP): how many photos each

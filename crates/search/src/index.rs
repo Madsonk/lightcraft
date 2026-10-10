@@ -83,6 +83,11 @@ impl VectorIndex {
         self.data.get(i * self.dim..(i + 1) * self.dim)
     }
 
+    /// Every `(key, vector)`, in the order they were added.
+    pub fn iter(&self) -> impl Iterator<Item = (u64, &[f32])> {
+        self.keys.iter().copied().zip(self.data.chunks_exact(self.dim.max(1)))
+    }
+
     /// Bytes the index takes on disk per photo.
     pub fn bytes_per_vector(&self) -> usize {
         8 + self.dim * 2

@@ -26,7 +26,7 @@ mod model;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod preprocess;
 #[cfg(not(target_arch = "wasm32"))]
-mod records;
+pub mod records;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod tokenizer;
 

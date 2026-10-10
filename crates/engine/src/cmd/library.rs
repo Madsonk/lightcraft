@@ -282,7 +282,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Filter",
             [],
             None,
-            "partial Filter: {text?, rating?, ratingOp?: atLeast|exactly|atMost, flag?: pick|reject|none|null, label?, kind?, merged?: hdr|panorama|hdrPanorama|any, edited?, date?, keyword?, person?, faces?: any|none|closedEyes|eyesOpen|unanalyzed, camera?}",
+            "partial Filter: {text?, rating?, ratingOp?: atLeast|exactly|atMost, flag?: pick|reject|none|null, label?, kind?, merged?: hdr|panorama|hdrPanorama|any, edited?, date?, keyword? (hierarchy included), untagged? (true = photos with no keyword, false = photos with at least one, null = either), person?, faces?: any|none|closedEyes|eyesOpen|unanalyzed, camera?}",
             always,
             |s, p| {
                 let mut v = serde_json::to_value(&s.filter).unwrap_or_default();
@@ -673,7 +673,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "New Smart Album…",
             [],
             None,
-            "{name, rules?: partial Filter (rating, ratingOp, flag, label, kind, edited, keyword, camera, lens, dateFrom, dateTo, date, text, album, ruleSet: {match: all|any|none, rules: [{field, op, value} | {group: ruleSet}]} — see album.ruleFields), parent?: folderId} — without `rules`, saves the current view (source + filter)",
+            "{name, rules?: partial Filter (rating, ratingOp, flag, label, kind, edited, keyword, untagged, camera, lens, dateFrom, dateTo, date, text, album, ruleSet: {match: all|any|none, rules: [{field, op, value} | {group: ruleSet}]} — see album.ruleFields), parent?: folderId} — without `rules`, saves the current view (source + filter)",
             always,
             |s, p| {
                 let name = str_param(p, "name").unwrap_or("Smart Album").trim().to_string();

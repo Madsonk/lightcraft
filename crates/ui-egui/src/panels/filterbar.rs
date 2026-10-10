@@ -84,6 +84,114 @@ fn picker(app: &mut LightcraftApp, ui: &mut egui::Ui, id: &str, current: &str, a
     }
 }
 
+/// The "Keywords" dropdown: All / No keyword / Has keyword (with the numbers of photos in the
+/// current view), then every keyword with its photo count. "No keyword" is how to find the photos
+/// still to keyword: with Select All and the Keywords panel they are tagged in one go.
+fn keyword_picker(app: &mut LightcraftApp, ui: &mut egui::Ui, f: &lightcraft_catalog::Filter, keywords: &[(String, usize)]) {
+    let t = Tokens::get(ui.ctx());
+    let (none, some) = app.caches.keyword_presence(&mut app.session);
+    let shown = match (f.untagged, &f.keyword) {
+        (Some(true), _) => "No keyword".to_string(),
+        (Some(false), None) => "Has keyword".to_string(),
+        (_, Some(k)) => k.clone(),
+        (None, None) => "Keywords".to_string(),
+    };
+    let shown = if shown.chars().count() > 22 { format!("{}…", shown.chars().take(21).collect::<String>()) } else { shown };
+    let active = f.untagged.is_some() || f.keyword.is_some();
+    let r = crate::widgets::dropdown(ui, "filter-keyword", crate::i18n::tr(&shown), t.font(12.5), if active { t.text } else { t.text_label });
+    if active {
+        ui.painter().rect_stroke(r.rect.expand(2.0), 4.0, Stroke::new(1.0, t.accent.gamma_multiply(0.7)), StrokeKind::Outside);
+    }
+    let mut chosen = None;
+    egui::Popup::menu(&r).show(|ui| {
+        let mut item = |ui: &mut egui::Ui, key: &str, label: String, patch: Value, sel: bool| {
+            let resp = ui.selectable_label(sel, label);
+            register(ui.ctx(), format!("filteritem:keyword:{key}"), resp.rect);
+            if resp.clicked() {
+                chosen = Some(patch);
+            }
+        };
+        let all = f.untagged.is_none() && f.keyword.is_none();
+        item(ui, "all", crate::i18n::tr("All keywords").to_string(), json!({"keyword": Value::Null, "untagged": Value::Null}), all);
+        item(
+            ui,
+            "none",
+            format!("{} ({none})", crate::i18n::tr("No keyword")),
+            json!({"keyword": Value::Null, "untagged": true}),
+            f.untagged == Some(true),
+        );
+        item(
+            ui,
+            "any",
+            format!("{} ({some})", crate::i18n::tr("Has keyword")),
+            json!({"keyword": Value::Null, "untagged": false}),
+            f.untagged == Some(false) && f.keyword.is_none(),
+        );
+        if !keywords.is_empty() {
+            ui.separator();
+        }
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+            for (k, n) in keywords {
+                let sel = f.keyword.as_deref() == Some(k.as_str());
+                item(ui, k, format!("{k} ({n})"), json!({"keyword": k, "untagged": Value::Null}), sel);
+            }
+        });
+    });
+    if let Some(p) = chosen {
+        filter(app, p);
+    }
+}
+
+/// The "Place" dropdown: All / every place of the photos in view with its count (indented by level) / No place. A photo's
+/// place is its `Places|…` keyword, else the place its GPS position resolves to.
+fn place_picker(app: &mut LightcraftApp, ui: &mut egui::Ui, f: &lightcraft_catalog::Filter) {
+    let t = Tokens::get(ui.ctx());
+    let sum = app.caches.places.summary(&app.session.catalog, &app.session.filter);
+    let shown = match f.place.as_deref() {
+        None => "Place".to_string(),
+        Some(p) if p.eq_ignore_ascii_case(lightcraft_catalog::places::NONE) => "No place".to_string(),
+        Some(p) => p.rsplit(lightcraft_catalog::keywords::SEP).next().unwrap_or(p).to_string(),
+    };
+    let shown = if shown.chars().count() > 22 { format!("{}…", shown.chars().take(21).collect::<String>()) } else { shown };
+    let active = f.place.is_some();
+    let r = crate::widgets::dropdown(ui, "filter-place", crate::i18n::tr(&shown), t.font(12.5), if active { t.text } else { t.text_label });
+    if active {
+        ui.painter().rect_stroke(r.rect.expand(2.0), 4.0, Stroke::new(1.0, t.accent.gamma_multiply(0.7)), StrokeKind::Outside);
+    }
+    let mut chosen = None;
+    egui::Popup::menu(&r).show(|ui| {
+        let mut item = |ui: &mut egui::Ui, key: &str, label: String, patch: Value, sel: bool| {
+            let resp = ui.selectable_label(sel, label);
+            register(ui.ctx(), format!("filteritem:place:{key}"), resp.rect);
+            if resp.clicked() {
+                chosen = Some(patch);
+            }
+        };
+        item(ui, "all", crate::i18n::tr("All places").to_string(), json!({"place": Value::Null}), f.place.is_none());
+        if sum.unplaced > 0 {
+            item(
+                ui,
+                "none",
+                format!("{} ({})", crate::i18n::tr("No place"), sum.unplaced),
+                json!({"place": lightcraft_catalog::places::NONE}),
+                f.place.as_deref().is_some_and(|p| p.eq_ignore_ascii_case(lightcraft_catalog::places::NONE)),
+            );
+        }
+        if !sum.tree.is_empty() {
+            ui.separator();
+        }
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+            for (depth, n) in sum.flatten() {
+                let sel = f.place.as_deref().is_some_and(|p| p.eq_ignore_ascii_case(&n.path));
+                item(ui, &n.path, format!("{}{} ({})", "\u{2003}".repeat(depth), n.name, n.count), json!({"place": n.path}), sel);
+            }
+        });
+    });
+    if let Some(p) = chosen {
+        filter(app, p);
+    }
+}
+
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     // one row when there is room, else the metadata pickers and actions go to a second row
@@ -245,17 +353,17 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let ui: &mut egui::Ui = if two_rows { &mut row2 } else { &mut row1 };
     let values = app.caches.filter_values(&app.session.catalog);
     let (cameras, lenses, keywords) = (values.cameras.clone(), values.lenses.clone(), values.keywords.clone());
-    for (id, key, all_label, current, values) in [
-        ("camera", "camera", "Camera", f.camera.clone(), cameras),
-        ("lens", "lens", "Lens", f.lens.clone(), lenses),
-        ("keyword", "keyword", "Keyword", f.keyword.clone(), keywords),
-    ] {
+    for (id, key, all_label, current, values) in
+        [("camera", "camera", "Camera", f.camera.clone(), cameras), ("lens", "lens", "Lens", f.lens.clone(), lenses)]
+    {
         let mut items = vec![(format!("Any {}", all_label.to_lowercase()), json!({key: Value::Null}), current.is_none())];
         items.extend(values.into_iter().map(|v| (v.clone(), json!({key: v.clone()}), current.as_deref() == Some(v.as_str()))));
         let shown = current.clone().unwrap_or_else(|| all_label.to_string());
         let shown = if shown.chars().count() > 22 { format!("{}…", shown.chars().take(21).collect::<String>()) } else { shown };
         picker(app, ui, id, &shown, current.is_some(), items);
     }
+    keyword_picker(app, ui, &f, &keywords);
+    place_picker(app, ui, &f);
 
     // save / clear
     ui.add_space(14.0);
@@ -270,6 +378,21 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     if clear.clicked() {
         app.ui.search.clear();
         let _ = app.run("library.clearFilter", json!({}));
+    }
+    // picks the taste model proposes among the photos in view (suggestions only: nothing is rated)
+    let sp = ui.button(egui::RichText::new(crate::i18n::tr("Suggested picks")).font(t.font(12.5)));
+    register(ui.ctx(), "button:suggestedPicks", sp.rect);
+    let sp = sp.on_hover_text(crate::i18n::tr(
+        "Shows the unrated photos your taste model likes best (learned from your stars: taste.train). Nothing is rated.",
+    ));
+    if sp.clicked() {
+        match app.run("culling.suggest", json!({"filter": true})) {
+            Ok(v) => {
+                let n = v["picks"].as_array().map_or(0, |a| a.len());
+                app.ui.status = format!("{n} suggested picks");
+            }
+            Err(e) => app.ui.status = e,
+        }
     }
     // filter presets: apply one, save the current filter, delete
     let presets = ui.button(egui::RichText::new(crate::i18n::tr("Presets ▾")).font(t.font(12.5)));

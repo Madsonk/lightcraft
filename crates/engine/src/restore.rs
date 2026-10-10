@@ -68,7 +68,7 @@ mod imp {
 }
 
 #[cfg(feature = "restore")]
-pub use imp::{Model, cancel_download, models, start_download, status};
+pub use imp::{Model, cancel_download, denoise_backend, models, start_download, status};
 
 #[cfg(feature = "restore")]
 mod imp {
@@ -234,9 +234,51 @@ mod imp {
         }
     }
 
+    /// Denoise `img`: SCUNet through an external PyTorch on the GPU when there is one (about 9x
+    /// faster on a 22 Mpx photo, see [`crate::restore_torch`]), else the Rust implementation.
+    fn run_denoise(img: &Image, progress: &mut dyn FnMut(usize, usize) -> bool) -> Result<Image, String> {
+        use crate::restore_torch::{self as torch, Preference};
+        let weights = super::models_dir().ok_or("no folder is set for the AI models")?.join(files::SCUNET.file.name);
+        let pref = torch::preference();
+        let runner = if pref == Preference::Rust { None } else { torch::detect() };
+        match (runner, pref) {
+            (Some(t), _) => match torch::denoise(t, img, &weights, progress) {
+                Ok(d) => return Ok(d),
+                Err(e) if e == "cancelled" || pref == Preference::Torch => return Err(format!("AI denoise (PyTorch): {e}")),
+                Err(e) => log::warn!("AI denoise: the PyTorch runner failed, using the Rust implementation: {e}"),
+            },
+            (None, Preference::Torch) => {
+                return Err("AI denoise: LIGHTCRAFT_RESTORE_BACKEND=torch but no Python with torch, numpy and MPS was found (LIGHTCRAFT_RESTORE_PYTHON names the interpreter)".into());
+            }
+            (None, _) => {}
+        }
+        load_denoiser()?.denoise(img, progress).map_err(|e| format!("AI denoise: {e}"))
+    }
+
+    /// Which backend denoising uses on this machine: `torch` (external PyTorch on MPS) or `rust`
+    /// (candle). `probe` looks for PyTorch (a few seconds the first time); without it a backend
+    /// not looked for yet is `unknown`.
+    pub fn denoise_backend(probe: bool) -> Value {
+        use crate::restore_torch::{self as torch, Preference};
+        let pref = match torch::preference() {
+            Preference::Auto => "auto",
+            Preference::Rust => "rust",
+            Preference::Torch => "torch",
+        };
+        let found = if probe && torch::preference() != Preference::Rust { torch::detect() } else { None };
+        let (backend, python, version) = match found {
+            Some(t) => ("torch", Some(t.python.display().to_string()), Some(t.version.clone())),
+            None if probe || torch::preference() == Preference::Rust => ("rust", None, None),
+            None => ("unknown", None, None),
+        };
+        json!({"preference": pref, "denoiseBackend": backend, "python": python, "torch": version})
+    }
+
     pub fn apply(r: Rendered, req: Request) -> Result<Rendered, String> {
         // fail before the slow part when a model is missing
-        let denoiser = if req.denoise > 0.0 { Some(load_denoiser()?) } else { None };
+        if req.denoise > 0.0 && !installed(Model::Denoise) {
+            return Err(missing(Model::Denoise));
+        }
         let upscaler = if req.upscale { Some(load_upscaler()?) } else { None };
         let Rendered { image, deep, .. } = r;
         let mut pixels = match deep {
@@ -249,9 +291,9 @@ mod imp {
                 true
             }
         };
-        if let Some(net) = denoiser {
+        if req.denoise > 0.0 {
             let img = to_image(&pixels);
-            let mut den = net.denoise(&img, &mut progress("denoise")).map_err(|e| format!("AI denoise: {e}"))?;
+            let mut den = run_denoise(&img, &mut progress("denoise"))?;
             lightcraft_restore::blend(&img, &mut den, (req.denoise / 100.0) as f32).map_err(|e| e.to_string())?;
             pixels = put_image(pixels, &den);
         }

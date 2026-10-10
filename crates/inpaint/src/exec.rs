@@ -74,7 +74,65 @@ impl Model {
         for (name, t) in g.initializers {
             weights.insert(name, to_val(t, &dev)?);
         }
-        Ok(Model { nodes: g.nodes, weights, inputs: g.inputs, outputs: g.outputs, dev })
+        let mut m = Model { nodes: g.nodes, weights, inputs: g.inputs, outputs: g.outputs, dev };
+        m.fold_batch_norms()?;
+        Ok(m)
+    }
+
+    /// Fold every `Conv → BatchNormalization` pair (the BN reading only that convolution) into
+    /// the convolution's weights and bias: the same values, one operator fewer per pair (a
+    /// ResNet's inference gets about a quarter faster).
+    fn fold_batch_norms(&mut self) -> Result<()> {
+        let mut uses: HashMap<&str, usize> = HashMap::new();
+        for n in &self.nodes {
+            for x in &n.inputs {
+                *uses.entry(x).or_default() += 1;
+            }
+        }
+        for o in &self.outputs {
+            *uses.entry(o).or_default() += 1;
+        }
+        let mut folds = Vec::new();
+        for (i, n) in self.nodes.iter().enumerate() {
+            let Some(next) = self.nodes.get(i + 1) else { break };
+            let foldable = n.op == "Conv"
+                && next.op == "BatchNormalization"
+                && next.inputs.len() == 5
+                && next.inputs.first() == n.outputs.first()
+                && n.outputs.first().is_some_and(|o| uses.get(o.as_str()) == Some(&1))
+                && n.inputs.get(1).is_some_and(|w| matches!(self.weights.get(w), Some(Val::Dev(_))))
+                && next.inputs[1..].iter().all(|p| matches!(self.weights.get(p), Some(Val::Dev(_))));
+            if foldable {
+                folds.push(i);
+            }
+        }
+        let mut remove = Vec::new();
+        for &i in &folds {
+            let (conv, bn) = (self.nodes[i].clone(), self.nodes[i + 1].clone());
+            let w = self.weights[&conv.inputs[1]].tensor(&self.dev)?;
+            let get = |k: usize| self.weights[&bn.inputs[k]].tensor(&self.dev);
+            let (scale, beta, mean, var) = (get(1)?, get(2)?, get(3)?, get(4)?);
+            let eps = bn.float("epsilon").unwrap_or(1e-5);
+            let s = scale.broadcast_div(&(var + eps)?.sqrt()?)?;
+            let c = s.elem_count();
+            let w2 = w.broadcast_mul(&s.reshape((c, 1, 1, 1))?)?;
+            let b0 = match conv.inputs.get(2).filter(|b| !b.is_empty()) {
+                Some(b) => self.weights[b].tensor(&self.dev)?,
+                None => Tensor::zeros(c, DType::F32, &self.dev)?,
+            };
+            let b2 = ((b0 - mean)?.broadcast_mul(&s)? + beta)?;
+            let (wn, bnn) = (format!("{}__bn", conv.inputs[1]), format!("{}__bnb", conv.inputs[1]));
+            self.weights.insert(wn.clone(), Val::Dev(w2));
+            self.weights.insert(bnn.clone(), Val::Dev(b2));
+            let node = &mut self.nodes[i];
+            node.inputs = vec![conv.inputs[0].clone(), wn, bnn];
+            node.outputs = bn.outputs.clone();
+            remove.push(i + 1);
+        }
+        for i in remove.into_iter().rev() {
+            self.nodes.remove(i);
+        }
+        Ok(())
     }
 
     pub fn device(&self) -> &Device {
@@ -267,6 +325,61 @@ impl Model {
                 }
                 one(Val::Dev(y))
             }
+            "BatchNormalization" => {
+                // inference form: y = (x − mean) · scale / √(var + ε) + bias, per channel
+                let Val::Dev(x) = input(0)? else { return Err(err("BatchNormalization of a constant")) };
+                let (scale, bias, mean, var) = (input(1)?.tensor(dev)?, input(2)?.tensor(dev)?, input(3)?.tensor(dev)?, input(4)?.tensor(dev)?);
+                let eps = n.float("epsilon").unwrap_or(1e-5);
+                let s = scale.broadcast_div(&(var + eps)?.sqrt()?)?;
+                let t = (bias - (mean * &s)?)?;
+                let c = s.elem_count();
+                // per-channel along axis 1, whatever the rank (images are 4-D, a feature vector 2-D)
+                let mut shape = vec![1usize; x.rank()];
+                if x.rank() > 1 {
+                    shape[1] = c;
+                } else {
+                    shape[0] = c;
+                }
+                one(Val::Dev(x.broadcast_mul(&s.reshape(shape.as_slice())?)?.broadcast_add(&t.reshape(shape.as_slice())?)?))
+            }
+            "PRelu" => {
+                let Val::Dev(x) = input(0)? else { return Err(err("PRelu of a constant")) };
+                let slope = input(1)?.tensor(dev)?;
+                let slope = if x.rank() == 4 && slope.elem_count() > 1 { slope.reshape((1, slope.elem_count(), 1, 1))? } else { slope };
+                let neg = x.clamp(f32::MIN, 0f32)?;
+                one(Val::Dev((x.relu()? + neg.broadcast_mul(&slope)?)?))
+            }
+            "Flatten" => {
+                let Val::Dev(x) = input(0)? else { return Err(err("Flatten of a constant")) };
+                let axis = usize::try_from(n.int("axis").unwrap_or(1)).unwrap_or(1).min(x.rank());
+                let dims = x.dims().to_vec();
+                let (a, b): (usize, usize) = (dims[..axis].iter().product(), dims[axis..].iter().product());
+                one(Val::Dev(x.reshape((a, b))?))
+            }
+            "Gemm" => {
+                let Val::Dev(a) = input(0)? else { return Err(err("Gemm of a constant")) };
+                let mut b = input(1)?.tensor(dev)?;
+                if n.int("transA").unwrap_or(0) != 0 {
+                    return Err(err("Gemm with transA is not supported"));
+                }
+                if n.int("transB").unwrap_or(0) != 0 {
+                    b = b.t()?;
+                }
+                let mut y = a.matmul(&b)?;
+                let alpha = n.float("alpha").unwrap_or(1.0);
+                if (alpha - 1.0).abs() > f64::EPSILON {
+                    y = y.affine(alpha, 0.0)?;
+                }
+                if n.inputs.len() > 2 && !n.inputs[2].is_empty() {
+                    let mut c = input(2)?.tensor(dev)?;
+                    let beta = n.float("beta").unwrap_or(1.0);
+                    if (beta - 1.0).abs() > f64::EPSILON {
+                        c = c.affine(beta, 0.0)?;
+                    }
+                    y = y.broadcast_add(&c)?;
+                }
+                one(Val::Dev(y))
+            }
             "LeakyRelu" => {
                 let Val::Dev(x) = input(0)? else { return Err(err("LeakyRelu of a constant")) };
                 one(Val::Dev(candle_nn::ops::leaky_relu(&x, n.float("alpha").unwrap_or(0.01))?))
@@ -414,7 +527,7 @@ impl Model {
 /// input, each scaled per channel: a handful of whole-tensor operations instead of one tiny
 /// convolution per channel, which is what the generic grouped path costs.
 fn depthwise(x: &Tensor, w: &Tensor, pad: usize, stride: usize) -> Result<Tensor> {
-    let (_, c, h, wd) = x.dims4()?;
+    let (b, c, h, wd) = x.dims4()?;
     let (kh, kw) = (w.dim(2)?, w.dim(3)?);
     let (hp, wp) = (h + 2 * pad, wd + 2 * pad);
     if hp < kh || wp < kw || stride == 0 {
@@ -429,7 +542,7 @@ fn depthwise(x: &Tensor, w: &Tensor, pad: usize, stride: usize) -> Result<Tensor
     let (ph, pw) = (hp.div_ceil(stride) * stride, wp.div_ceil(stride) * stride);
     let phased = if stride > 1 {
         let q = xp.pad_with_zeros(2, 0, ph - hp)?.pad_with_zeros(3, 0, pw - wp)?;
-        Some(q.reshape((1, c, ph / stride, stride, pw / stride, stride))?)
+        Some(q.reshape((b, c, ph / stride, stride, pw / stride, stride))?)
     } else {
         None
     };
@@ -443,7 +556,7 @@ fn depthwise(x: &Tensor, w: &Tensor, pad: usize, stride: usize) -> Result<Tensor
                     .narrow(3, ky % stride, 1)?
                     .narrow(4, kx / stride, ow)?
                     .narrow(5, kx % stride, 1)?
-                    .reshape((1, c, oh, ow))?,
+                    .reshape((b, c, oh, ow))?,
             };
             let f = w.narrow(2, ky, 1)?.narrow(3, kx, 1)?.reshape((1, c, 1, 1))?;
             let t = tap.broadcast_mul(&f)?;
@@ -597,7 +710,8 @@ mod tests {
         let dev = Device::Cpu;
         for (k, stride, pad, size) in [(3usize, 1usize, 1usize, 10usize), (4, 2, 1, 12), (4, 1, 0, 9), (3, 2, 1, 8)] {
             let c = 5;
-            let x = Tensor::from_vec(ramp(c * size * size, 1.0), (1, c, size, size), &dev).unwrap();
+            // a batch of two: the strided path must keep the batch axis
+            let x = Tensor::from_vec(ramp(2 * c * size * size, 1.0), (2, c, size, size), &dev).unwrap();
             let w = Tensor::from_vec(ramp(c * k * k, 2.0), (c, 1, k, k), &dev).unwrap();
             let fast = depthwise(&x, &w, pad, stride).unwrap();
             let slow = x.conv2d(&w, pad, stride, 1, c).unwrap();

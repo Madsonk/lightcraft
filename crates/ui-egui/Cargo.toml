@@ -26,6 +26,8 @@ log = { workspace = true }
 
 [dev-dependencies]
 lightcraft-codecs = { workspace = true }
+# the People tests inject faces into the index (no model needed)
+lightcraft-engine = { workspace = true, features = ["people", "places"] }
 
 [build-dependencies]
 serde_json = { workspace = true }

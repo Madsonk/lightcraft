@@ -80,3 +80,29 @@ also embed the fonts listed in https://github.com/storytold/craft-fonts/blob/mai
 (the Japanese fonts BIZ UDPGothic, BIZ UDMincho and Shippori Mincho; the web build embeds only BIZ
 UDPGothic Regular), under the SIL Open Font License 1.1. Release packages include each font's
 licence as OFL-<family>.txt.
+
+crates/lens (lightcraft-lens) reads the lens calibrations of the lensfun project's lens database
+(https://lensfun.github.io/, repository lensfun/lensfun, data/db/*.xml, revision
+43f9e001ab66c4fcdd4f400463f13b72f94b2288), licensed under the Creative Commons Attribution-ShareAlike 3.0
+licence (CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/). Only the database's data files are
+used (converted to crates/lens/data/lens-profiles.json.z by crates/lens/examples/build_db.rs: XML to
+compact JSON, focal range and widest aperture filled from the lens names where the entry lacked them);
+none of the lensfun library's code (LGPL) is read, linked or copied. The converted data file remains a
+separate file under CC BY-SA 3.0 (ShareAlike applies to adaptations of it); see crates/lens/data/README.md.
+
+crates/people (lightcraft-people) runs InsightFace's ArcFace face-recognition networks (w600k_r50 of the buffalo_l
+pack, w600k_mbf of the buffalo_s pack; https://github.com/deepinsight/insightface) from their ONNX files with the
+interpreter of crates/inpaint. The weights are released by InsightFace for non-commercial research purposes only;
+they are not part of LightCraft and are never distributed with it: a user downloads them only when they choose to
+(SHA-256 checked), after being shown these terms. No InsightFace code is copied; the alignment template is a list
+of ten coordinates.
+
+
+crates/places (lightcraft-places) resolves GPS positions to country / region / city offline with data from
+GeoNames (https://www.geonames.org/), licensed under the Creative Commons Attribution 4.0 licence (CC BY 4.0,
+https://creativecommons.org/licenses/by/4.0/). Files used: cities1000.zip, countryInfo.txt and
+admin1CodesASCII.txt from https://download.geonames.org/export/dump/ (retrieved 2026-10-09), converted to
+crates/places/data/places-cities.bin by crates/places/examples/build_db.rs (tab-separated text to a compact
+binary table; kept per place: name, position, country, first-level division, population; all other columns
+dropped). Required attribution: "Place data from GeoNames (https://www.geonames.org/), CC BY 4.0, converted by
+LightCraft." The data file stays a separate file loaded at run time; see crates/places/data/README.md.

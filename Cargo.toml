@@ -19,6 +19,7 @@ lightcraft-tiff = { path = "crates/tiff" }
 lightcraft-raw = { path = "crates/raw" }
 lightcraft-codecs = { path = "crates/codecs" }
 lightcraft-meta = { path = "crates/meta" }
+lightcraft-lens = { path = "crates/lens" }
 lightcraft-develop = { path = "crates/develop" }
 lightcraft-scenes = { path = "crates/scenes" }
 lightcraft-pipeline = { path = "crates/pipeline" }
@@ -36,6 +37,10 @@ lightcraft-restore = { path = "crates/restore" }
 lightcraft-depth = { path = "crates/depth" }
 lightcraft-inpaint = { path = "crates/inpaint" }
 lightcraft-search = { path = "crates/search" }
+lightcraft-taste = { path = "crates/taste" }
+lightcraft-people = { path = "crates/people" }
+lightcraft-places = { path = "crates/places" }
+lightcraft-autoseg = { path = "crates/autoseg" }
 
 # foundation
 thiserror = "2"

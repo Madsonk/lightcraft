@@ -68,6 +68,25 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!(
+            query "restore.backend",
+            "AI Denoise Backend",
+            [],
+            None,
+            "{probe?: bool (true)} — what runs AI denoise on this machine: `torch` (an external Python with PyTorch on the GPU, ~9x faster on a 22 Mpx photo) or `rust` (candle). Chosen by LIGHTCRAFT_RESTORE_BACKEND=auto|rust|torch and LIGHTCRAFT_RESTORE_PYTHON; probing imports PyTorch once (a few seconds), `probe: false` only reports what is already known → {preference, denoiseBackend: torch|rust|unknown|none, python, torch}",
+            super::always,
+            |_, p| {
+                #[cfg(feature = "restore")]
+                {
+                    Ok(crate::restore::denoise_backend(super::bool_or(p, "probe", true)))
+                }
+                #[cfg(not(feature = "restore"))]
+                {
+                    let _ = p;
+                    Ok(json!({"preference": "auto", "denoiseBackend": "none", "python": null, "torch": null}))
+                }
+            }
+        ),
+        cmd!(
             query "restore.model.cancel",
             "Cancel AI Restore Model Download",
             [],

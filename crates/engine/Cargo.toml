@@ -22,6 +22,7 @@ lightcraft-preview = { workspace = true }
 lightcraft-codecs = { workspace = true }
 lightcraft-raw = { workspace = true }
 lightcraft-meta = { workspace = true }
+lightcraft-lens = { workspace = true }
 miniz_oxide = { workspace = true }
 lightcraft-merge = { workspace = true }
 rayon = { workspace = true }
@@ -38,6 +39,10 @@ lightcraft-inpaint = { workspace = true, optional = true }
 lightcraft-fetch = { workspace = true, optional = true }
 png = { workspace = true, optional = true }
 lightcraft-search = { workspace = true, optional = true }
+lightcraft-taste = { workspace = true, optional = true }
+lightcraft-people = { workspace = true, optional = true }
+lightcraft-places = { workspace = true, optional = true }
+lightcraft-autoseg = { workspace = true, optional = true }
 
 [features]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
@@ -51,7 +56,13 @@ depth = ["dep:lightcraft-depth", "dep:lightcraft-fetch", "dep:png"]
 # Object removal by inpainting with MI-GAN (`spot.inpaint`). Off for the web build.
 inpaint = ["dep:lightcraft-inpaint", "dep:lightcraft-fetch"]
 # Semantic search (SigLIP) and near-duplicate detection. Off for the web build.
-search = ["dep:lightcraft-search", "dep:lightcraft-fetch"]
+search = ["dep:lightcraft-search", "dep:lightcraft-fetch", "dep:lightcraft-taste"]
+# Face recognition: group the faces of one person, name them, tag `People|<name>` (InsightFace ArcFace, downloaded on request). Off for the web build.
+people = ["faces", "dep:lightcraft-people", "dep:lightcraft-fetch"]
+# Places: offline reverse geocoding of GPS positions into Places|Country|Region|City keywords (GeoNames data file). Off for the web build.
+places = ["dep:lightcraft-places", "lightcraft-catalog/places"]
+# Automatic masks: SegFormer (sky, people, landscape) and an ISNet matting network (subject). Off for the web build.
+autoseg = ["dep:lightcraft-autoseg", "dep:lightcraft-fetch"]
 
 [dev-dependencies]
 libc = { workspace = true }

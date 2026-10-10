@@ -2818,12 +2818,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-autoseg"
+version = "0.4.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-catalog"
 version = "0.4.0"
 dependencies = [
  "crc32fast",
  "lightcraft-develop",
+ "lightcraft-geom",
+ "lightcraft-lens",
  "lightcraft-meta",
+ "lightcraft-places",
  "log",
  "proptest",
  "serde",
@@ -2913,6 +2927,7 @@ version = "0.4.0"
 dependencies = [
  "ab_glyph",
  "libc",
+ "lightcraft-autoseg",
  "lightcraft-catalog",
  "lightcraft-codecs",
  "lightcraft-color",
@@ -2923,9 +2938,12 @@ dependencies = [
  "lightcraft-geom",
  "lightcraft-gpu",
  "lightcraft-inpaint",
+ "lightcraft-lens",
  "lightcraft-merge",
  "lightcraft-meta",
+ "lightcraft-people",
  "lightcraft-pipeline",
+ "lightcraft-places",
  "lightcraft-preview",
  "lightcraft-raster",
  "lightcraft-raw",
@@ -2933,6 +2951,7 @@ dependencies = [
  "lightcraft-scenes",
  "lightcraft-search",
  "lightcraft-segment",
+ "lightcraft-taste",
  "log",
  "miniz_oxide 0.8.9",
  "png",
@@ -3002,6 +3021,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-lens"
+version = "0.4.0"
+dependencies = [
+ "miniz_oxide 0.8.9",
+ "quick-xml 0.38.4",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lightcraft-mcp"
 version = "0.4.0"
 dependencies = [
@@ -3041,6 +3070,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-people"
+version = "0.4.0"
+dependencies = [
+ "candle-core",
+ "half",
+ "image",
+ "lightcraft-faces",
+ "lightcraft-inpaint",
+ "rayon",
+ "serde",
+ "serde_json",
+ "siphasher",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-pipeline"
 version = "0.4.0"
 dependencies = [
@@ -3052,6 +3097,15 @@ dependencies = [
  "lightcraft-scenes",
  "proptest",
  "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lightcraft-places"
+version = "0.4.0"
+dependencies = [
+ "miniz_oxide 0.8.9",
  "serde",
  "serde_json",
 ]
@@ -3157,6 +3211,15 @@ dependencies = [
 [[package]]
 name = "lightcraft-sysmem"
 version = "0.4.0"
+
+[[package]]
+name = "lightcraft-taste"
+version = "0.4.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "lightcraft-tiff"

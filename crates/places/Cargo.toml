@@ -1,0 +1,14 @@
+[package]
+name = "lightcraft-places"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LightCraft places: offline reverse geocoding (GPS to country / region / city) from a GeoNames-derived data file (L1)"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+miniz_oxide = { workspace = true }

@@ -11,6 +11,7 @@
 #![forbid(unsafe_code)]
 
 pub mod ai;
+pub mod autoseg;
 pub mod availability;
 mod camera_preview;
 pub mod camera_profiles;
@@ -19,10 +20,12 @@ pub mod crs;
 pub mod crs_masks;
 pub mod demo;
 pub mod devices;
+pub mod dust;
 pub mod export;
 pub mod faces;
 pub mod files;
 pub mod fonts;
+pub mod gallery;
 pub mod guard;
 pub mod import;
 mod import_move;
@@ -31,11 +34,16 @@ pub mod media;
 pub mod memory;
 pub mod merge;
 pub mod originals;
+pub mod places;
 pub mod preset_import;
+pub mod portrait;
 pub mod preset_luminar;
 pub mod presets;
 pub mod rename;
 pub mod restore;
+#[cfg(feature = "restore")]
+mod restore_torch;
+pub mod people;
 pub mod search;
 pub mod segment;
 pub mod sidecar;
@@ -167,6 +175,10 @@ pub struct Session {
     pub ai: ai::Ai,
     /// Semantic search and near-duplicates: the SigLIP model, the index, the indexing run.
     pub searcher: search::Searcher,
+    /// Face recognition: the models, the face index, the groups and the user's decisions.
+    pub people: people::People,
+    /// Places: the settings and the suggestions waiting for a yes.
+    pub places: places::Places,
     /// Selected spot (Remove panel), by index into the active photo's spots.
     pub active_spot: Option<usize>,
     /// The persistent library this session writes to (`None` = in-memory only).
@@ -259,6 +271,8 @@ impl Session {
             faces: faces::Faces::default(),
             ai: ai::Ai::default(),
             searcher: search::Searcher::default(),
+            people: people::People::default(),
+            places: places::Places::default(),
             active_spot: None,
             library: None,
             xmp: sidecar::XmpPrefs::default(),
@@ -675,6 +689,35 @@ impl Session {
         self.total.as_ref().map(|t| t.1)
     }
 
+    /// How many photos of the current view (source and filter, but not the keyword filters) have no
+    /// keyword and how many have at least one; the numbers beside "No keyword" / "Has keyword".
+    pub fn keyword_presence(&mut self) -> (usize, usize) {
+        lightcraft_catalog::rules::set_now(Some((self.clock)()));
+        let mut f = self.source.to_filter(&self.filter, &self.catalog);
+        if self.source == LibrarySource::Folder {
+            let b = self.browse.clone().unwrap_or_default();
+            f.folder = Some(b.path);
+            f.subfolders = b.subfolders;
+        }
+        f.keyword = None;
+        f.untagged = None;
+        if self.source != LibrarySource::Missing {
+            return self.catalog.keyword_presence_in(&f);
+        }
+        // Missing Photos: only the photos found gone count
+        let ids = self.catalog.query(&f, &self.sort);
+        let (cat, avail) = (&self.catalog, &self.media.availability);
+        let (mut none, mut some) = (0, 0);
+        for id in ids.into_iter().filter(|id| cmd::missing::is_missing(cat, avail, *id)) {
+            if cat.photo(id).is_some_and(|p| p.meta.keywords.is_empty()) {
+                none += 1;
+            } else {
+                some += 1;
+            }
+        }
+        (none, some)
+    }
+
     pub fn visible_cloned(&mut self) -> Vec<PhotoId> {
         self.visible().to_vec()
     }
@@ -697,6 +740,11 @@ impl Session {
         }
         if self.selection.ids.is_empty() { self.selection.active.into_iter().collect() } else { self.selection.ids.clone() }
     }
+}
+
+/// Most face patches one retouch mask holds (the limit of a mask component's detail passes).
+pub(crate) fn portrait_max_detail() -> usize {
+    lightcraft_develop::segmask::MAX_DETAIL
 }
 
 /// Automatic versions kept per photo.
@@ -726,11 +774,15 @@ mod tests_export;
 #[cfg(test)]
 mod tests_faces;
 #[cfg(test)]
+mod tests_autoseg;
+#[cfg(test)]
 mod tests_forget_local;
 #[cfg(test)]
 mod tests_import;
 #[cfg(test)]
 mod tests_import_move;
+#[cfg(test)]
+mod tests_lens;
 #[cfg(test)]
 mod tests_libops;
 #[cfg(test)]
@@ -740,11 +792,19 @@ mod tests_merge;
 #[cfg(test)]
 mod tests_organize;
 #[cfg(test)]
+mod tests_people;
+#[cfg(test)]
 mod tests_persist;
+#[cfg(all(test, feature = "places"))]
+mod tests_places;
 #[cfg(test)]
 mod tests_prefs;
 #[cfg(test)]
 mod tests_search;
+#[cfg(all(test, feature = "search"))]
+mod tests_taste;
+#[cfg(all(test, feature = "search"))]
+mod tests_keywords;
 #[cfg(test)]
 mod tests_segment;
 #[cfg(test)]

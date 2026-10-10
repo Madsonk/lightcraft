@@ -4,11 +4,14 @@
 //! delete), `album.*`, `develop.*` (settings), `crop.*`, `mask.*`, `preset.*`, `version.*`,
 //! `edit.*` (undo/redo), and queries (`catalog.query`, `photo.inspect`, `develop.get`…).
 
+mod autoseg;
 mod before;
 pub(crate) mod browse;
 mod color;
 pub(crate) mod convert;
 mod cull;
+mod dust;
+mod gallery;
 pub mod curves;
 mod develop;
 mod edit;
@@ -16,20 +19,25 @@ mod export;
 mod faces;
 pub mod filters;
 pub mod keywords;
+pub mod lens;
 pub mod library;
 pub mod lut_profiles;
 pub mod manage;
-mod masks;
+pub(crate) mod masks;
 mod merge;
 pub mod metadata;
 pub mod missing;
 mod organize;
+mod portrait;
+mod people;
+mod places;
 mod prefs;
 mod preset_files;
 pub mod previews;
 mod query;
 mod restore;
 mod search;
+mod taste;
 mod xmp;
 
 use serde::Serialize;
@@ -134,6 +142,9 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(cull::specs());
         v.extend(faces::specs());
         v.extend(search::specs());
+        v.extend(taste::specs());
+        v.extend(people::specs());
+        v.extend(places::specs());
         v.extend(convert::specs());
         v.extend(convert::edit_specs());
         v.extend(merge::specs());
@@ -141,12 +152,17 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(xmp::specs());
         v.extend(preset_files::specs());
         v.extend(prefs::specs());
+        v.extend(lens::specs());
         v.extend(export::specs());
         v.extend(before::specs());
         v.extend(browse::specs());
         v.extend(missing::specs());
         v.extend(metadata::specs());
         v.extend(filters::specs());
+        v.extend(dust::specs());
+        v.extend(gallery::specs());
+        v.extend(autoseg::specs());
+        v.extend(portrait::specs());
         v
     })
 }

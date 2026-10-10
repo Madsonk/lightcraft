@@ -72,6 +72,20 @@ pub fn clipped(img: &Rgb32f) -> f32 {
     c as f32 / n as f32
 }
 
+/// How the exposure sits, from the display-referred luminance of the photo at the measuring
+/// size: `[mean, 5th percentile, 95th percentile]`, each 0..1. A dark, a washed-out and a
+/// well-spread photo read differently; used as features of the taste model.
+pub fn exposure(img: &Rgb32f) -> [f32; 3] {
+    let (mut l, _, _) = luma(img);
+    if l.is_empty() {
+        return [0.0; 3];
+    }
+    let mean = l.iter().sum::<f32>() / l.len() as f32;
+    l.sort_by(f32::total_cmp);
+    let at = |q: f32| l.get(((l.len() - 1) as f32 * q).round() as usize).copied().unwrap_or(0.0);
+    [mean, at(0.05), at(0.95)]
+}
+
 /// A tiny look-alike signature: 8 × 8 luminance, normalised to zero mean and unit norm.
 pub fn signature(img: &Rgb32f) -> [f32; 64] {
     let (l, w, h) = luma(img);
@@ -134,5 +148,12 @@ mod tests {
         let other = lightcraft_scenes::demo_library()[5].render(480, 320);
         assert!(similarity(&signature(&img), &signature(&other)) < 0.9);
         assert!(clipped(&img) < 0.5);
+    }
+
+    #[test]
+    fn exposure_orders_dark_and_bright() {
+        let mk = |v: f32| Rgb32f { width: 16, height: 16, data: vec![[v, v, v]; 256] };
+        let (dark, bright) = (exposure(&mk(0.02)), exposure(&mk(0.8)));
+        assert!(dark[0] < bright[0] && dark[1] <= dark[0] + 1e-5 && dark[0] <= dark[2] + 1e-5, "{dark:?} {bright:?}");
     }
 }

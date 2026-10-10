@@ -124,6 +124,11 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
             }
         });
         describe_field(app, ui, true);
+        if lightcraft_engine::autoseg::models_installed() {
+            // Sky / Subject / Background tiles then use the installed networks (mask.auto); see docs/autoseg.md
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(crate::i18n::tr("Sky, Subject and Background use the installed AI models.")).size(11.0).color(t.text_dim));
+        }
         let seg = &app.session.segmenter;
         let status = if seg.analyzing() {
             Some("Analyzing the photo for AI masks…")

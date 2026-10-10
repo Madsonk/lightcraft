@@ -20,6 +20,14 @@
 mod download;
 #[cfg(feature = "faces")]
 mod work;
+#[cfg(feature = "faces")]
+pub(crate) use work::display;
+
+/// Check that `file` is the published face model (exact size and SHA-256).
+#[cfg(feature = "faces")]
+pub(crate) fn verify_model(file: &std::path::Path) -> Result<(), String> {
+    download::verify(file)
+}
 
 use std::path::PathBuf;
 

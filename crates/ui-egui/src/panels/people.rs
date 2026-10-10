@@ -19,6 +19,26 @@ const PAD: f32 = 20.0;
 const HEADER_H: f32 = 44.0;
 
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    let mut recognition = app.caches.people_rec.recognition;
+    ui.horizontal(|ui| {
+        ui.add_space(PAD);
+        if ui.selectable_label(!recognition, "Named in XMP").clicked() {
+            recognition = false;
+        }
+        if ui.selectable_label(recognition, "Recognition").clicked() {
+            recognition = true;
+        }
+    });
+    app.caches.people_rec.recognition = recognition;
+    app.caches.people_rec.dirty |= recognition && app.caches.people_rec.ov_is_none();
+    if recognition {
+        super::people_rec::show(app, ui);
+    } else {
+        named(app, ui);
+    }
+}
+
+fn named(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let people = app.caches.people(&app.session.catalog, &app.session.filter);
     let (head, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEADER_H), Sense::hover());

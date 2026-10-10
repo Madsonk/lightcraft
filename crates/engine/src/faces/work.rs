@@ -140,7 +140,7 @@ fn load(file: &std::path::Path) -> Result<Arc<FaceLandmarker>, String> {
 /// The photo as the model sees it: display sRGB 0–1. The source is linear Rec.2020; a source that
 /// is dark overall (a raw file's unrendered sensor data) is brightened so faces keep their
 /// contrast (the 95th percentile of luminance goes to 0.8, at most ×8).
-pub(super) fn display(img: &Rgb32f) -> Vec<[f32; 3]> {
+pub(crate) fn display(img: &Rgb32f) -> Vec<[f32; 3]> {
     let m = lightcraft_color::REC2020.to_space(&lightcraft_color::SRGB);
     let mut sample: Vec<f32> = img.data.iter().step_by(13).map(|c| lightcraft_color::luminance_2020(*c)).collect();
     let gain = if sample.is_empty() {

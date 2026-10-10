@@ -160,6 +160,19 @@ pub struct Meta {
     pub lens: String,
     pub focal_mm: Option<f32>,
     pub aperture: Option<f32>,
+    /// What lens-profile recognition needs beyond the names above (all optional, absent in older catalogs):
+    /// the lens maker, its focal range and widest aperture (`[min mm, max mm, f at min, f at max]`), the
+    /// 35 mm equivalent focal length and the subject distance in metres.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub lens_make: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lens_spec: Option<[f32; 4]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lens_max_aperture: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focal_35mm: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_distance: Option<f32>,
     pub shutter: String,
     pub iso: Option<u32>,
     /// Place (sublocation, e.g. a landmark).
@@ -438,10 +451,49 @@ impl Photo {
             Some((t, tint)) => DevelopSettings::for_raw(t, tint),
             None => DevelopSettings::default(),
         };
-        if self.embedded_lens.is_some() {
+        if self.embedded_lens.is_some() || (self.kind == MediaKind::Raw && self.database_lens().is_some_and(|r| r.detection.has_corrections())) {
             d.optics.lens_profile = true;
         }
         d
+    }
+
+    /// The camera and lens this photo's metadata names, as a lens-profile lookup.
+    pub fn lens_query(&self) -> lightcraft_lens::Query {
+        let m = &self.meta;
+        // `camera` is "<make> <model>" (the model usually repeats the make: "Canon Canon EOS 5D Mark III")
+        let (make, model) = m.camera.split_once(' ').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or((String::new(), m.camera.clone()));
+        let f = |v: Option<f32>| v.map(f64::from).filter(|x| *x > 0.0);
+        lightcraft_lens::Query {
+            camera_make: make,
+            camera_model: model,
+            lens_make: m.lens_make.clone(),
+            lens_model: m.lens.clone(),
+            lens_spec: m.lens_spec.map(|s| s.map(f64::from)),
+            lens_max_aperture: f(m.lens_max_aperture),
+            focal: f(m.focal_mm),
+            focal_35: f(m.focal_35mm),
+            aperture: f(m.aperture),
+            distance: f(m.subject_distance),
+        }
+    }
+
+    /// The lens-profile database's answer for this photo (camera + lens recognised, corrections found), `None` when
+    /// no database is installed or the photo carries no camera/lens information.
+    pub fn database_lens(&self) -> Option<std::sync::Arc<lightcraft_lens::Resolved>> {
+        if self.meta.camera.is_empty() && self.meta.lens.is_empty() {
+            return None;
+        }
+        lightcraft_lens::resolve(&self.lens_query())
+    }
+
+    /// The lens corrections to apply: the ones embedded in the file (DNG opcodes) when it has them, else the
+    /// database profile of the recognised lens, else none.
+    pub fn effective_lens(&self) -> Option<lightcraft_develop::EmbeddedLens> {
+        if self.embedded_lens.is_some() {
+            return self.embedded_lens;
+        }
+        let r = self.database_lens()?;
+        embedded_from_correction(r.correction.as_ref()?, f64::from(self.width.max(1)), f64::from(self.height.max(1)))
     }
     /// In the library: not deleted and not only browsed (Local).
     pub fn in_library(&self) -> bool {
@@ -488,6 +540,21 @@ impl Album {
     pub fn is_smart(&self) -> bool {
         self.smart.is_some()
     }
+}
+
+/// The pipeline's lens data for a database correction on a `w x h` (oriented) image: the radius is the image's
+/// half-diagonal, the centre the image centre.
+pub fn embedded_from_correction(c: &lightcraft_lens::LensCorrection, w: f64, h: f64) -> Option<lightcraft_develop::EmbeddedLens> {
+    use lightcraft_develop::{EmbeddedLens, EmbeddedVignette, EmbeddedWarp};
+    let long = w.max(h);
+    if !(long.is_finite() && long > 1.0) {
+        return None;
+    }
+    let radius = (w.hypot(h) / 2.0) / long;
+    let center = lightcraft_geom::Point::new(0.5, 0.5);
+    let warp = c.planes.map(|p| EmbeddedWarp { planes: p.map(|k| [k[0], k[1], k[2], k[3], 0.0, 0.0]), center, radius });
+    let vignette = c.vignette.map(|k| EmbeddedVignette { k, center, radius });
+    (warp.is_some() || vignette.is_some()).then_some(EmbeddedLens { warp, vignette })
 }
 
 #[cfg(test)]

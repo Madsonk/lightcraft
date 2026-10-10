@@ -364,6 +364,17 @@ fn performance_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
         choices(ui, "settingsPreview", &opts, &mut app.ui.settings.preview_edge);
     });
     hint(ui, t, crate::i18n::tr("Largest long edge the Detail view renders at; larger is sharper on big displays but slower."));
+    row(ui, t, crate::i18n::tr("While dragging a slider"), |ui| {
+        let opts = [(100u32, "Sharp"), (75, "Balanced"), (60, "Fast")];
+        choices(ui, "settingsDragPreview", &opts, &mut app.ui.settings.drag_preview);
+    });
+    hint(
+        ui,
+        t,
+        crate::i18n::tr(
+            "Sharp keeps the preview at the display's real pixels while a slider moves (no blur, 2-3 ms on the GPU). Balanced and Fast render 75 % / 60 % of the pixels and stretch them until you let go: faster on a computer without a GPU, but softer.",
+        ),
+    );
     row(ui, t, crate::i18n::tr("Memory for caches"), |ui| {
         let auto = crate::i18n::tr_format!("Automatic ({} MB)", lightcraft_engine::memory::default_budget() >> 20);
         let opts = [(0u32, auto.as_str()), (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (4096, "4 GB")];

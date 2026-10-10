@@ -18,6 +18,8 @@ pub enum ViewMode {
     Reference,
     /// A card per person named on faces (close-up, name, photo count).
     People,
+    /// The places photos were taken at: list, geotag, naming, suggestions.
+    Places,
 }
 
 /// The right-hand tool/panel shown next to the tool strip.
@@ -142,6 +144,9 @@ pub struct AppSettings {
     pub gpu: bool,
     /// Largest long edge (pixels) the loupe renders at.
     pub preview_edge: u32,
+    /// Resolution of the loupe while a slider is dragged, as a percentage of the display's real
+    /// pixels (100 = as sharp as at rest; lower trades sharpness for speed on slow machines).
+    pub drag_preview: u32,
     /// Edit in External Editor: the application ("" = the system's default for TIFF files).
     pub external_editor: String,
     /// Memory the caches may hold together, in MB (0 = automatic; `app.memoryBudget`).
@@ -162,6 +167,7 @@ impl Default for AppSettings {
             confirm_delete: false,
             gpu: true,
             preview_edge: 2560,
+            drag_preview: 100,
             external_editor: String::new(),
             memory_mb: 0,
             film_names: true,
@@ -173,6 +179,18 @@ impl Default for AppSettings {
 
 /// Preview sizes offered in Settings → Performance.
 pub const PREVIEW_EDGES: [u32; 4] = [1600, 2560, 3840, 5120];
+
+/// Loupe resolutions offered while a slider is dragged (percent of the display's pixels): sharp,
+/// balanced, fast. Anything below 100 shows a stretched, softer image until the slider is released.
+pub const DRAG_PREVIEWS: [u32; 3] = [100, 75, 60];
+
+impl AppSettings {
+    /// The fraction of the display's pixels the loupe is rendered at: 1.0 at rest and, by default,
+    /// while a slider is dragged (a drag render is never softer than the settled one).
+    pub fn preview_scale(&self, interacting: bool) -> f32 {
+        if interacting { self.drag_preview.clamp(40, 100) as f32 / 100.0 } else { 1.0 }
+    }
+}
 
 /// Click-zoom ratios offered (percent): 1:1, 2:1, 3:1, 4:1, 8:1.
 pub const CLICK_ZOOMS: [u32; 5] = [100, 200, 300, 400, 800];
@@ -690,6 +708,9 @@ impl UiState {
         self.fullscreen = false;
         if !crate::state::PREVIEW_EDGES.contains(&self.settings.preview_edge) {
             self.settings.preview_edge = AppSettings::default().preview_edge;
+        }
+        if !crate::state::DRAG_PREVIEWS.contains(&self.settings.drag_preview) {
+            self.settings.drag_preview = AppSettings::default().drag_preview;
         }
         match self.settings.startup_view {
             StartupView::Last => {}

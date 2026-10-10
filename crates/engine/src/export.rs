@@ -998,6 +998,32 @@ pub fn export_photo(session: &mut crate::Session, id: lightcraft_catalog::PhotoI
     prepare_export(session, id, o, seq)?.run()
 }
 
+/// Render photo `id` once at the size `o` asks for and encode that render in each of `formats`
+/// (format, quality): `(format, bytes)` in the same order, with the render's size. For a ladder of
+/// image sizes in several formats (the web gallery) this decodes and renders each size once.
+pub fn export_formats(
+    session: &mut crate::Session,
+    id: lightcraft_catalog::PhotoId,
+    o: &ExportOptions,
+    formats: &[(ExportFormat, u8)],
+) -> Result<(Vec<(ExportFormat, Vec<u8>)>, usize, usize), String> {
+    let p = session.catalog.photo(id).ok_or("no such photo")?;
+    if let Some((f, _)) = formats.iter().find(|(f, _)| !f.is_rendered()) {
+        return Err(format!("{f:?} is not a rendered format"));
+    }
+    let (w, h) = output_size(p, o);
+    let meta = export_metadata(p, o);
+    let job = session.export_job(id, w, h, o.effective_space(), o.effective_depth())?;
+    let restore = crate::restore::Request::from_settings(&job.settings);
+    let r = crate::restore::apply(job.run().rendered?, restore)?;
+    let mut out = Vec::new();
+    for (f, q) in formats {
+        let oo = ExportOptions { format: *f, quality: *q, ..o.clone() };
+        out.push((*f, encode_rendered(&r, &oo, meta.as_ref())?));
+    }
+    Ok((out, r.image.width, r.image.height))
+}
+
 /// One photo's export, set up from the session ([`prepare_export`]). [`PreparedExport::run`] does
 /// the heavy part (read, decode, render, encode) without the session, so it can run on another
 /// thread.

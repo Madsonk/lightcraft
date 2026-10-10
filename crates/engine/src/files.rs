@@ -19,6 +19,11 @@ fn meta_of(m: &lightcraft_meta::Metadata) -> (Meta, Option<String>) {
     let meta = Meta {
         camera,
         lens: m.lens_model.clone().unwrap_or_default(),
+        lens_make: m.lens_make.clone().unwrap_or_default(),
+        lens_spec: m.lens_spec.map(|s| s.map(|v| v as f32)),
+        lens_max_aperture: m.lens_max_aperture.map(|v| v as f32),
+        focal_35mm: m.focal_length_35mm.map(|f| f as f32),
+        subject_distance: m.subject_distance.map(|d| d as f32),
         focal_mm: m.focal_length.map(|f| f as f32),
         aperture: m.f_number.map(|f| f as f32),
         shutter,
@@ -156,6 +161,16 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
         return Err(format!("{fmt:?} files are not supported yet"));
     }
     let d = lightcraft_codecs::decode(bytes, lightcraft_codecs::DecodeOptions::fit(64, 64)).map_err(|e| e.to_string())?;
+    // HEIC / AVIF carry Exif in an item, not in a segment the metadata crate can find by sniffing: use the one the
+    // decoder located (camera, lens and lens facts for profile recognition)
+    let (meta, captured) = match d.exif.as_deref() {
+        Some(x) if meta.camera.is_empty() && meta.lens.is_empty() => {
+            let mut full = lightcraft_meta::read_exif(x);
+            full.fill_missing(&m);
+            meta_of(&full)
+        }
+        _ => (meta, captured),
+    };
     let o = Orientation::from_exif(d.orientation);
     let (mut w, mut h) = (d.source_width, d.source_height);
     if o.swaps_axes() {

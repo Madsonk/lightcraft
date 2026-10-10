@@ -897,6 +897,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     p.edited = Some(now.clone());
                     p.history.push(lightcraft_catalog::HistoryStep { label, settings: d });
                 }
+                crate::places::tag_new_photo(s, &mut p.meta);
                 report.imported.push(id.0);
                 p.local = opts.local;
                 if opts.local {

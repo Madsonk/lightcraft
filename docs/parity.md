@@ -47,10 +47,10 @@ and prints the summary; `cargo xtask parity --write` refreshes the summary table
 | X. Cross-cutting behaviours (BEHAV) | 17 | 4 | 1 | 1 | 8/8 (100%) | 6/8 (75%) |
 | Y. Menus | 81 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 74 | 3 | 3 | 1 | 49/52 (94%) | 22/23 (96%) |
-| Lightroom Classic extras | 31 | 10 | 39 | 9 | — | 21/22 (95%) |
-| **Total** | 389 | 39 | 81 | 37 | 194/200 (97%) | 139/149 (93%) |
+| Lightroom Classic extras | 31 | 12 | 38 | 8 | — | 21/22 (95%) |
+| **Total** | 389 | 41 | 80 | 36 | 194/200 (97%) | 139/149 (93%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **80.3%** of 509 in-scope rows — P0 98.5% of 200 · P1 95.6% of 149 · P2 43.1% of 160.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **80.3%** of 510 in-scope rows — P0 98.5% of 200 · P1 95.6% of 149 · P2 43.4% of 160.
 <!-- /parity:summary -->
 
 ## Top gaps
@@ -67,7 +67,7 @@ Take the first one nobody is working on.
    colour-filter layout, fixed in #85 by reading the file's own tag).
 4. **LR-BEHAV-RENDER-FIDELITY** (P1): a side-by-side fidelity suite against Lightroom renders (kept local in `plan/`),
    then tune tone, highlights, texture/clarity/dehaze, NR and sharpening against it.
-5. **LR-EDIT-OPTICS-PROFILE** (P1): a lens-profile database of our own (embedded DNG/maker corrections work today).
+5. **LR-EDIT-OPTICS-PROFILE** (P1): camera + lens recognition and profile corrections (`crates/lens`, `docs/lens-profiles.md`) are in; missing: embedded Sony/Fuji/Panasonic/Olympus tables and a profile for lenses the database lacks.
 6. **AI masks and Enhance** (LR-MASK-SUBJECT / SKY / PEOPLE / OBJECTS, LR-EDIT-DETAIL-DENOISE, SUPERRES, LENSBLUR):
    Object and Describe masks run SAM 3 in pure Rust (`crates/segment`); the weights (SAM License) are never bundled:
    the app offers a consented, verified download, but **LightCraft's CDN mirrors are not configured yet** (the
@@ -197,7 +197,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-FILT-FLAG | Flag filter | P0 | ✅ | `cmd:library.filter` (`flag`), `crates/ui-egui/src/panels/filterbar.rs` | picked / rejected / unflagged (one at a time) |
 | LR-FILT-LABEL | Colour-label filter | P1 | ✅ | `cmd:library.filter` (`label`), `crates/ui-egui/src/panels/filterbar.rs` | one label at a time; no “no label” choice |
 | LR-FILT-TYPE | Type / edited filter | P1 | ✅ | `cmd:library.filter` (`kind`, `merged`, `edited`), `crates/ui-egui/src/panels/filterbar.rs`, `crates/catalog/src/query.rs` (`merged_kind`) | photos / raw / videos / HDR / panoramas / HDR panoramas (merge results by name), edited / unedited; no depth kind |
-| LR-FILT-KEYWORD | Keyword filter | P1 | ✅ | `cmd:library.filter` (`keyword`), `crates/ui-egui/src/panels/filterbar.rs` | keyword picker |
+| LR-FILT-KEYWORD | Keyword filter | P1 | ✅ | `cmd:library.filter` (`keyword`, `untagged`), `cmd:keyword.untagged`, `crates/ui-egui/src/panels/filterbar.rs`, `crates/ui-egui/src/panels/left.rs` | Keywords dropdown: All / No keyword / Has keyword (with counts for the current view) / each keyword with its count; the sidebar's Keywords section starts with the same No Keyword / Has Keyword rows; `untagged` combines with every other filter and is saved in presets and smart albums |
 | LR-FILT-CAMERA | Camera / lens filter | P1 | ✅ | `cmd:library.filter` (`camera`, `lens`), `crates/ui-egui/src/panels/filterbar.rs` | camera and lens pickers |
 | LR-FILT-LOCATION | Location filter | P2 | ✅ | `cmd:library.filter` (`text`, `ruleSet` field `location`) | free text, or a rule on location / city / state / country (smart albums, `library.filter`) |
 | LR-FILT-PEOPLE | People filter | P2 | 🟡 | `cmd:library.filter`, `crates/catalog/src/query.rs` | filter by a person's name (case-insensitive, named Face regions only) from the People view, a filter chip or `person:`; no unnamed / suggested people |
@@ -257,7 +257,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-EDIT-DETAIL-SUPERRES | Super resolution | P2 | 🟡 | `cmd:restore.model.download`, `crates/restore`, `crates/engine/src/restore.rs` | SPAN 2x (CC BY 4.0 weights) on exports: setting `enhance.super_resolution`, `lightcraft-cli render --upscale 2`. Crisper than Lanczos but lower PSNR/SSIM on a downscale-then-upscale test (invents detail); no UI toggle yet; docs/ai-restore.md |
 | LR-EDIT-DETAIL-AISHARPEN | AI sharpen | OOS | 🚫 | | |
 | LR-EDIT-OPTICS-CA | Remove chromatic aberration | P1 | ✅ | `crates/ui-egui/src/panels/edit.rs` (checkbox), `ctl:optics.caRed`, `ctl:optics.caBlue` | |
-| LR-EDIT-OPTICS-PROFILE | Lens profile corrections | P1 | 🟡 | `ctl:optics.profileDistortion`, `ctl:optics.profileVignetting`, `crates/pipeline/src/optics.rs` | uses corrections embedded in DNG/raw files; no lens-profile database |
+| LR-EDIT-OPTICS-PROFILE | Lens profile corrections | P1 | 🟡 | `cmd:lens.info`, `cmd:lens.detect`, `ctl:optics.profileDistortion`, `ctl:optics.profileVignetting`, `crates/pipeline/src/optics.rs`, `crates/lens`, `docs/lens-profiles.md` | recognises the camera and lens from Exif / maker notes (Canon, Panasonic, Nikon, Fujifilm lens facts) and applies distortion, lateral CA and vignetting from the lensfun lens database (data only, CC BY-SA 3.0) or from DNG-embedded opcodes; shows what was recognised and whether a profile was found; on by default for new raws. Not read: embedded Sony/Fuji/Panasonic/Olympus correction tables; no profile for lenses missing from the database; not checked against an independent measurement on a strongly distorting lens |
 | LR-EDIT-OPTICS-DEFRINGE | Defringe | P1 | ✅ | `ctl:optics.defringe*` | no fringe eyedropper |
 | LR-EDIT-OPTICS-MANUAL | Manual distortion / vignetting | P1 | ✅ | `ctl:optics.distortion`, `ctl:optics.vignetting`, `ctl:optics.vignettingMidpoint` | |
 | LR-EDIT-GEOM-UPRIGHT | Upright | P1 | ✅ | `cmd:geometry.upright`, `cmd:geometry.guides` | |
@@ -471,7 +471,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-PREF-ACCOUNT | Account | OOS | 🚫 | | |
 | LR-PREF-INTERFACE | Interface options | P1 | ✅ | `cmd:app.settings` | filmstrip names/badges, grid badges (auto/always/never), square-grid names, navigator, info overlay |
 | LR-PREF-PERFORMANCE | GPU / performance | P1 | ✅ | `cmd:app.gpu`, `cmd:app.memoryBudget`, `cmd:app.settings` | GPU on/off, preview size (1600–5120 px), memory budget, thumbnail cache size in Settings |
-| LR-PREF-PEOPLE | Face recognition | P2 | ⬜ | | |
+| LR-PREF-PEOPLE | Face recognition | P2 | 🟡 | `cmd:people.index`, `cmd:people.list`, `cmd:people.name`, `cmd:people.confirm`, `cmd:people.merge`, `cmd:people.suggest`, `cmd:people.settings`, `crates/people`, `crates/ui-egui/src/panels/people_rec.rs`, `docs/people.md` | InsightFace ArcFace (optional download, non-commercial research weights) on the candle ONNX interpreter; faces grouped by similarity, named people tagged `People\|<name>` only after a yes ("same person?" questions, suggestions, optional auto-tag threshold, undo); index in `<library>/people/`; View ▸ People ▸ Recognition. No per-person page, no manual face boxes on the loupe, no writing MWG regions back |
 | LR-PREF-WATERMARK | Watermark settings | P1 | ✅ | `cmd:export.savePreset`, `crates/ui-egui/src/panels/dialogs.rs` | set in the Export dialog; kept with Export with Previous and in saved export presets |
 | LR-PREF-SHORTCUTS | Shortcut customisation | — | 🚫 | | not customisable in the reference app either; a keymap editor would be an extra |
 | LR-PREF-TECHPREVIEW | Early-access toggles | P2 | ⬜ | | |
@@ -752,8 +752,8 @@ From `08-lightroom-classic-extras.md` (Classic-only features) and part 2 of `06-
 | LRC-MAP-GEOTAG | Drag photos onto the map | P2 | ⬜ | | |
 | LRC-MAP-LOCATIONS | Saved locations | P2 | ⬜ | | |
 | LRC-MAP-TRACKLOG | GPS track logs | P2 | ✅ | `cmd:photo.autoTagTracklog`, `cmd:photo.tagFromTracklog`, `crates/meta/src/gpx.rs` | Photo ▸ Auto-Tag from Tracklog…: a GPX 1.0 / 1.1 track log sets the GPS of the selected photos by capture time — interpolated between the points of a track segment, else the nearest point within `maxGap` (10 min); never across segment breaks. The camera's time zone comes from the photo (Exif offset) or is asked for; photos that already have a location keep it unless `replace`; `dryRun` previews; one undo step. No track drawn on a map (no Map module) |
-| LRC-MAP-FILTER | Location filter bar | P2 | ⬜ | | |
-| LRC-MAP-REVGEO | Reverse geocoding | OOS | 🚫 | | |
+| LRC-MAP-FILTER | Location filter bar | P2 | 🟡 | `cmd:library.filter` (`place`), `cmd:places.list`, `crates/ui-egui/src/panels/filterbar.rs`, `crates/catalog/src/places.rs`, `docs/places.md` | a Place picker in the filter bar next to Keywords (country > region > city with photo counts, "No place"), matching the `Places|…` keyword or else the place the GPS resolves to; no map and no GPS-box filter |
+| LRC-MAP-REVGEO | Reverse geocoding | OOS | 🟡 | `cmd:places.lookup`, `cmd:places.geotag`, `cmd:places.name`, `cmd:places.suggest`, `cmd:places.confirm`, `cmd:view.places`, `crates/places`, `crates/engine/src/places/mod.rs`, `crates/ui-egui/src/panels/places.rs`, `docs/places.md` | offline (GeoNames, CC BY 4.0, a separate data file): GPS to `Places|Country|Region|City` keywords with a preview before writing, one undo step, optional geotag on import (off by default); places for photos without GPS from neighbours in time and from look-alikes (SigLIP), only ever proposed. Not done: filling the IPTC city / state / country fields, French place names, a map |
 | LRC-BOOK-SETTINGS | Book settings | P2 | ⬜ | | |
 | LRC-BOOK-AUTOLAYOUT | Book auto layout | P2 | ⬜ | | |
 | LRC-BOOK-PAGE | Book pages & templates | P2 | ⬜ | | |

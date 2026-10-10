@@ -20,6 +20,10 @@
 mod core;
 #[cfg(feature = "search")]
 mod ops;
+#[cfg(feature = "search")]
+pub(crate) mod taste;
+#[cfg(feature = "search")]
+pub(crate) mod keywords;
 #[cfg(not(feature = "search"))]
 mod ops {
     //! Without the feature the commands that need the model say so.
@@ -85,6 +89,19 @@ pub struct Searcher {
     pub mirrors_file: Option<PathBuf>,
     #[cfg(feature = "search")]
     core: core::Core,
+    /// The taste model of a library that is not on disk.
+    #[cfg(feature = "search")]
+    taste_mem: std::sync::Mutex<Option<std::sync::Arc<lightcraft_taste::TasteModel>>>,
+}
+
+#[cfg(feature = "search")]
+impl Searcher {
+    pub(crate) fn taste_mem(&self) -> Option<std::sync::Arc<lightcraft_taste::TasteModel>> {
+        self.taste_mem.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+    }
+    pub(crate) fn set_taste_mem(&self, m: std::sync::Arc<lightcraft_taste::TasteModel>) {
+        *self.taste_mem.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(m);
+    }
 }
 
 impl Searcher {

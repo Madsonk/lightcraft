@@ -16,8 +16,11 @@ pub fn read_exif(bytes: &[u8]) -> Metadata {
 
 /// Like [`read_exif`] but reports a structurally invalid TIFF header / IFD0.
 pub fn try_read_exif(bytes: &[u8]) -> Result<Metadata, TiffError> {
-    let tiff = Tiff::parse(strip_exif_header(bytes))?;
-    Ok(from_tiff(&tiff))
+    let data = strip_exif_header(bytes);
+    let tiff = Tiff::parse(data)?;
+    let mut m = from_tiff(&tiff);
+    crate::lens::read_maker_lens(data, &tiff, &mut m);
+    Ok(m)
 }
 
 fn text(ifd: Option<&Ifd>, tag: u16) -> Option<String> {
@@ -69,6 +72,7 @@ pub fn from_tiff(tiff: &Tiff) -> Metadata {
         _ => None,
     }
     .map(|v| v.min(u32::MAX as u64) as u32);
+    m.subject_distance = pos(exif.and_then(|e| e.f64(t::SUBJECT_DISTANCE))).filter(|d| *d < 1.0e6);
     m.focal_length = pos(either(t::FOCAL_LENGTH).and_then(|v| v.get_f64(0)));
     m.focal_length_35mm = pos(exif.and_then(|e| e.f64(t::FOCAL_LENGTH_35MM)));
     m.exposure_bias = exif.and_then(|e| e.f64(t::EXPOSURE_BIAS)).filter(|v| v.is_finite() && v.abs() < 100.0);

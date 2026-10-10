@@ -51,6 +51,15 @@ pub const MODEL_FILE: &str = "migan.onnx";
 /// The side of the model's square input.
 pub const SIDE: usize = 512;
 
+/// A loaded ONNX graph, for other models that use the same interpreter (face recognition).
+pub use exec::Model as OnnxModel;
+
+/// Read an ONNX file's bytes into a graph ready to run on `device` (the operators this crate's
+/// interpreter knows: see `exec`).
+pub fn load_onnx(bytes: &[u8], device: Device) -> Result<OnnxModel> {
+    exec::Model::new(onnx::parse(bytes)?, device)
+}
+
 pub fn is_model_dir(dir: &Path) -> bool {
     dir.join(MODEL_FILE).is_file()
 }

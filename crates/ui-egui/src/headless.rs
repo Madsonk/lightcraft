@@ -514,6 +514,71 @@ mod tests {
         h.settle(SETTLE);
     }
 
+    /// The filter bar's Keywords dropdown and the sidebar's "No Keyword" row find the photos
+    /// without keywords (the counts equal a direct count in the catalog), Select All takes the
+    /// filtered view and a keyword for all of them empties it; the counts follow.
+    #[test]
+    fn keyword_filter_finds_untagged_photos_and_labels_them() {
+        // tall: the Keywords section is far down the sidebar
+        let mut h = demo([1500.0, 1800.0]);
+        if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+            h.app.ui.hidden_locations.extend(
+                ["Pictures", "Desktop", "Downloads", ""]
+                    .map(|sub| if sub.is_empty() { home.clone() } else { std::path::Path::new(&home).join(sub).to_string_lossy().to_string() }),
+            );
+        }
+        let t = Duration::from_secs(10);
+        let direct =
+            |h: &Headless, none: bool| h.app.session.catalog.photos().filter(|p| p.in_library() && p.meta.keywords.is_empty() == none).count();
+        // the demo photos all carry keywords: strip five so there is something to find
+        let strip: Vec<u64> = h.app.session.visible_cloned().iter().take(5).map(|p| p.0).collect();
+        h.request("engine.execute", json!({"command": "photo.setMeta", "params": {"ids": strip, "keywords": []}}), t);
+        let (untagged, tagged) = (direct(&h, true), direct(&h, false));
+        assert_eq!(untagged, 5);
+        h.request("engine.execute", json!({"command": "view.filterBar"}), t);
+        h.request("ui.set", json!({"leftPanel": true}), t);
+        assert!(h.app.ui.filter_bar);
+        h.settle(SETTLE);
+        // dropdown → "No keyword"
+        for w in ["dropdown:filter-keyword", "filteritem:keyword:none"] {
+            let r = h.request("ui.clickWidget", json!({"id": w}), t);
+            assert_eq!(r["ok"], true, "{w}: {r}");
+            h.settle(SETTLE);
+        }
+        assert_eq!(h.app.session.filter.untagged, Some(true));
+        assert_eq!(h.app.session.visible_cloned().len(), untagged, "the filtered grid = a direct count of photos without keywords");
+        assert_eq!(h.app.caches.keyword_presence(&mut h.app.session), (untagged, tagged));
+        // Select All takes the filtered view; one keyword for all of them
+        h.request("engine.execute", json!({"command": "library.selectAll"}), t);
+        assert_eq!(h.app.session.selection.ids.len(), untagged);
+        h.request("engine.execute", json!({"command": "photo.setMeta", "params": {"addKeywords": ["batch"]}}), t);
+        h.settle(SETTLE);
+        assert_eq!(h.app.session.visible_cloned().len(), 0);
+        assert_eq!(h.app.caches.keyword_presence(&mut h.app.session), (0, untagged + tagged), "the counts follow");
+        assert_eq!(direct(&h, true), 0);
+        // Has keyword, from the sidebar row; then a keyword from the dropdown clears the presence mode
+        let r = h.request("ui.clickWidget", json!({"id": "source:keywordAny"}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        assert_eq!(h.app.session.filter.untagged, Some(false));
+        assert_eq!(h.app.session.visible_cloned().len(), untagged + tagged);
+        for w in ["dropdown:filter-keyword", "filteritem:keyword:batch"] {
+            let r = h.request("ui.clickWidget", json!({"id": w}), t);
+            assert_eq!(r["ok"], true, "{w}: {r}");
+            h.settle(SETTLE);
+        }
+        assert_eq!((h.app.session.filter.untagged, h.app.session.filter.keyword.as_deref()), (None, Some("batch")));
+        assert_eq!(h.app.session.visible_cloned().len(), untagged);
+        // the sidebar row toggles No Keyword (and drops the keyword)
+        let r = h.request("ui.clickWidget", json!({"id": "source:keywordNone"}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        assert_eq!((h.app.session.filter.untagged, h.app.session.filter.keyword.clone()), (Some(true), None));
+        h.request("ui.clickWidget", json!({"id": "button:filterClear"}), t);
+        assert_eq!(h.app.session.filter, Default::default());
+        h.settle(SETTLE);
+    }
+
     /// The photo grid shows date headers (registered as `group:<date>` widgets); clicking one
     /// selects that day's photos; month headers when zoomed out; none when grouping is off.
     #[test]
@@ -1695,6 +1760,15 @@ mod tests {
         assert_eq!(h.app.session.cache_mb, 512);
         h.request("ui.clickWidget", json!({"id": "button:settingsPreview-2"}), t);
         assert_eq!(h.app.ui.settings.preview_edge, 3840);
+        // dragging a slider keeps the display's real pixels unless the user chose a lighter preview
+        assert_eq!(h.app.ui.settings.drag_preview, 100);
+        assert_eq!(h.app.ui.settings.preview_scale(true), 1.0);
+        h.request("ui.clickWidget", json!({"id": "button:settingsDragPreview-2"}), t);
+        assert_eq!(h.app.ui.settings.drag_preview, 60);
+        assert_eq!(h.app.ui.settings.preview_scale(true), 0.6);
+        assert_eq!(h.app.ui.settings.preview_scale(false), 1.0);
+        h.request("ui.clickWidget", json!({"id": "button:settingsDragPreview-0"}), t);
+        assert_eq!(h.app.ui.settings.preview_scale(true), 1.0);
         h.request("ui.clickWidget", json!({"id": "button:settingsMemory-2"}), t);
         assert_eq!(h.app.ui.settings.memory_mb, 1024);
         h.step();

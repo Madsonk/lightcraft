@@ -164,6 +164,10 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(r)
             }
         ),
+        cmd!(query "keyword.untagged", "Keyword Coverage", [], None, "{} → {untagged, tagged, total} — among the photos of the current view (source and filters, except the keyword ones): how many have no keyword and how many have at least one. Filter to them with library.filter {untagged: true|false}", always, |s, _| {
+            let (untagged, tagged) = s.keyword_presence();
+            Ok(json!({"untagged": untagged, "tagged": tagged, "total": untagged + tagged}))
+        }),
         cmd!(query "keyword.list", "Keywords", [], None, "{} → [{name, path, count, children}] keyword tree (`a|b|c` keywords are hierarchical)", always, |s, _| {
             Ok(serde_json::to_value(s.catalog.keyword_tree()).unwrap_or_default())
         }),

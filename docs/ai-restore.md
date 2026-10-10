@@ -169,3 +169,35 @@ Speed and memory (`restore_bench`, `lightcraft-cli`; the Metal device in candle 
   the "real PSNR" variant prefers smooth to sharp. The "real GAN" variant of the same release
   (`scunet_color_real_gan.pth`) would keep more texture but invents it; not offered.
 - Lens Blur is not part of this work.
+
+## A faster denoise: PyTorch on the GPU (optional, macOS)
+
+candle's Metal convolutions are slow: measured on an M4 (`crates/restore/examples/op_bench.rs`), a 3x3
+convolution 64 → 64 over 512 x 512 runs at ~160 GFLOP/s on candle (Metal and CPU alike) against
+~2 600 GFLOP/s for PyTorch's MPS, and a depthwise 3x3 at 3 GFLOP/s. SCUNet is mostly such
+convolutions, so the pure-Rust denoise takes ~9 s per 512 px tile: **~15 to 20 minutes for a 22 Mpx photo**.
+
+When a Python with `torch` and `numpy` (and MPS) is found, LightCraft runs the **same SCUNet, same
+weights, same tiling** through it, `tools/scunet_torch.py` (embedded in the binary, written to the
+temp folder when used; original code, the network written from the paper and the checkpoint's layout):
+
+| 22.1 Mpx noisy test image, M4 | time |
+|---|---|
+| Rust (candle, Metal) | ~15-20 min (24 tiles of 512 px on 3.8 Mpx: 154 s) |
+| PyTorch MPS through the runner | **123 s** |
+
+Same result: on the 3.8 Mpx image the two outputs differ by at most 2 levels of 255 (68.7 dB between them).
+Nothing depends on it: without such a Python, or with `LIGHTCRAFT_RESTORE_BACKEND=rust`, the Rust
+implementation runs exactly as before; if the runner fails mid-way in `auto` mode the Rust one takes over
+(a `warn` in the log). `restore.backend` says which one this machine uses.
+
+- `LIGHTCRAFT_RESTORE_BACKEND=auto|rust|torch` (default auto; `torch` makes a missing Python an error)
+- `LIGHTCRAFT_RESTORE_PYTHON=/path/to/python3` (default: `python3` on the PATH, then Homebrew's)
+- the weights are the same `.pth`, loaded with `torch.load(weights_only=True)`: no pickled code runs.
+
+Evaluated and **not** adopted: NAFNet-SIDD-width64 (MIT; MLX port by `mlx-community`). Written on candle
+(parity with its MLX run: 65 dB), it is only ~1.3x faster than SCUNet in Rust (6 s per tile), because its
+cost is depthwise convolutions and pointwise gates that candle's Metal kernels run slowly; on MLX it takes
+107 s for 22 Mpx (about as long as SCUNet on PyTorch) and, on our synthetic noise, **scores lower**
+(32.3 dB against 35.2 dB for SCUNet from 27.0 dB noisy) and shifts colours toward pink (it is trained on
+smartphone sensor noise). Its half-precision run produced NaN. Not worth a second model.

@@ -39,6 +39,10 @@ mod tests_offline;
 #[cfg(test)]
 mod tests_panels;
 #[cfg(test)]
+mod tests_people;
+#[cfg(test)]
+mod tests_places;
+#[cfg(test)]
 mod tests_quit_unsaved;
 #[cfg(test)]
 mod tests_scroll;
@@ -211,6 +215,8 @@ impl LightcraftApp {
         session.segmenter.background = true;
         // Analyze Faces runs on its own worker too; frames apply what it finds
         session.faces.background = true;
+        // Find People and the grouping of faces run on their own threads too
+        session.people.background = true;
         Self {
             session,
             ui: UiState::default(),
@@ -466,6 +472,17 @@ impl LightcraftApp {
                 (None, false) if download.finished => self.toast(ctx, crate::i18n::tr("The face model is installed: run Photo ▸ Analyze Faces.")),
                 (None, false) => {}
             }
+        }
+    }
+
+    /// People: apply what the indexing run and the grouping finished; keep drawing while they work.
+    fn people_poll(&mut self, ctx: &egui::Context) {
+        if self.session.people_poll() {
+            self.caches.people_rec.dirty = true;
+            ctx.request_repaint();
+        }
+        if self.session.people.job_running() || self.session.people.computing() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(150));
         }
     }
 
@@ -815,6 +832,7 @@ impl LightcraftApp {
         self.hover_preview = None;
         self.ai_mask_detail(&ctx);
         self.faces_poll(&ctx);
+        self.people_poll(&ctx);
         if self.ui.fullscreen {
             // full-screen preview: the photo alone on black
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(egui::Color32::BLACK)).show(ui, |ui| panels::detail::show(self, ui));
@@ -856,6 +874,7 @@ impl LightcraftApp {
             state::ViewMode::Survey => panels::compare::show_survey(self, ui),
             state::ViewMode::Reference => panels::compare::show_reference(self, ui),
             state::ViewMode::People => panels::people::show(self, ui),
+            state::ViewMode::Places => panels::places::show(self, ui),
         });
         panels::second::show(self, &ctx);
         panels::notices::show(self, &ctx);
@@ -934,9 +953,13 @@ pub struct Caches {
     keyword_tree: Option<(u64, std::sync::Arc<Vec<lightcraft_catalog::KeywordNode>>)>,
     people: Option<(u64, lightcraft_catalog::Filter, std::sync::Arc<Vec<lightcraft_catalog::Person>>)>,
     suggestions: Option<(u64, std::sync::Arc<Vec<String>>)>,
+    /// The Places view: its summary of places and the last preview / suggestions.
+    pub places: panels::places::PlacesUi,
     counts: Option<(u64, LibraryCounts)>,
     date_groups: Option<(u64, std::sync::Arc<Vec<lightcraft_catalog::DateGroup>>)>,
     filter_values: Option<(u64, std::sync::Arc<FilterValues>)>,
+    /// (key, (no keyword, has keyword)) for the current view; see [`Caches::keyword_presence`].
+    presence: Option<(u64, (usize, usize))>,
     album_counts: Option<(u64, std::sync::Arc<std::collections::HashMap<lightcraft_catalog::AlbumId, usize>>)>,
     /// How often the album counts were recomputed (tests check that unchanged frames don't).
     pub album_count_scans: usize,
@@ -944,6 +967,8 @@ pub struct Caches {
     pub grid: panels::grid::GridCache,
     /// What the grid did on its frames (benchmarks and tests check unchanged frames stay cheap).
     pub grid_stats: panels::grid::GridStats,
+    /// People ▸ Recognition: what the view lists.
+    pub people_rec: panels::people_rec::RecCache,
 }
 
 /// The left panel's counts.
@@ -959,7 +984,8 @@ pub struct LibraryCounts {
 pub struct FilterValues {
     pub cameras: Vec<String>,
     pub lenses: Vec<String>,
-    pub keywords: Vec<String>,
+    /// Every keyword with the photos that carry it exactly (not its children).
+    pub keywords: Vec<(String, usize)>,
 }
 
 pub(crate) fn key_of(parts: impl std::hash::Hash) -> u64 {
@@ -1043,9 +1069,26 @@ impl Caches {
                 let v = std::sync::Arc::new(FilterValues {
                     cameras: distinct(lib().map(|p| p.meta.camera.clone()).collect()),
                     lenses: distinct(lib().map(|p| p.meta.lens.clone()).collect()),
-                    keywords: cat.keywords().into_iter().map(|(k, _)| k).collect(),
+                    keywords: cat.keywords(),
                 });
                 self.filter_values = Some((cat.revision, v.clone()));
+                v
+            }
+        }
+    }
+    /// How many photos of the current view (source and filter bar, not the keyword filters) have no
+    /// keyword and how many have one: the numbers beside "No keyword" / "Has keyword". Recomputed
+    /// only when the catalog or the view changes, not every frame.
+    pub fn keyword_presence(&mut self, session: &mut lightcraft_engine::Session) -> (usize, usize) {
+        let mut f = session.filter.clone();
+        f.keyword = None;
+        f.untagged = None;
+        let key = key_of((session.catalog.revision, format!("{:?}|{f:?}|{:?}", session.source, session.browse)));
+        match self.presence {
+            Some((k, v)) if k == key => v,
+            _ => {
+                let v = session.keyword_presence();
+                self.presence = Some((key, v));
                 v
             }
         }

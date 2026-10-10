@@ -49,6 +49,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.compare", "Compare", Some("Shift+C"), "View"),
     ("view.survey", "Survey", Some("N"), "View"),
     ("view.people", "People", None, "View"),
+    ("view.places", "Places", None, "View"),
     ("view.faceBoxes", "Face Boxes", None, "View"),
     ("view.reference", "Reference View", Some("Shift+R"), "View"),
     ("photo.setReference", "Set as Reference Photo", None, ""),
@@ -302,6 +303,10 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         "view.people" => {
             app.ui.view = ViewMode::People;
             Ok(json!({"people": app.session.catalog.people().len()}))
+        }
+        "view.places" => {
+            app.ui.view = ViewMode::Places;
+            Ok(json!({"places": app.session.catalog.places_in(&lightcraft_catalog::Filter::default()).placed}))
         }
         "view.survey" => {
             app.ui.view = ViewMode::Survey;
@@ -1012,6 +1017,18 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             }
             Ok(json!({"background": true}))
         }
+        "gallery.export" if p.get("dir").is_none() => {
+            // a folder to write the gallery in, then the engine command (the window waits: each photo is rendered at every width)
+            let Some(dir) = app.services.pick_folder.as_mut().and_then(|f| f()) else { return Some(Ok(Value::Null)) };
+            let mut params = p.as_object().cloned().unwrap_or_default();
+            params.insert("dir".into(), json!(dir));
+            let r = app.run("gallery.export", Value::Object(params));
+            if let Ok(v) = &r {
+                let n = v["photos"].as_u64().unwrap_or(0);
+                app.toast(&egui::Context::default(), format!("Web gallery: {n} photo{} in {dir}", if n == 1 { "" } else { "s" }));
+            }
+            r
+        }
         "photo.tagFromTracklog" => {
             // a GPX file → GPS for the selected photos by capture time (one undo step)
             let path = match p.get("path").and_then(Value::as_str) {
@@ -1255,6 +1272,7 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
             app.session.active().is_some()
         }
         "photo.tagFromTracklog" => app.session.active().is_some() && app.services.pick_tracklog.is_some(),
+        "gallery.export" => app.session.active().is_some() && app.services.pick_folder.is_some(),
         "app.exportPrevious" => app.session.active().is_some() && app.session.last_export.is_some(),
         "dialog.pasteSettings" => app.session.active().is_some() && app.session.clipboard.is_some(),
         "app.showInFinder" => {
