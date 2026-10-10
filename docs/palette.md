@@ -42,3 +42,22 @@ analogous | triadic | split}` (built on the accent colour of the photo), `{hexes
 `palette.save {name, brand?, colors?: [hex…] | ids?+k?}` keeps a named palette per brand or
 universe in LightCraft's config folder (`palettes.json`, or `$LIGHTCRAFT_PALETTES`);
 `palette.list {brand?}`, `palette.delete {name}`.
+
+## Measured (10 Oct 2026, 6 dishes of one shoot, 1 portrait)
+
+* The plan is **tried on the real renders at four scales** (1, 0.7, 0.45, 0.25 of the plan) and kept
+  only if it brings the palette closer by at least 2 %; else nothing is moved and the plan says so.
+  The saved palette *Kerma test* gave no gain on these dark dishes (nothing moved); the other
+  targets did: complementary scheme 10.7 … 12.7 → 9.7 … 11.3, triadic the same, hex list
+  (teal / amber / terracotta) 16.5 … 19.2 → 15.1 … 17.8, i.e. 8 … 15 % closer, not more: a hue move of
+  the mixer cannot change a dark dish's lightness or a grey plate's chroma.
+* Lot coherence: the 6 photos got identical mixers (checked on the stored settings).
+* Skin: portrait 370 with `protectSkin` 1.44 ΔE of skin movement (limit 2.0), palette distance
+  13.4 → 11.9; without protection 12.4 → 11.0 and the skin moves freely.
+
+## Limits
+
+* Skin protection works from the faces of the photo: a hand or a body without a face is not
+  protected (a dish photo with a hand warms the hand with the food).
+* The move is limited to the 8 bands of the Colour Mixer (±40° of hue at most): a target far from
+  the photo's hues is only approached.

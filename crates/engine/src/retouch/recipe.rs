@@ -298,7 +298,7 @@ fn plan_photo(
                 "the series search returned {dust_overflow} candidates: far too many to be sensor dust (busy scenes, noise, photos of different shoots), nothing healed"
             )
         } else if series_dust.is_empty() && !series_ran {
-            "no sensor dust healed: one photo cannot tell dust from detail (select 3 or more photos of a shoot, or use Photo ▸ Remove Dust From Series); a mole or a blemish is never removed without your confirmation (`confirmSpots`)".to_string()
+            "no sensor dust healed: one photo cannot tell dust from detail (select 3 or more photos of a shoot, or use Photo > Remove Dust From Series); a mole or a blemish is never removed without your confirmation (`confirmSpots`)".to_string()
         } else {
             format!(
                 "{outside} persistent sensor-dust spot(s) of the series healed outside the faces; {} on or beside a face left alone (a mole or a blemish is never removed without your confirmation: `confirmSpots`)",

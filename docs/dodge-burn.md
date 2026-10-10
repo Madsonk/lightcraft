@@ -63,6 +63,16 @@ The depth map **embedded in iPhone / Android HEIC files is not read** (see Limit
 * `retouch.dodge {id?, points, size?, amount?, feather?, flow?, depthRange?}` /
   `retouch.burn {…}`
 
+## Measured (10 Oct 2026)
+
+* 16 faces on 10 portraits, medium dose: halo around the subject 0.0 L, texture −4 … +2 %, nothing
+  changed outside the masks (0 pixels). Measured effects at the medium dose (mean L inside the
+  parts): lit planes +0.4 … +1.9 L, shaded sides −0.8 … −2.0 L, eye whites +0.4 … +2.5 L, irises
+  +0.2 … +3.2 L, under the eyes +1.5 … +4.2 L, lips +0.4 … +1.3 L; cleanup: the mid-frequency band's
+  spread on the skin 2.1 … 4.0 → 1.4 … 3.5 L.
+* 6 dishes (flat mode, strength 0.4, matting model): subject +0.1 EV, background −0.12 EV, edges
+  −0.09 EV; halo 0.0 L on the six; 28 s for the six.
+
 ## Limits
 
 * The mesh's z is the face model's own estimate (smooth, not a scan): the sculpt is gentle by

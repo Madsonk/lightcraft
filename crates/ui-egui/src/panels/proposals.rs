@@ -49,7 +49,7 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let mut st: State = ui.data(|d| d.get_temp(key)).unwrap_or_default();
     ui.add_space(6.0);
     let head = ui.add(
-        egui::Button::new(RichText::new(format!("{} Proposals · Natural skin", if st.open { "▾" } else { "▸" })).font(t.semibold(12.0))).frame(false),
+        egui::Button::new(RichText::new(format!("{} Proposals · Natural skin", if st.open { "v" } else { ">" })).font(t.semibold(12.0))).frame(false),
     );
     register(ui.ctx(), "button:proposalsHeader", head.rect);
     if head.clicked() {
