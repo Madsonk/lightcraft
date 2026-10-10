@@ -130,6 +130,7 @@ pub fn group(store: &FaceStore, state: &State) -> Grouping {
     let s: &Settings = &state.settings;
     let confirmed: std::collections::HashSet<FaceRef> = state.persons.iter().flat_map(|p| p.faces.iter().copied()).collect();
     let ignored: std::collections::HashSet<FaceRef> = state.ignored.iter().copied().collect();
+    let unknown: std::collections::HashSet<FaceRef> = state.unknown.iter().copied().collect();
     let mut out = Grouping::default();
     let mut eligible: Vec<usize> = Vec::new();
     for slot in store.slots() {
@@ -153,6 +154,10 @@ pub fn group(store: &FaceStore, state: &State) -> Grouping {
             .par_iter()
             .map(|&slot| {
                 let m = store.meta(slot)?;
+                // a face the user marked "unknown" is never suggested as someone: it stays in its group
+                if unknown.contains(&m.face()) {
+                    return None;
+                }
                 let (person, score, runner_up) = best_people(store, state, &known, m.face(), store.vector(slot), s.suggest)?;
                 (score >= s.suggest).then_some(Suggestion { slot, person, score, runner_up })
             })

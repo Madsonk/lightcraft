@@ -6,6 +6,7 @@ pub mod compare;
 pub mod crop_overlay;
 pub mod detail;
 pub mod dialogs;
+pub mod dnd;
 pub mod edit;
 pub mod filterbar;
 pub mod grid;

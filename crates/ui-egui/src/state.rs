@@ -333,6 +333,10 @@ pub struct UiState {
     /// Photos being dragged from the grid (dropped on an album to add them).
     #[serde(skip)]
     pub dragging_photos: Option<Vec<u64>>,
+    /// Faces being dragged in People ▸ Recognition (dropped on a person, a group, Unknown person
+    /// or Not a real face).
+    #[serde(skip)]
+    pub dragging_faces: Option<crate::panels::dnd::FaceDrag>,
     /// Selected curve channel in the Curve flyout.
     pub curve_channel: String,
     /// Selected mixer mode: "hue" | "saturation" | "luminance" | "all".
@@ -624,6 +628,7 @@ impl Default for UiState {
             renaming_component: None,
             quit: false,
             dragging_photos: None,
+            dragging_faces: None,
             curve_channel: "parametric".into(),
             mixer_mode: "hue".into(),
             grading_mode: "3way".into(),

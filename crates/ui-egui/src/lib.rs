@@ -41,6 +41,8 @@ mod tests_panels;
 #[cfg(test)]
 mod tests_people;
 #[cfg(test)]
+mod tests_dnd;
+#[cfg(test)]
 mod tests_places;
 #[cfg(test)]
 mod tests_quit_unsaved;

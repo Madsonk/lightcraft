@@ -35,11 +35,14 @@ pub struct Settings {
     pub min_face_px: f32,
     /// Use the light MobileFaceNet instead of the ResNet-50 (about 6 times faster, less exact).
     pub fast_model: bool,
+    /// Give the photos of faces marked "unknown person" the keyword `People|Unknown` (off by
+    /// default: an unknown face is only remembered as seen).
+    pub tag_unknown: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { link: 0.50, suggest: 0.45, auto_tag: None, min_face_px: crate::detect::MIN_FACE_PX, fast_model: false }
+        Self { link: 0.50, suggest: 0.45, auto_tag: None, min_face_px: crate::detect::MIN_FACE_PX, fast_model: false, tag_unknown: false }
     }
 }
 
@@ -57,6 +60,16 @@ pub struct State {
     pub ignored: Vec<FaceRef>,
     /// Questions answered "not sure": not asked again.
     pub snoozed: Vec<String>,
+    /// Faces the user looked at and does not know ("unknown person"): out of the list of groups to
+    /// name, kept in a section of their own where they can be named later. No keyword unless
+    /// `settings.tag_unknown`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unknown: Vec<FaceRef>,
+    /// Photos the user filed under a person as a whole (a photo dropped on them), by the key of the
+    /// photo's content: `(photo key, person)`. Unlike the keyword of a confirmed face, these are
+    /// never removed by re-syncing the person, nor by moving one face of the photo elsewhere.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub photo_tags: Vec<(u64, u32)>,
     pub settings: Settings,
 }
 
@@ -70,6 +83,8 @@ impl Default for State {
             different: Vec::new(),
             ignored: Vec::new(),
             snoozed: Vec::new(),
+            unknown: Vec::new(),
+            photo_tags: Vec::new(),
             settings: Settings::default(),
         }
     }
@@ -141,6 +156,50 @@ impl State {
             }
         }
         self.ignored.retain(|f| !faces.contains(f));
+        self.unknown.retain(|f| !faces.contains(f));
+    }
+
+    /// Faces the user does not know: they leave every person and the ignored ones (the person
+    /// they were taken from is told "not them", so they are not suggested for them again).
+    pub fn mark_unknown(&mut self, faces: &[FaceRef]) {
+        for p in &mut self.persons {
+            let from = p.id;
+            let leaving: Vec<FaceRef> = p.faces.iter().copied().filter(|f| faces.contains(f)).collect();
+            p.faces.retain(|f| !faces.contains(f));
+            for f in leaving {
+                if !self.rejected.contains(&(f, from)) {
+                    self.rejected.push((f, from));
+                }
+            }
+        }
+        self.ignored.retain(|f| !faces.contains(f));
+        for f in faces {
+            if !self.unknown.contains(f) {
+                self.unknown.push(*f);
+            }
+        }
+    }
+
+    /// Faces that are not faces (a statue, a poster, a false detection): left out for good.
+    pub fn mark_ignored(&mut self, faces: &[FaceRef]) {
+        for p in &mut self.persons {
+            p.faces.retain(|f| !faces.contains(f));
+        }
+        self.unknown.retain(|f| !faces.contains(f));
+        for f in faces {
+            if !self.ignored.contains(f) {
+                self.ignored.push(*f);
+            }
+        }
+    }
+
+    pub fn is_unknown(&self, f: FaceRef) -> bool {
+        self.unknown.contains(&f)
+    }
+
+    /// The photo (by content key) is filed under the person as a whole.
+    pub fn has_photo_tag(&self, key: u64, person: u32) -> bool {
+        self.photo_tags.contains(&(key, person))
     }
 
     /// Say a face is not this person (removing it from them if it was).
@@ -170,6 +229,13 @@ impl State {
                 *p = into;
             }
         }
+        for (_, p) in &mut self.photo_tags {
+            if *p == from {
+                *p = into;
+            }
+        }
+        self.photo_tags.sort_unstable();
+        self.photo_tags.dedup();
     }
 }
 
@@ -201,6 +267,34 @@ mod tests {
     }
 
     #[test]
+    fn unknown_ignored_and_photo_tags_follow_the_faces_and_the_merge() {
+        let mut s = State::default();
+        let (a, b) = (s.new_person(Some("Awa".into())), s.new_person(Some("Bao".into())));
+        let f = |n: u64| FaceRef(n, 0);
+        s.assign(a, &[f(1), f(2)]);
+        s.assign(b, &[f(3)]);
+        // unknown: the face leaves its person (who is told "not them"), nobody else is touched
+        s.mark_unknown(&[f(2), f(9)]);
+        assert_eq!(s.person(a).unwrap().faces, vec![f(1)]);
+        assert!(s.is_unknown(f(2)) && s.is_unknown(f(9)) && s.is_rejected(f(2), a) && !s.is_rejected(f(9), a));
+        assert_eq!(s.person(b).unwrap().faces, vec![f(3)]);
+        // naming it later takes it out of the unknown ones, and clears the "not them" for the new person
+        s.assign(b, &[f(2)]);
+        assert!(!s.is_unknown(f(2)) && s.is_unknown(f(9)));
+        // not a real face is exclusive with unknown and with a person
+        s.mark_ignored(&[f(9), f(3)]);
+        assert!(!s.is_unknown(f(9)) && s.ignored.contains(&f(9)) && !s.person(b).unwrap().faces.contains(&f(3)));
+        s.mark_unknown(&[f(9)]);
+        assert!(s.is_unknown(f(9)) && !s.ignored.contains(&f(9)));
+        // a photo filed under Bao follows the merge into Awa, once
+        s.photo_tags.push((77, b));
+        s.photo_tags.push((77, a));
+        s.merge(b, a);
+        assert_eq!(s.photo_tags, vec![(77, a)]);
+        assert!(s.has_photo_tag(77, a) && !s.has_photo_tag(77, b));
+    }
+
+    #[test]
     fn the_file_round_trips_and_an_old_file_without_new_fields_loads() {
         let p = std::env::temp_dir().join(format!("lc-people-state-{}.json", std::process::id()));
         let mut s = State::default();
@@ -213,6 +307,11 @@ mod tests {
         std::fs::write(&p, br#"{"persons":[{"id":3,"faces":[[5,0]]}]}"#).unwrap();
         let (old, err) = State::load(&p);
         assert!(err.is_none() && old.persons[0].id == 3 && old.settings.link > 0.0);
+        // a file from before unknown people / hand-filed photos: those are empty and off
+        assert!(old.unknown.is_empty() && old.photo_tags.is_empty() && !old.settings.tag_unknown);
+        // and an empty state does not write the new fields at all (older versions read the file as before)
+        let text = serde_json::to_string(&State::default()).unwrap();
+        assert!(!text.contains("photo_tags") && !text.contains("\"unknown\""), "{text}");
         std::fs::write(&p, b"not json").unwrap();
         assert!(State::load(&p).1.is_some());
         let _ = std::fs::remove_file(&p);

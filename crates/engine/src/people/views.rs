@@ -62,4 +62,11 @@ pub struct Overview {
     pub grouped: bool,
     /// Changes whenever the overview may have.
     pub revision: u64,
+    /// Groups the user marked "unknown person" (nameable later), biggest first.
+    pub unknown: Vec<GroupView>,
+    pub unknown_total: usize,
+    /// Faces of those groups.
+    pub unknown_faces: usize,
+    /// Groups hidden by "Skip for now".
+    pub skipped_groups: usize,
 }

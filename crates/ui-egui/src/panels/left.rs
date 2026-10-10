@@ -573,6 +573,7 @@ fn albums_tree(app: &mut LightcraftApp, ui: &mut egui::Ui, all: &[Album], parent
             let open_id = egui::Id::new(("folder-open", a.id.0));
             let open: bool = ui.data(|d| d.get_temp(open_id)).unwrap_or(true);
             let resp = row(app, ui, &format!("folder:{}", a.id.0), Icon::Folder, &a.name, None, false, indent);
+            super::dnd::album_drop(app, ui, &resp, a);
             if resp.clicked() {
                 ui.data_mut(|d| d.insert_temp(open_id, !open));
             }
@@ -591,9 +592,7 @@ fn albums_tree(app: &mut LightcraftApp, ui: &mut egui::Ui, all: &[Album], parent
                 app.session.target_album.filter(|t| app.session.catalog.album(*t).is_some()).or_else(|| app.session.catalog.quick_collection());
             let label = if target == Some(a.id) { format!("{} +", a.name) } else { a.name.clone() };
             let mut resp = row(app, ui, &format!("album:{}", a.id.0), icon, &label, Some(n), sel, indent);
-            if !a.is_smart() {
-                drop_target(app, ui, &resp, a);
-            }
+            super::dnd::album_drop(app, ui, &resp, a);
             if let Some(rules) = &a.smart {
                 resp = resp.on_hover_text(crate::i18n::tr_format!("Smart album: {}", rules.describe()));
             }
@@ -602,26 +601,6 @@ fn albums_tree(app: &mut LightcraftApp, ui: &mut egui::Ui, all: &[Album], parent
             }
             folder_menu(app, &resp, a);
         }
-    }
-}
-
-/// An album row while photos are dragged from the grid: highlighted under the pointer; a
-/// release there adds them.
-fn drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Response, a: &Album) {
-    let Some(ids) = app.ui.dragging_photos.clone() else { return };
-    let over = ui.input(|i| i.pointer.latest_pos()).is_some_and(|p| resp.rect.contains(p));
-    if !over {
-        return;
-    }
-    let t = Tokens::get(ui.ctx());
-    ui.painter().rect_stroke(resp.rect.shrink2(vec2(8.0, 1.0)), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
-    if ui.input(|i| i.pointer.any_released()) {
-        let n = ids.len();
-        match app.run("album.addPhotos", json!({"id": a.id.0, "ids": ids})) {
-            Ok(_) => app.toast(ui.ctx(), crate::i18n::tr_format!("Added {n} photo{} to “{}”", if n == 1 { "" } else { "s" }, a.name, n = n)),
-            Err(e) => app.toast(ui.ctx(), e),
-        }
-        app.ui.dragging_photos = None;
     }
 }
 
@@ -768,6 +747,11 @@ fn keyword_rows(app: &mut LightcraftApp, ui: &mut egui::Ui, nodes: &[KeywordNode
                 open = !open;
                 ui.data_mut(|d| d.insert_temp(open_id, open));
             }
+        }
+        // photos dropped on a keyword (a person's, a place's…) get it; a closed parent opens when hovered
+        if super::dnd::keyword_drop(app, ui, &resp, &n.path, !n.children.is_empty(), open) {
+            open = true;
+            ui.data_mut(|d| d.insert_temp(open_id, true));
         }
         let resp = resp.on_hover_text(if n.children.is_empty() { n.path.clone() } else { format!("{} (includes the keywords below it)", n.path) });
         if resp.clicked() {

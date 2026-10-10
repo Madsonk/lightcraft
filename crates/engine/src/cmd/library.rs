@@ -767,6 +767,10 @@ pub fn specs() -> Vec<CommandSpec> {
                 }
             }
             let added = photos.len() - before;
+            // (all of them were in already: no empty undo step)
+            if added == 0 {
+                return Ok(json!({"added": 0}));
+            }
             let cover = al.cover.or(photos.first().copied());
             s.commit("Add to Album", Op::Batch { ops: vec![Op::SetAlbumPhotos { id, photos }, Op::SetAlbumCover { id, cover }] })?;
             Ok(json!({"added": added}))

@@ -70,6 +70,9 @@ pub struct Slot {
     pub history: Vec<Entry>,
     /// A note for the user from loading (a people file that could not be read).
     pub note: Option<String>,
+    /// Faces of the groups the user chose to leave for later ("Skip for now"): hidden from the
+    /// groups to name until "Group again" or `people.skip {clear}`. Not a decision, not saved.
+    pub skipped: std::collections::HashSet<lightcraft_people::store::FaceRef>,
 }
 
 #[derive(Default)]
