@@ -26,6 +26,8 @@ pub struct RecCache {
     pub dirty: bool,
     /// The Recognition tab is showing (else the names read from XMP).
     pub recognition: bool,
+    /// The People view has been drawn since it was last left (the tab is chosen on the first frame).
+    pub visit: bool,
     ov: Option<Overview>,
     questions: Vec<Value>,
     status: Value,

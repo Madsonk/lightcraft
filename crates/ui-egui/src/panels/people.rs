@@ -56,9 +56,28 @@ pub(super) fn fit(painter: &egui::Painter, text: &str, font: egui::FontId, max_w
     (1..chars.len()).rev().map(|n| chars[..n].iter().collect::<String>() + "…").find(|s| width(s) <= max_w).unwrap_or_else(|| "…".to_string())
 }
 
+/// Faces are in this library's people index (a library on disk without an index folder was never
+/// searched: asking would only create it).
+pub(crate) fn faces_indexed(app: &mut LightcraftApp) -> bool {
+    if app.session.library.as_ref().is_some_and(|l| !l.dir.join("people").is_dir()) {
+        return false;
+    }
+    app.session.execute("people.status", &json!({})).is_ok_and(|s| s["index"]["faces"].as_u64().unwrap_or(0) > 0)
+}
+
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     if let Some(name) = app.ui.person_page.clone() {
         return super::person::show(app, ui, &name);
+    }
+    // The first frame of a visit: when faces were found and the first tab would only say "No named
+    // people yet" (nobody is named in XMP), open on Recognition, where they can be named.
+    if !std::mem::replace(&mut app.caches.people_rec.visit, true)
+        && app.ui.settings.people_recognition_first
+        && !app.caches.people_rec.recognition
+        && app.session.catalog.people().is_empty()
+        && faces_indexed(app)
+    {
+        app.caches.people_rec.recognition = true;
     }
     let mut recognition = app.caches.people_rec.recognition;
     ui.horizontal(|ui| {

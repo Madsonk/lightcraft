@@ -306,7 +306,7 @@ mod tests {
             assert_eq!(direct[k], via_plan[k], "{k}");
         }
         for f in ["index.html", "snippet.html", "gallery.json"] {
-            assert_eq!(std::fs::read(a.join(f)).unwrap().len() > 0, b.join(f).is_file(), "{f}");
+            assert_eq!(!std::fs::read(a.join(f)).unwrap().is_empty(), b.join(f).is_file(), "{f}");
         }
         let _ = (std::fs::remove_dir_all(&a), std::fs::remove_dir_all(&b));
     }

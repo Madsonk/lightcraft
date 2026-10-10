@@ -16,6 +16,69 @@ use crate::tasks::{self, Progress};
 pub const GALLERY: &str = "Web Gallery";
 pub const DUST: &str = "Dust From Series";
 pub const SUGGEST: &str = "Suggested Keywords";
+/// The second half of the dust task (the heal spots going on the photos), shown like a task.
+pub const HEAL: &str = "Healing Dust";
+
+/// The heal spots of a dust search going on the photos, a slice per frame ([`pump`]).
+pub struct Healing {
+    applier: lightcraft_engine::cmd::dust::Applier,
+    stopping: bool,
+}
+
+impl Healing {
+    pub fn new(applier: lightcraft_engine::cmd::dust::Applier) -> Healing {
+        Healing { applier, stopping: false }
+    }
+
+    /// What Cancel does: the next frame drops the spots without writing them.
+    pub fn cancel(&mut self) {
+        self.stopping = true;
+    }
+}
+
+/// Per frame: put the heal spots on the next few photos (about 15 ms of work), show the panel,
+/// and when every photo is done commit them as one undo step. Cancel drops them: nothing is written.
+pub fn pump(app: &mut LightcraftApp, ctx: &egui::Context) {
+    pump_with(app, ctx, true)
+}
+
+/// [`pump`], drawing the panel or not (a script waiting for the end has no frame to draw in).
+fn pump_with(app: &mut LightcraftApp, ctx: &egui::Context, draw: bool) {
+    let Some(mut h) = app.healing.take() else { return };
+    if h.stopping {
+        remember(app, DUST, &Ok(json!({"cancelled": true})));
+        return app.toast(ctx, crate::i18n::tr("Dust healing stopped: nothing was changed"));
+    }
+    if !h.applier.step(&mut app.session, std::time::Duration::from_millis(15)) {
+        if draw {
+            h.stopping = tasks::progress_window(ctx, HEAL, 0, HEAL, h.applier.done(), h.applier.total(), "", false);
+            ctx.request_repaint();
+        }
+        app.healing = Some(h);
+        return;
+    }
+    let r = h.applier.finish(&mut app.session).map_err(|e| e.to_string());
+    let msg = match &r {
+        Ok(v) => {
+            let (spots, photos, added) = (v["spots"].as_u64().unwrap_or(0), v["photos"].as_u64().unwrap_or(0), v["added"].as_u64().unwrap_or(0));
+            if added == 0 {
+                format!("{spots} dust spot(s) found; every place was already healed")
+            } else {
+                format!("Healed {spots} dust spot(s) on {photos} photos ({added} heal spots, one undo step)")
+            }
+        }
+        Err(e) => e.clone(),
+    };
+    remember(app, DUST, &r);
+    app.toast(ctx, msg);
+}
+
+/// `ui.inspect` → `taskProgress` for the healing stage (the tasks report their own).
+pub fn healing_json(app: &LightcraftApp) -> Option<Value> {
+    app.healing
+        .as_ref()
+        .map(|h| json!({"label": HEAL, "done": h.applier.done(), "total": h.applier.total(), "current": "", "cancelling": h.stopping}))
+}
 
 /// `true` for `{background: true}`.
 pub fn wanted(p: &Value) -> bool {
@@ -35,6 +98,9 @@ fn maybe_wait(app: &mut LightcraftApp, p: &Value, label: &str, started: Value) -
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     if !tasks::wait(app, &ctx, std::time::Duration::from_secs(1800)) {
         return Err(format!("{label}: still running"));
+    }
+    while app.healing.is_some() {
+        pump_with(app, &ctx, false);
     }
     match app.last_task.get(label) {
         Some(v) if v.get("error").is_some() => Err(v["error"].as_str().unwrap_or("failed").to_string()),
@@ -79,7 +145,7 @@ pub fn gallery(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
 /// `dust.apply` for a series in the background: the sample is rendered and searched on a worker
 /// (Cancel stops it, nothing is changed), then the heal spots go on every photo in one undo step.
 pub fn dust(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
-    if app.tasks.is_running(DUST) {
+    if app.tasks.is_running(DUST) || app.healing.is_some() {
         return Err(crate::i18n::tr("Dust is already being searched for").to_string());
     }
     let plan = lightcraft_engine::cmd::dust::plan_series(&mut app.session, p).map_err(|e| e.to_string())?;
@@ -90,19 +156,11 @@ pub fn dust(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
             Err(e) => (Err(e.clone()), e),
             Ok(f) if f.cancelled => (Ok(json!({"cancelled": true})), crate::i18n::tr("Dust search stopped: nothing was changed").to_string()),
             Ok(f) if f.spots.is_empty() => (Ok(json!({"spots": 0, "photos": 0, "added": 0})), format!("No dust found in {} photos", f.ids.len())),
-            Ok(f) => match app.run("dust.apply", f.apply_params()) {
-                Ok(v) => {
-                    let (spots, photos, added) =
-                        (v["spots"].as_u64().unwrap_or(0), v["photos"].as_u64().unwrap_or(0), v["added"].as_u64().unwrap_or(0));
-                    let msg = if added == 0 {
-                        format!("{spots} dust spot(s) found; every place was already healed")
-                    } else {
-                        format!("Healed {spots} dust spot(s) on {photos} photos ({added} heal spots, one undo step)")
-                    };
-                    (Ok(v), msg)
-                }
-                Err(e) => (Err(e.clone()), e),
-            },
+            Ok(f) => {
+                // the heal spots go on a slice of photos per frame (see `pump`), then one undo step
+                app.healing = Some(Healing::new(lightcraft_engine::cmd::dust::Applier::from_found(&app.session, &f)));
+                return;
+            }
         };
         remember(app, DUST, &result);
         app.toast(ctx, msg);

@@ -267,6 +267,8 @@ pub struct LightcraftApp {
     pub last_task: std::collections::BTreeMap<String, Value>,
     /// Photo ▸ Sorting Help: the last answers of its three helpers.
     pub sorting: panels::sorting_help::State,
+    /// The heal spots of a dust search going on the photos, a slice per frame.
+    pub healing: Option<heavy::Healing>,
     /// The "Resume" bar shown at launch.
     pub resume: panels::resume::State,
     /// The look the loupe shows while the pointer rests on a preset or profile (set by the
@@ -341,6 +343,7 @@ impl LightcraftApp {
             last_export_result: None,
             last_task: Default::default(),
             sorting: Default::default(),
+            healing: None,
             resume: Default::default(),
             hover_preview: None,
             window_is_fullscreen: false,
@@ -1015,6 +1018,9 @@ impl LightcraftApp {
         } else {
             t.grid_bg
         };
+        if self.ui.view != state::ViewMode::People {
+            self.caches.people_rec.visit = false;
+        }
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(bg)).show(ui, |ui| match self.ui.view {
             state::ViewMode::PhotoGrid | state::ViewMode::SquareGrid => panels::grid::show(self, ui),
             state::ViewMode::Detail => panels::detail::show(self, ui),
@@ -1033,6 +1039,7 @@ impl LightcraftApp {
         lightroom_import::progress(self, &ctx);
         export_task::poll(self, &ctx);
         tasks::show(self, &ctx);
+        heavy::pump(self, &ctx);
         panels::resume::show(self, &ctx);
         pick::poll(self, &ctx);
         panels::grid::drag_feedback(self, &ctx);

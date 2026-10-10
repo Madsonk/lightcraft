@@ -333,12 +333,7 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             }
             app.ui.person_from = None;
             app.ui.view = ViewMode::People;
-            // faces were found and nobody is named (here or in XMP): "No named people yet" would be
-            // the whole answer, so open on Recognition, where they can be named
             let named_in_xmp = app.session.catalog.people().len();
-            if app.ui.settings.people_recognition_first && named_in_xmp == 0 {
-                app.caches.people_rec.recognition |= faces_to_name(app);
-            }
             Ok(json!({"people": named_in_xmp}))
         }
         "view.resumeBar" => {
@@ -1593,15 +1588,4 @@ fn show_in_finder(app: &mut LightcraftApp) -> Result<Value, String> {
     let reveal = app.services.reveal.as_mut().ok_or("not available here")?;
     reveal(&path)?;
     Ok(json!({"path": path}))
-}
-
-/// Faces are indexed in this library and no person has a name yet.
-fn faces_to_name(app: &mut LightcraftApp) -> bool {
-    // (a library on disk without an index folder: nothing was ever looked for, and asking would only create it)
-    if app.session.library.as_ref().is_some_and(|l| !l.dir.join("people").is_dir()) {
-        return false;
-    }
-    let Ok(s) = app.session.execute("people.status", &json!({})) else { return false };
-    let i = &s["index"];
-    i["faces"].as_u64().unwrap_or(0) > 0 && i["named"].as_u64().unwrap_or(0) == 0
 }

@@ -112,14 +112,23 @@ pub fn inspect(app: &LightcraftApp, ctx: &egui::Context) -> Value {
         "scan": app.scan.as_ref().map(crate::import::ScanTask::status),
         "export": {"running": app.export.as_ref().map(crate::export_task::ExportTask::status), "last": app.last_export_result},
         "import": app.import.as_ref().map(crate::import::ImportTask::status),
-        "tasks": app.tasks.labels(),
-        "taskProgress": app.tasks.progress_json(),
+        "taskProgress": task_progress(app),
+        "tasks": app.tasks.labels().into_iter().chain(app.healing.as_ref().map(|_| crate::heavy::HEAL.to_string())).collect::<Vec<_>>(),
         "lastTask": app.last_task,
         "resume": app.resume.to_json(),
         // commands waiting on a native file dialog shown off the UI thread (`pick`)
         "fileDialogs": app.pending_picks.iter().map(|p| p.command.clone()).collect::<Vec<_>>(),
         "memory": memory(app),
     })
+}
+
+/// The tasks that report steps, and the dust being healed (`ui.inspect` → `taskProgress`).
+fn task_progress(app: &LightcraftApp) -> Value {
+    let mut v = app.tasks.progress_json();
+    if let (Some(a), Some(h)) = (v.as_array_mut(), crate::heavy::healing_json(app)) {
+        a.push(h);
+    }
+    v
 }
 
 /// Bytes held by the engine's caches and the renderer's (`ui.inspect` → `memory`).

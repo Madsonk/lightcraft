@@ -58,7 +58,7 @@ fn glide(h: &mut Headless) {
 
 /// Frames until no background task is left (the results are applied by the frames).
 fn finish_tasks(h: &mut Headless) {
-    assert!(h.step_until(SETTLE, |h| h.app.tasks.is_empty()), "tasks still running: {:?}", h.app.tasks.labels());
+    assert!(h.step_until(SETTLE, |h| h.app.tasks.is_empty() && h.app.healing.is_none()), "tasks still running: {:?}", h.app.tasks.labels());
     h.step();
 }
 
@@ -190,26 +190,38 @@ fn library_with_faces() -> Headless {
 }
 
 #[test]
-fn people_opens_on_recognition_when_faces_are_found_and_nobody_is_named() {
+fn people_opens_on_recognition_when_faces_were_found_and_nobody_is_named_in_xmp() {
     let mut h = library_with_faces();
-    assert!(!h.app.caches.people_rec.recognition, "the first tab until it is asked for");
-    h.app.run("view.people", json!({})).unwrap();
-    assert!(h.app.caches.people_rec.recognition, "faces to name: Recognition, not \"No named people yet\"");
-    h.step();
-    // the setting turns it off (and the user can always click the other tab)
+    let open = |h: &mut Headless, view: ViewMode| {
+        h.app.ui.view = view;
+        h.step();
+        h.step();
+    };
+    assert!(!h.app.caches.people_rec.recognition, "the first tab until the view is opened");
+    // however the view is reached (the menu, the bottom bar, a restored session): faces to name, so Recognition
+    open(&mut h, ViewMode::People);
+    assert!(h.app.caches.people_rec.recognition, "not \"No named people yet\"");
+    // the choice is made once per visit: the user can click the other tab and stay there
     h.app.caches.people_rec.recognition = false;
+    h.step();
+    assert!(!h.app.caches.people_rec.recognition, "a tab clicked stays");
+    // the setting turns it off
+    open(&mut h, ViewMode::PhotoGrid);
     h.app.ui.settings.people_recognition_first = false;
-    h.app.run("view.people", json!({})).unwrap();
+    open(&mut h, ViewMode::People);
     assert!(!h.app.caches.people_rec.recognition);
-    // and once somebody is named there is something to show on the first tab
+    // naming someone in Recognition does not change that the first tab (XMP names) is empty
+    open(&mut h, ViewMode::PhotoGrid);
     h.app.ui.settings.people_recognition_first = true;
     let g = h.app.session.execute("people.list", &json!({"groups": 10})).unwrap()["groups"][0]["id"].as_str().unwrap().to_string();
     h.app.session.execute("people.name", &json!({"group": g, "name": "Awa"})).unwrap();
-    h.app.run("view.people", json!({})).unwrap();
-    assert!(!h.app.caches.people_rec.recognition, "someone is named: the named people first");
-    // a library with no index (the demo one) never gains one by being looked at
+    open(&mut h, ViewMode::People);
+    assert!(h.app.caches.people_rec.recognition, "the people named there are listed there");
+    // a library with no faces (the demo one) keeps the first tab, and never gains an index by being looked at
     let mut d = demo([1400.0, 900.0], json!({"view": "photoGrid"}));
     d.app.run("view.people", json!({})).unwrap();
+    d.step();
+    d.step();
     assert!(!d.app.caches.people_rec.recognition);
     assert_eq!(d.app.ui.view, ViewMode::People);
 }
@@ -329,15 +341,20 @@ fn the_helpers_of_sorting_help_answer_honestly_without_their_models() {
     // Suggested keywords without the search model: a background task that ends on the model's own message
     let first = h.app.session.catalog.photos().next().map(|p| p.id.0).unwrap();
     h.app.run("library.select", json!({"ids": [first]})).unwrap();
+    let before_kw = h.app.session.catalog.photo(lightcraft_catalog::PhotoId(first)).unwrap().meta.keywords.clone();
     h.app.run("dialog.cull", json!({"section": "keywords"})).unwrap();
     glide(&mut h);
     click(&mut h, "button:sortingKwSuggest");
     finish_tasks(&mut h);
     h.step();
     let kw = h.app.sorting.kw.as_ref().expect("an answer");
-    // (the model's own message: "not installed" with the search feature, "not available" without it)
-    assert!(kw.error.as_deref().is_some_and(|e| e.contains("not installed") || e.contains("not available")), "{:?}", kw.error);
-    assert!(h.app.last_task.contains_key(crate::heavy::SUGGEST));
+    // the model's own message (which one depends on the build and on where its folder is), and nothing added
+    assert!(
+        kw.error.as_deref().is_some_and(|e| ["not installed", "not available", "no folder is set"].iter().any(|m| e.contains(m))),
+        "{:?}",
+        kw.error
+    );
+    assert_eq!(h.app.session.catalog.photo(lightcraft_catalog::PhotoId(first)).unwrap().meta.keywords, before_kw);
 }
 
 // ------------------------------------------------------------------------- 6. the tool strip
@@ -464,6 +481,37 @@ fn dust_from_a_series_runs_in_the_background_and_gives_dust_apply_its_spots() {
     assert!(done.get("error").is_none(), "{done}");
     // whatever it found went on as at most one undo step
     assert!(h.app.session.undo.len() <= steps + 1);
+}
+
+#[test]
+fn the_heal_spots_go_on_a_slice_of_photos_per_frame_and_cancel_writes_nothing() {
+    use lightcraft_engine::cmd::dust::Applier;
+    let mut h = demo([1400.0, 900.0], json!({"view": "photoGrid"}));
+    let ids: Vec<lightcraft_catalog::PhotoId> = h.app.session.visible_cloned().iter().take(12).copied().collect();
+    let spots = || vec![lightcraft_engine::dust::DustSpot { x: 0.31, y: 0.42, radius: 0.006, seen: 0, judged: 0 }];
+    let healed = |h: &Headless| ids.iter().filter(|id| !h.app.session.catalog.photo(**id).unwrap().develop.spots.is_empty()).count();
+    let steps = h.app.session.undo.len();
+    // everything, then one undo step
+    h.app.healing = Some(crate::heavy::Healing::new(Applier::new(&h.app.session, ids.clone(), spots(), false)));
+    // it shows as a task of its own until the last photo is done (a frame does a slice of them)
+    assert_eq!(crate::heavy::healing_json(&h.app).map(|j| (j["done"].clone(), j["total"].clone())), Some((json!(0), json!(12))));
+    h.step();
+    finish_tasks(&mut h);
+    assert_eq!(healed(&h), 12);
+    assert_eq!(h.app.session.undo.len(), steps + 1, "one undo step for the whole series");
+    assert_eq!(h.app.last_task[crate::heavy::DUST]["photos"], 12);
+    h.app.run("edit.undo", json!({})).unwrap();
+    assert_eq!(healed(&h), 0);
+    // Cancel: the spots are dropped, nothing is written
+    let mut applier = Applier::new(&h.app.session, ids.clone(), spots(), false);
+    applier.step(&mut h.app.session, std::time::Duration::MAX);
+    let mut healing = crate::heavy::Healing::new(applier);
+    healing.cancel();
+    h.app.healing = Some(healing);
+    h.step();
+    assert!(h.app.healing.is_none() && healed(&h) == 0, "dropped");
+    assert_eq!(h.app.session.undo.len(), steps, "and no undo step was made");
+    assert_eq!(h.app.last_task[crate::heavy::DUST]["cancelled"], true);
 }
 
 // ------------------------------------------------------------------------------ 8. the Resume bar

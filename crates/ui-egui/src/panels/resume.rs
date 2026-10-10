@@ -114,7 +114,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                         if text_button(ui, "resumeImport", "Import Photos…", false).clicked() {
                             action = Some("import");
                         }
-                        if text_button(ui, "resumeDismiss", "✕", false).on_hover_text(crate::i18n::tr("Hide")).clicked() {
+                        if text_button(ui, "resumeDismiss", "Hide", false).clicked() {
                             action = Some("dismiss");
                         }
                     });

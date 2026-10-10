@@ -25,8 +25,8 @@ pub fn owns(path: &str) -> bool {
 /// `(faces found, people named)` when the library has a people index on disk (read at most every
 /// few seconds, and never opening an index that is not there).
 fn people_index(app: &mut LightcraftApp, ui: &egui::Ui) -> Option<(u64, u64)> {
-    // (a library on disk without an index folder was never searched: asking would only create it)
-    let indexed = app.session.library.as_ref().is_none_or(|l| l.dir.join("people").is_dir());
+    // (only a library on disk that has an index folder: asking any other would only create one)
+    let indexed = app.session.library.as_ref().is_some_and(|l| l.dir.join("people").is_dir());
     let id = egui::Id::new("left-people-index");
     let now = ui.input(|i| i.time);
     let rev = app.session.catalog.revision;
@@ -44,46 +44,50 @@ fn people_index(app: &mut LightcraftApp, ui: &egui::Ui) -> Option<(u64, u64)> {
     v
 }
 
+/// The sections appear once there is something to list: a person or a place already keyworded, or
+/// faces found and waiting for names (a library that has neither shows neither: People and Places
+/// are always one click away in the view bar and the View menu).
 pub fn sections(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     if app.session.catalog.is_empty() {
         return;
     }
     let tree = app.caches.keyword_tree(&app.session.catalog);
     let root = |name: &str| tree.iter().find(|n| n.path.eq_ignore_ascii_case(name)).cloned();
+    let (people, places) = (root(PEOPLE), root(PLACES));
+    let index = people_index(app, ui);
+    let faces = index.map_or(0, |(f, _)| f);
 
-    ui.add_space(10.0);
-    if sidebar_section_header(app, ui, "people", PEOPLE).1 {
-        let people = root(PEOPLE);
-        if let Some(p) = &people {
-            keyword_rows_with(app, ui, &p.children, 0.0, Icon::Subject);
-        }
-        let named = people.as_ref().map_or(0, |p| p.children.len());
-        let label = match people_index(app, ui) {
-            Some((faces, 0)) if faces > 0 && named == 0 => format!("{faces} faces found: name them…"),
-            Some((faces, n)) if faces > 0 && n > 0 => "All people and groups…".to_string(),
-            _ if named > 0 => "All people…".to_string(),
-            _ => "Find and name people…".to_string(),
-        };
-        if row(app, ui, "peopleOpen", Icon::Subject, &label, None, false, 0.0)
-            .on_hover_text(crate::i18n::tr("Opens the People view: the faces found in your photos, grouped, to name"))
-            .clicked()
-        {
-            let _ = app.run("view.people", json!({}));
+    if people.is_some() || faces > 0 {
+        ui.add_space(10.0);
+        if sidebar_section_header(app, ui, "people", PEOPLE).1 {
+            if let Some(p) = &people {
+                keyword_rows_with(app, ui, &p.children, 0.0, Icon::Subject);
+            }
+            let named = people.as_ref().map_or(0, |p| p.children.len());
+            let label = match index {
+                Some((faces, _)) if faces > 0 && named == 0 => format!("{faces} faces found: name them…"),
+                Some((faces, _)) if faces > 0 => "All people and groups…".to_string(),
+                _ => "All people…".to_string(),
+            };
+            if row(app, ui, "peopleOpen", Icon::Subject, &label, None, false, 0.0)
+                .on_hover_text(crate::i18n::tr("Opens the People view: the faces found in your photos, grouped, to name"))
+                .clicked()
+            {
+                let _ = app.run("view.people", json!({}));
+            }
         }
     }
 
-    ui.add_space(10.0);
-    if sidebar_section_header(app, ui, "places", PLACES).1 {
-        let places = root(PLACES);
-        if let Some(p) = &places {
+    if let Some(p) = &places {
+        ui.add_space(10.0);
+        if sidebar_section_header(app, ui, "places", PLACES).1 {
             keyword_rows_with(app, ui, &p.children, 0.0, Icon::Folder);
-        }
-        let label = if places.is_some() { "All places…" } else { "Find and name places…" };
-        if row(app, ui, "placesOpen", Icon::Folder, label, None, false, 0.0)
-            .on_hover_text(crate::i18n::tr("Opens the Places view: where your photos were taken, from their GPS"))
-            .clicked()
-        {
-            let _ = app.run("view.places", json!({}));
+            if row(app, ui, "placesOpen", Icon::Folder, "All places…", None, false, 0.0)
+                .on_hover_text(crate::i18n::tr("Opens the Places view: where your photos were taken, from their GPS"))
+                .clicked()
+            {
+                let _ = app.run("view.places", json!({}));
+            }
         }
     }
 }

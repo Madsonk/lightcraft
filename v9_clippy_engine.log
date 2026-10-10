@@ -1,0 +1,69 @@
+    Checking lightcraft-geom v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/geom)
+    Checking lightcraft-fetch v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/fetch)
+    Checking lightcraft-tiff v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/tiff)
+    Checking lightcraft-facemesh v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/facemesh)
+    Checking lightcraft-places v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/places)
+    Checking lightcraft-lens v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/lens)
+    Checking lightcraft-faces v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/faces)
+    Checking lightcraft-taste v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/taste)
+    Checking lightcraft-color v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/color)
+    Checking lightcraft-meta v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/meta)
+    Checking lightcraft-raster v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/raster)
+    Checking lightcraft-develop v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/develop)
+    Checking lightcraft-catalog v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/catalog)
+    Checking lightcraft-raw v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/raw)
+    Checking lightcraft-denoise-core v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/denoise-core)
+    Checking lightcraft-codecs v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/codecs)
+    Checking lightcraft-scenes v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/scenes)
+    Checking lightcraft-preview v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/preview)
+    Checking lightcraft-denoise v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/denoise)
+    Checking lightcraft-pipeline v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/pipeline)
+    Checking lightcraft-gpu v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/gpu)
+    Checking lightcraft-inpaint v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/inpaint)
+    Checking lightcraft-search v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/search)
+    Checking lightcraft-autoseg v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/autoseg)
+    Checking lightcraft-restore v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/restore)
+    Checking lightcraft-depth v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/depth)
+    Checking lightcraft-segment v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/segment)
+    Checking lightcraft-merge v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/merge)
+    Checking lightcraft-people v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/people)
+    Checking lightcraft-engine v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/engine)
+warning: unneeded `return` statement
+   --> crates/engine/src/facemesh/mod.rs:191:13
+    |
+191 |             return self.download.start(self.mirrors(), dir);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_return
+    = note: `#[warn(clippy::needless_return)]` on by default
+help: remove `return`
+    |
+191 -             return self.download.start(self.mirrors(), dir);
+191 +             self.download.start(self.mirrors(), dir)
+    |
+
+warning: unneeded `return` statement
+   --> crates/engine/src/facemesh/mod.rs:262:13
+    |
+262 |             return Ok((queued, skipped));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_return
+help: remove `return`
+    |
+262 -             return Ok((queued, skipped));
+262 +             Ok((queued, skipped))
+    |
+
+warning: `lightcraft-engine` (lib) generated 2 warnings (run `cargo clippy --fix --lib -p lightcraft-engine -- ` to apply 2 suggestions)
+warning: length comparison to zero
+   --> crates/engine/src/cmd/gallery.rs:309:24
+    |
+309 |             assert_eq!(std::fs::read(a.join(f)).unwrap().len() > 0, b.join(f).is_file(), "{f}");
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: using `!is_empty` is clearer and more explicit: `!std::fs::read(a.join(f)).unwrap().is_empty()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#len_zero
+    = note: `#[warn(clippy::len_zero)]` on by default
+
+warning: `lightcraft-engine` (lib test) generated 3 warnings (2 duplicates) (run `cargo clippy --fix --lib -p lightcraft-engine --tests -- ` to apply 1 suggestion)
+    Finished `release` profile [optimized + debuginfo] target(s) in 37.58s

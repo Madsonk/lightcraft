@@ -137,7 +137,7 @@ fn general_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
         ui,
         "settings.peopleRecognitionFirst",
         &mut app.ui.settings.people_recognition_first,
-        "Open People on Recognition when faces are found but nobody is named yet",
+        "Open People on Recognition when faces were found and nobody is named in XMP",
     );
     heading(ui, t, crate::i18n::tr("Culling"));
     check(ui, "settings.autoAdvance", &mut app.ui.auto_advance, "Auto Advance: move to the next photo after rating or flagging");

@@ -245,34 +245,98 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
     if spots.is_empty() {
         return Ok(json!({"spots": 0, "photos": 0, "added": 0}));
     }
-    let mode = if bool_or(p, "remove", false) { SpotMode::Remove } else { SpotMode::Heal };
-    let (mut ops, mut touched, mut added) = (Vec::new(), 0usize, 0usize);
-    for id in &ids {
-        let Some(ph) = s.catalog.photo(*id) else { continue };
-        let mut d = (*ph.develop).clone();
-        let before = d.spots.len();
-        for sp in &spots {
-            let size = (sp.radius * 2.2).clamp(SPOT_SIZE.0, SPOT_SIZE.1);
-            // already healed there (by an earlier run or by hand)
-            if d.spots.iter().any(|e| e.points.first().is_some_and(|q| (q.x - sp.x).hypot(q.y - sp.y) < size)) {
-                continue;
-            }
-            let mut spot = Spot { mode, points: vec![Point::new(sp.x, sp.y)], size, feather: 50.0, opacity: 100.0, source_offset: None, patch: None };
-            spot.source_offset = pick_source(s, *id, &d, &spot, None);
-            d.spots.push(spot);
+    let mut a = Applier::new(s, ids, spots, bool_or(p, "remove", false));
+    while !a.step(s, std::time::Duration::MAX) {}
+    a.finish(s)
+}
+
+/// The heal spots of one dust search on one photo: the operation and how many spots it adds.
+fn heal_photo(s: &mut Session, id: PhotoId, spots: &[DustSpot], mode: SpotMode) -> Option<(Op, usize)> {
+    let ph = s.catalog.photo(id)?;
+    let mut d = (*ph.develop).clone();
+    let before = d.spots.len();
+    for sp in spots {
+        let size = (sp.radius * 2.2).clamp(SPOT_SIZE.0, SPOT_SIZE.1);
+        // already healed there (by an earlier run or by hand)
+        if d.spots.iter().any(|e| e.points.first().is_some_and(|q| (q.x - sp.x).hypot(q.y - sp.y) < size)) {
+            continue;
         }
-        if d.spots.len() > before {
-            added += d.spots.len() - before;
-            touched += 1;
-            if let Some(op) = s.develop_op(*id, d, "Remove Dust") {
-                ops.push(op);
+        let mut spot = Spot { mode, points: vec![Point::new(sp.x, sp.y)], size, feather: 50.0, opacity: 100.0, source_offset: None, patch: None };
+        spot.source_offset = pick_source(s, id, &d, &spot, None);
+        d.spots.push(spot);
+    }
+    let added = d.spots.len() - before;
+    if added == 0 {
+        return None;
+    }
+    s.develop_op(id, d, "Remove Dust").map(|op| (op, added))
+}
+
+/// The second half of `dust.apply` in steps: the heal spots go on the photos a few at a time (the
+/// app does a slice per frame, with a progress panel and a Cancel), and nothing is written until
+/// [`Applier::finish`] commits them all as one undo step. If the library changed meanwhile
+/// (another edit, another undo), `finish` writes nothing rather than stack onto stale states.
+pub struct Applier {
+    ids: Vec<PhotoId>,
+    next: usize,
+    spots: Vec<DustSpot>,
+    mode: SpotMode,
+    ops: Vec<Op>,
+    touched: usize,
+    added: usize,
+    revision: u64,
+    undo_len: usize,
+}
+
+impl Applier {
+    pub fn new(s: &Session, ids: Vec<PhotoId>, spots: Vec<DustSpot>, remove: bool) -> Applier {
+        let mode = if remove { SpotMode::Remove } else { SpotMode::Heal };
+        Applier { ids, next: 0, spots, mode, ops: Vec::new(), touched: 0, added: 0, revision: s.catalog.revision, undo_len: s.undo.len() }
+    }
+
+    /// Set up from what [`DustPlan::run`] found.
+    pub fn from_found(s: &Session, f: &DustFound) -> Applier {
+        Applier::new(s, f.ids.clone(), f.spots.clone(), f.remove)
+    }
+
+    pub fn total(&self) -> usize {
+        self.ids.len()
+    }
+
+    pub fn done(&self) -> usize {
+        self.next
+    }
+
+    /// Work on the next photos for about `budget`; `true` when every photo has been looked at.
+    pub fn step(&mut self, s: &mut Session, budget: std::time::Duration) -> bool {
+        let t0 = web_time::Instant::now();
+        while self.next < self.ids.len() {
+            let id = self.ids[self.next];
+            self.next += 1;
+            if let Some((op, n)) = heal_photo(s, id, &self.spots, self.mode) {
+                self.ops.push(op);
+                self.touched += 1;
+                self.added += n;
+            }
+            if t0.elapsed() >= budget {
+                break;
             }
         }
+        self.next >= self.ids.len()
     }
-    if !ops.is_empty() {
-        s.commit("Remove Dust", Op::Batch { ops })?;
+
+    /// Commit what was made (one undo step) → what `dust.apply` returns.
+    pub fn finish(self, s: &mut Session) -> Result<Value> {
+        if s.catalog.revision != self.revision || s.undo.len() != self.undo_len {
+            return Err(bad("dust.apply", "the library changed while the dust was being healed: nothing was written, run it again"));
+        }
+        if !self.ops.is_empty() {
+            s.commit("Remove Dust", Op::Batch { ops: self.ops })?;
+        }
+        Ok(
+            json!({"spots": self.spots.len(), "photos": self.touched, "added": self.added, "spotList": self.spots.iter().map(spot_json).collect::<Vec<_>>()}),
+        )
     }
-    Ok(json!({"spots": spots.len(), "photos": touched, "added": added, "spotList": spots.iter().map(spot_json).collect::<Vec<_>>()}))
 }
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -378,5 +442,37 @@ mod tests {
         let found = plan.run(&mut |done, _| done < 3).unwrap();
         assert!(found.cancelled && found.spots.is_empty(), "stopped after 3 photos, nothing found");
         assert_eq!(found.analysed + found.skipped, 3);
+    }
+
+    #[test]
+    fn healing_in_steps_gives_one_undo_step_and_refuses_a_library_that_changed_meanwhile() {
+        let mut s = Session::with_demo();
+        let ids: Vec<PhotoId> = s.visible_cloned().iter().take(4).copied().collect();
+        let spots = vec![DustSpot { x: 0.31, y: 0.42, radius: 0.006, seen: 0, judged: 0 }];
+        let n_spots = |s: &Session, id: PhotoId| s.catalog.photo(id).unwrap().develop.spots.len();
+        let steps = s.undo.len();
+        // a zero budget is one photo per step: nothing is written until the end
+        let mut a = Applier::new(&s, ids.clone(), spots.clone(), false);
+        assert_eq!((a.total(), a.done()), (4, 0));
+        let mut calls = 0;
+        while !a.step(&mut s, std::time::Duration::ZERO) {
+            calls += 1;
+            assert_eq!(a.done(), calls);
+        }
+        assert_eq!((calls, a.done()), (3, 4));
+        assert!(ids.iter().all(|id| n_spots(&s, *id) == 0) && s.undo.len() == steps, "still nothing written");
+        let r = a.finish(&mut s).unwrap();
+        assert_eq!((r["photos"].as_u64(), r["added"].as_u64()), (Some(4), Some(4)), "{r}");
+        assert!(ids.iter().all(|id| n_spots(&s, *id) == 1));
+        assert_eq!(s.undo.len(), steps + 1, "one undo step");
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert!(ids.iter().all(|id| n_spots(&s, *id) == 0));
+        // an edit made while the spots were being prepared: nothing is written on top of it
+        let mut a = Applier::new(&s, ids.clone(), spots, false);
+        while !a.step(&mut s, std::time::Duration::MAX) {}
+        s.execute("photo.rate", &json!({"ids": [ids[0].0], "rating": 3})).unwrap();
+        let e = a.finish(&mut s).unwrap_err().to_string();
+        assert!(e.contains("changed while"), "{e}");
+        assert!(ids.iter().all(|id| n_spots(&s, *id) == 0), "nothing written");
     }
 }

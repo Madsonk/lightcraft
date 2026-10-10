@@ -1,0 +1,34 @@
+    Checking lightcraft-engine v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/engine)
+warning: unneeded `return` statement
+   --> crates/engine/src/facemesh/mod.rs:191:13
+    |
+191 |             return self.download.start(self.mirrors(), dir);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_return
+    = note: `#[warn(clippy::needless_return)]` on by default
+help: remove `return`
+    |
+191 -             return self.download.start(self.mirrors(), dir);
+191 +             self.download.start(self.mirrors(), dir)
+    |
+
+warning: unneeded `return` statement
+   --> crates/engine/src/facemesh/mod.rs:262:13
+    |
+262 |             return Ok((queued, skipped));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_return
+help: remove `return`
+    |
+262 -             return Ok((queued, skipped));
+262 +             Ok((queued, skipped))
+    |
+
+warning: `lightcraft-engine` (lib) generated 2 warnings (run `cargo clippy --fix --lib -p lightcraft-engine -- ` to apply 2 suggestions)
+    Checking lightcraft-ui-egui v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/ui-egui)
+    Checking lightcraft-mcp v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/crates/mcp)
+    Checking lightcraft-cli v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/apps/lightcraft-cli)
+    Checking lightcraft v0.5.0 (/Volumes/studio madson/ArtCraft-build/lightcraft-050/apps/lightcraft)
+    Finished `release` profile [optimized + debuginfo] target(s) in 26.33s
