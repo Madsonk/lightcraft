@@ -59,7 +59,28 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 let menus_right = full.left() + 140.0 + crate::menubar::bar_width(ui) + 24.0;
                 sw = sw.min(2.0 * (full.center().x - menus_right)).max(200.0);
             }
-            let search_left = full.center().x - sw / 2.0;
+            // workspaces: the space selector sits left of the search field, which gives it room
+            let mut cx = full.center().x;
+            let selector_left = crate::workspaces::enabled(app)
+                .then(|| {
+                    let left = if app.native_menu { full.left() + 126.0 } else { full.left() + 140.0 + crate::menubar::bar_width(ui) + 24.0 + 8.0 };
+                    let right = left + crate::context_bar::selector_width(app, ui);
+                    let (min_left, max_right) = (right + 16.0, full.right() - 244.0);
+                    if cx - sw / 2.0 < min_left {
+                        // not enough room to centre it: the search field starts after the selector...
+                        let room = max_right - min_left;
+                        if room < 160.0 {
+                            // ...and when even that is too tight (in-window menus in a narrow window) the selector moves to the context bar
+                            return None;
+                        }
+                        sw = room.clamp(160.0, sw);
+                        cx = min_left + sw / 2.0;
+                    }
+                    Some(left)
+                })
+                .flatten();
+            app.workspaces.selector_in_top_bar = selector_left.is_some();
+            let search_left = cx - sw / 2.0;
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 if icon_button(ui, "sidebar", Icon::Sidebar, vec2(30.0, 30.0), app.ui.left_panel, true, "Show/hide My Photos panel").clicked() {
@@ -73,12 +94,12 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 if !app.native_menu {
                     // no native menu bar (web, Windows, Linux): menus in the top bar
                     ui.add_space(10.0);
-                    let room = search_left - ui.cursor().left() - 16.0;
+                    let room = selector_left.unwrap_or(search_left) - ui.cursor().left() - 16.0;
                     crate::menubar::show_in_window(app, ui, room);
                 }
             });
             // search field (centred on the window)
-            let sr = Rect::from_center_size(pos2(full.center().x, full.center().y), vec2(sw, 28.0));
+            let sr = Rect::from_center_size(pos2(cx, full.center().y), vec2(sw, 28.0));
             let id = egui::Id::new("search-field");
             if std::mem::take(&mut app.ui.focus_search) {
                 ui.memory_mut(|m| m.request_focus(id));
@@ -188,6 +209,9 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     let _ = app.run(cmd, json!({}));
                 }
                 x -= 40.0;
+            }
+            if let Some(left) = selector_left {
+                crate::context_bar::selector(app, ui, left, full.center().y);
             }
             let _ = Align2::CENTER_CENTER;
         });

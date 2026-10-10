@@ -139,6 +139,13 @@ fn general_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
         &mut app.ui.settings.people_recognition_first,
         "Open People on Recognition when faces were found and nobody is named in XMP",
     );
+    heading(ui, t, crate::i18n::tr("Workspaces"));
+    check(
+        ui,
+        "settings.workspaces",
+        &mut app.ui.settings.workspaces,
+        "Workspaces: Library, Retouch and Create (Ctrl+1/2/3) with a context bar that keeps the selection and the filter. Off: the classic window",
+    );
     heading(ui, t, crate::i18n::tr("Culling"));
     check(ui, "settings.autoAdvance", &mut app.ui.auto_advance, "Auto Advance: move to the next photo after rating or flagging");
     check(ui, "settings.confirmDelete", &mut app.ui.settings.confirm_delete, "Confirm before moving photos to Recently Deleted");

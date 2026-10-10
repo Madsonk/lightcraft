@@ -7,9 +7,11 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 /// The version shown to people (About, System Info, `--version`): the upstream release plus the local build tag.
-pub const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-local-ia-v10");
+pub const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-local-ia-v11");
 
+pub mod context_bar;
 pub mod control;
+pub mod create_space;
 pub mod credits;
 pub mod export_task;
 pub mod headless;
@@ -35,6 +37,7 @@ pub mod tasks;
 pub mod theme;
 pub mod titlebar;
 pub mod widgets;
+pub mod workspaces;
 
 #[cfg(test)]
 mod tests_curve;
@@ -78,6 +81,8 @@ mod tests_titlebar;
 mod tests_unsaved;
 #[cfg(test)]
 mod tests_v10;
+#[cfg(test)]
+mod tests_v11;
 #[cfg(test)]
 mod tests_v9;
 #[cfg(test)]
@@ -273,6 +278,8 @@ pub struct LightcraftApp {
     pub healing: Option<heavy::Healing>,
     /// The "Resume" bar shown at launch.
     pub resume: panels::resume::State,
+    /// Workspaces (Library, Retouch, Create) and the Create panel's state.
+    pub workspaces: workspaces::Workspaces,
     /// The look the loupe shows while the pointer rests on a preset or profile (set by the
     /// panels each frame; nothing is committed, no history entry).
     pub hover_preview: Option<HoverPreview>,
@@ -347,6 +354,7 @@ impl LightcraftApp {
             sorting: Default::default(),
             healing: None,
             resume: Default::default(),
+            workspaces: Default::default(),
             hover_preview: None,
             window_is_fullscreen: false,
             gpu_applied: None,
@@ -820,6 +828,7 @@ impl LightcraftApp {
         tasks::poll(self, ctx);
         self.preview_build_status(ctx);
         self.save_status(ctx);
+        workspaces::tick(self, now);
         self.slideshow_tick(ctx);
         panels::faces::pump(self, ctx);
         // back from an external editor: pick up the files it saved
@@ -1001,8 +1010,11 @@ impl LightcraftApp {
         // Order matters: earlier panels take the full edge (top bar spans the window; the tool strip,
         // right panels and left panel run to the bottom; the bottom bar sits between them).
         panels::topbar::show(self, ui);
+        context_bar::show(self, ui);
         panels::library_problem::banner(self, ui);
-        panels::strip::show(self, ui);
+        if !workspaces::hides_strip(self) {
+            panels::strip::show(self, ui);
+        }
         if self.ui.right != state::RightPanel::None {
             panels::right::show(self, ui);
         }
@@ -1023,7 +1035,9 @@ impl LightcraftApp {
         if self.ui.view != state::ViewMode::People {
             self.caches.people_rec.visit = false;
         }
+        let create_center = workspaces::create_center(self);
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(bg)).show(ui, |ui| match self.ui.view {
+            state::ViewMode::PhotoGrid | state::ViewMode::SquareGrid if create_center => create_space::show(self, ui),
             state::ViewMode::PhotoGrid | state::ViewMode::SquareGrid => panels::grid::show(self, ui),
             state::ViewMode::Detail => panels::detail::show(self, ui),
             state::ViewMode::Compare => panels::compare::show_compare(self, ui),

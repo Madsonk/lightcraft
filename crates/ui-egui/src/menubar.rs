@@ -209,6 +209,8 @@ const LAYOUT: &[(&str, &[&str])] = &[
     (
         "Window",
         &[
+            "@Workspaces",
+            "---",
             "panel.edit",
             "panel.crop",
             "panel.remove",
@@ -280,6 +282,8 @@ fn host_supports(app: &LightcraftApp, id: &str) -> bool {
         "file.restoreLibrary" => app.services.restore_library.is_some(),
         "photo.restore" | "photo.deletePermanently" => selection_deleted(app),
         "photo.delete" => !selection_deleted(app),
+        // the workspace entries exist only with Settings ▸ Workspaces on
+        _ if id.starts_with("workspace.") => crate::workspaces::enabled(app),
         // only where the trash is on screen
         "library.emptyRecentlyDeleted" => app.session.source == lightcraft_engine::LibrarySource::RecentlyDeleted,
         _ => true,
@@ -335,6 +339,9 @@ pub fn checked(app: &LightcraftApp, id: &str) -> Option<bool> {
         "panel.info" => panel(RightPanel::Info),
         "panel.keywords" => panel(RightPanel::Keywords),
         "panel.presets" => Some(u.presets),
+        "workspace.library" | "workspace.retouch" | "workspace.create" => {
+            Some(crate::workspaces::Space::ALL.iter().any(|s| s.command() == id && s.name() == app.workspaces.current))
+        }
         "library.toggleAutoWriteXmp" => Some(app.session.xmp.auto_write),
         _ => None,
     }
@@ -405,6 +412,23 @@ fn expanded(app: &LightcraftApp, name: &str) -> Option<Vec<MenuNode>> {
                 MenuNode::Separator,
                 item("library.clearPreviews", Value::Null, "Discard Preview Cache", None, true, None),
             ]
+        }
+        "Workspaces" if crate::workspaces::enabled(app) => {
+            // the three spaces (with their shortcuts), then the user's own, the open one checked
+            let mut v: Vec<MenuNode> = crate::workspaces::Space::ALL
+                .iter()
+                .map(|s| {
+                    let sc = crate::shortcuts::shortcut_of(&app.ui.settings.keymap, s.command());
+                    item(s.command(), Value::Null, crate::i18n::tr(s.name()).to_string(), sc, true, Some(s.name() == app.workspaces.current))
+                })
+                .collect();
+            let own: Vec<String> = app.workspaces.names().into_iter().filter(|n| !crate::workspaces::Workspaces::is_builtin(n)).collect();
+            for n in own {
+                let checked = n == app.workspaces.current;
+                v.push(item("workspace.switch", json!({"name": n}), n, None, true, Some(checked)));
+            }
+            v.push(MenuNode::Separator);
+            v
         }
         "Set Rating" => (0..=5u8)
             .map(|r| {

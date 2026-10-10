@@ -165,6 +165,8 @@ pub struct AppSettings {
     pub resume_bar: bool,
     /// View ▸ People opens on Recognition when faces were found and nobody is named yet.
     pub people_recognition_first: bool,
+    /// Workspaces (Library, Retouch, Create) with the context bar. Off: the official window.
+    pub workspaces: bool,
 }
 
 impl Default for AppSettings {
@@ -184,6 +186,9 @@ impl Default for AppSettings {
             keymap: Default::default(),
             resume_bar: true,
             people_recognition_first: true,
+            // on in the app and the CLI; the crate's own unit tests start in the classic window, so the whole
+            // existing suite is the proof that "off" is the window as it was (tests_v11 turns it on)
+            workspaces: !cfg!(test),
         }
     }
 }

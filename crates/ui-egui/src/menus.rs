@@ -148,6 +148,17 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("dialog.pasteSettings", "Paste Selected Settings…", Some("Cmd+Shift+V"), "Edit"),
     ("view.focusSearch", "Find…", Some("Cmd+F"), "Edit"),
     ("dialog.export", "Export…", None, "File"),
+    ("create.kit", "Export Kit for Layout Apps…", None, "File"),
+    ("workspace.library", "Library", Some("Ctrl+1"), ""),
+    ("workspace.retouch", "Retouch", Some("Ctrl+2"), ""),
+    ("workspace.create", "Create", Some("Ctrl+3"), ""),
+    ("workspace.switch", "Open Workspace", None, ""),
+    ("workspace.reset", "Reset Workspace", None, "Window>Workspaces"),
+    ("workspace.saveAs", "Save Workspace As…", None, "Window>Workspaces"),
+    ("workspace.delete", "Delete Workspace", None, "Window>Workspaces"),
+    ("workspace.retouchSelection", "Retouch Selection", None, ""),
+    ("workspace.backToLibrary", "Back to Library", None, ""),
+    ("workspace.clearContext", "Clear Filter and Selection", None, ""),
     ("photo.editInExternal", "Edit in External Editor", Some("Cmd+Shift+E"), "Photo"),
     ("dialog.mergeHdr", "HDR…", Some("Ctrl+H"), "Photo>Photo Merge"),
     ("dialog.mergePanorama", "Panorama…", Some("Ctrl+M"), "Photo>Photo Merge"),
@@ -268,6 +279,12 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         // (menus rebuilt from it, toasts) are already in the new language.
         crate::i18n::set_language(app.ui.language);
         return Some(Ok(json!(app.ui.language)));
+    }
+    if id.starts_with("workspace.") {
+        return Some(crate::workspaces::command(app, id, p));
+    }
+    if id == "create.kit" {
+        return Some(crate::create_space::export_kit(app, p));
     }
     let ctx = egui::Context::default();
     let r: Result<Value, String> = match id {
@@ -1477,6 +1494,9 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
 
 pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
     match id {
+        "workspace.delete" => crate::workspaces::enabled(app) && !crate::workspaces::Workspaces::is_builtin(&app.workspaces.current),
+        s if s.starts_with("workspace.") => crate::workspaces::enabled(app),
+        "create.kit" => app.session.active().is_some() && app.services.pick_folder.is_some(),
         s if s.starts_with("panel.") || s.starts_with("tool.") || s.starts_with("section.") => app.session.active().is_some() || s == "panel.close",
         "app.export" | "dialog.export" | "dialog.createPreset" | "dialog.rename" | "dialog.captureTime" | "dialog.copySettings" => {
             app.session.active().is_some()
