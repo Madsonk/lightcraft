@@ -400,3 +400,25 @@ fn the_selector_the_search_field_and_the_icons_never_overlap() {
         }
     }
 }
+
+#[test]
+fn the_first_run_opens_the_library_arrangement_and_a_later_run_the_space_last_used() {
+    let dir = temp_dir("first");
+    let file = dir.join(workspaces::FILE);
+    let mut h = demo();
+    // the window as an older ui.json left it: the loupe with Edit open and no sources column
+    h.app.ui.view = ViewMode::Detail;
+    h.app.ui.right = RightPanel::Edit;
+    h.app.ui.left_panel = false;
+    workspaces::attach(&mut h.app, Some(file.clone()));
+    h.step();
+    assert_eq!((h.app.ui.view, h.app.ui.right, h.app.ui.left_panel, h.app.ui.filter_bar), (ViewMode::PhotoGrid, RightPanel::Keywords, true, true));
+    assert!(h.app.workspaces.prefs.saved.is_empty(), "nothing is remembered until the user changes something");
+    // the Retouch space is the factory one the first time too (not what the window was before)
+    pick(&mut h, 2);
+    run(&mut h, "workspace.retouch", json!({})).unwrap();
+    assert_eq!((h.app.ui.view, h.app.ui.right, h.app.ui.left_panel, h.app.ui.filmstrip), (ViewMode::Detail, RightPanel::Edit, false, true));
+    run(&mut h, "workspace.library", json!({})).unwrap();
+    assert_eq!((h.app.ui.view, h.app.ui.right, h.app.ui.left_panel), (ViewMode::PhotoGrid, RightPanel::Keywords, true));
+    let _ = std::fs::remove_dir_all(dir);
+}

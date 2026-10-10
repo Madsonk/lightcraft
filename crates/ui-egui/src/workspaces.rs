@@ -462,10 +462,19 @@ pub fn command(app: &mut LightcraftApp, id: &str, p: &Value) -> Result<Value, St
 }
 
 /// Point the workspaces at `workspaces.json` and, when it exists, reopen the space last used with the
-/// layout it had (the first run keeps the window as `ui.json` restored it).
+/// layout it had (the first run opens the Library space's factory arrangement).
 pub fn attach(app: &mut LightcraftApp, path: Option<PathBuf>) {
     app.workspaces.path = path.clone();
-    let Some(prefs) = path.as_deref().and_then(Prefs::load) else { return };
+    let Some(prefs) = path.as_deref().and_then(Prefs::load) else {
+        // first run (no workspaces.json yet): the window opens as the Library space is meant to look, not as
+        // `ui.json` left it, or the arrangement of the last session would become the "Library" the user finds later
+        if enabled(app) {
+            let layout = factory(Space::Library);
+            apply(app, &layout);
+            app.workspaces.seen = Some(capture(app, Space::Library));
+        }
+        return;
+    };
     let current = prefs.current.clone();
     app.workspaces.prefs = prefs;
     if !enabled(app) {
