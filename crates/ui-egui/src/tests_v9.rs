@@ -357,6 +357,24 @@ fn the_helpers_of_sorting_help_answer_honestly_without_their_models() {
     assert_eq!(h.app.session.catalog.photo(lightcraft_catalog::PhotoId(first)).unwrap().meta.keywords, before_kw);
 }
 
+#[test]
+fn keyword_suggestions_are_kept_per_photo_and_bring_their_section_into_view() {
+    use crate::panels::sorting_help::{Section, State};
+    let mut st = State::default();
+    let answer = json!({"photos": [
+        {"id": 7, "suggestions": [{"keyword": "Subject|Couple", "score": 0.81, "source": "zero-shot"}, {"keyword": "Mood|Blurry", "score": 0.5, "source": "zero-shot"}]},
+        {"id": 8, "suggestions": []}
+    ], "unindexed": 2});
+    st.set_keywords(&[7, 8], &answer);
+    let kw = st.kw.as_ref().unwrap();
+    assert_eq!((kw.ids.clone(), kw.photos.len(), kw.unindexed, kw.error.clone()), (vec![7, 8], 2, 2, None));
+    assert_eq!((kw.photos[0].1[0].keyword.as_str(), kw.photos[0].1.len(), kw.photos[1].1.len()), ("Subject|Couple", 2, 0));
+    assert_eq!(st.goto, Some(Section::Keywords), "the answer is below the Suggest button: scroll there");
+    st.goto = None;
+    st.set_keyword_error(&[7], "The semantic search model is not installed");
+    assert!(st.kw.as_ref().unwrap().error.is_some() && st.goto == Some(Section::Keywords));
+}
+
 // ------------------------------------------------------------------------- 6. the tool strip
 
 #[test]

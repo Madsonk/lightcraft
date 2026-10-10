@@ -85,10 +85,13 @@ impl State {
             })
             .collect();
         self.kw = Some(Kw { ids: ids.to_vec(), photos, unindexed: v["unindexed"].as_u64().unwrap_or(0), error: None });
+        // the answer is below the Suggest button: bring that section into view when it is drawn
+        self.goto = Some(Section::Keywords);
     }
 
     pub fn set_keyword_error(&mut self, ids: &[u64], e: &str) {
         self.kw = Some(Kw { ids: ids.to_vec(), photos: Vec::new(), unindexed: 0, error: Some(e.to_string()) });
+        self.goto = Some(Section::Keywords);
     }
 }
 
