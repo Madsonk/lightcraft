@@ -940,6 +940,9 @@ mod tests_organize;
 #[cfg(test)]
 mod tests_people;
 #[cfg(test)]
+#[cfg(feature = "people")]
+mod tests_people_dnd;
+#[cfg(test)]
 mod tests_persist;
 #[cfg(all(test, feature = "places"))]
 mod tests_places;

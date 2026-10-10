@@ -1891,8 +1891,12 @@ pub(crate) fn filmstrip(app: &mut LightcraftApp, ui: &mut egui::Ui, r: Rect) {
             if !local.intersects(vp.expand2(vec2(cell_w * 4.0, 0.0))) {
                 continue;
             }
-            let resp = ui.interact(cr, egui::Id::new(("film", id.0)), Sense::click());
+            let resp = ui.interact(cr, egui::Id::new(("film", id.0)), Sense::click_and_drag());
             register(ui.ctx(), format!("film:{}", id.0), cr);
+            // drag the selection from the filmstrip too (onto an album or a keyword of the left panel)
+            if resp.drag_started() {
+                super::dnd::begin_photos(app, *id);
+            }
             let state = app.session.selection.state_of(*id);
             let sel = state == lightcraft_engine::SelectionState::Active;
             let p = ui.painter();

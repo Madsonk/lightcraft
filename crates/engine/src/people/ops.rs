@@ -33,6 +33,9 @@ pub fn keyword_of(name: &str) -> String {
     format!("{KEYWORD_ROOT}|{}", name.trim().replace('|', "-"))
 }
 
+/// The keyword of the photos of faces marked "unknown person", when `tagUnknown` is on.
+pub const UNKNOWN_KEYWORD: &str = "People|Unknown";
+
 pub fn face_id(f: FaceRef) -> String {
     format!("{:016x}:{}", f.0, f.1)
 }
@@ -73,7 +76,19 @@ pub fn ensure_open(s: &mut Session) -> std::result::Result<(), String> {
     let model = model_of(state.settings.fast_model);
     let path = dir.as_ref().map(|d| d.join(format!("faces-{}.bin", model.id)));
     let store = FaceStore::open(path.as_deref(), model.id).map_err(|e| format!("the people index: {e}"))?;
-    *g = Some(Slot { dir, model, store, state, state_path, store_rev: 1, state_rev: 1, computed: None, history: Vec::new(), note });
+    *g = Some(Slot {
+        dir,
+        model,
+        store,
+        state,
+        state_path,
+        store_rev: 1,
+        state_rev: 1,
+        computed: None,
+        history: Vec::new(),
+        note,
+        skipped: HashSet::new(),
+    });
     Ok(())
 }
 
@@ -161,6 +176,38 @@ fn mean_sim(sl: &Slot, slots: &[usize], centroid: &[f32]) -> f32 {
     slots.iter().map(|s| cluster::dot(sl.store.vector(*s), centroid)).sum::<f32>() / slots.len() as f32
 }
 
+/// Which list a computed group belongs to: to name, "unknown person" (half or more of its faces
+/// were marked so), or left for later (half or more of its faces were skipped).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Listed {
+    Name,
+    Unknown,
+    Skipped,
+}
+
+pub(crate) fn listed(sl: &Slot, members: &[usize]) -> Listed {
+    let faces: Vec<FaceRef> = members.iter().filter_map(|m| sl.store.meta(*m).map(|x| x.face())).collect();
+    let n = faces.len();
+    if n == 0 {
+        return Listed::Name;
+    }
+    if faces.iter().filter(|f| sl.state.is_unknown(**f)).count() * 2 >= n {
+        Listed::Unknown
+    } else if faces.iter().filter(|f| sl.skipped.contains(f)).count() * 2 >= n {
+        Listed::Skipped
+    } else {
+        Listed::Name
+    }
+}
+
+/// The photos (by content key) of a person: those of their confirmed faces and those the user
+/// filed under them as a whole.
+fn person_keys(state: &State, pid: u32) -> HashSet<u64> {
+    let mut keys: HashSet<u64> = state.person(pid).map(|p| p.faces.iter().map(|f| f.0).collect()).unwrap_or_default();
+    keys.extend(state.photo_tags.iter().filter(|(_, p)| *p == pid).map(|(k, _)| *k));
+    keys
+}
+
 /// Build the overview of the open index. `groups` / `suggestions` bound the lists.
 pub fn overview(s: &mut Session, groups: usize, suggestions: usize, thumbs: usize) -> Result<Overview> {
     ensure_open(s).map_err(other)?;
@@ -178,8 +225,7 @@ pub fn overview(s: &mut Session, groups: usize, suggestions: usize, thumbs: usiz
         let slots: Vec<usize> = p.faces.iter().filter_map(|f| sl.store.slot(*f)).collect();
         let mut best = slots.clone();
         best.sort_by(|a, b| sl.store.meta(*b).map_or(0.0, |m| m.quality()).total_cmp(&sl.store.meta(*a).map_or(0.0, |m| m.quality())));
-        let keys: HashSet<u64> = slots.iter().filter_map(|x| sl.store.meta(*x).map(|m| m.key)).collect();
-        let present = photos_of(&map, keys.iter().copied()).len();
+        let present = photos_of(&map, person_keys(&sl.state, p.id)).len();
         ov.persons.push(GroupView {
             id: format!("p:{}", p.id),
             person: Some(p.id),
@@ -198,10 +244,26 @@ pub fn overview(s: &mut Session, groups: usize, suggestions: usize, thumbs: usiz
         ov.grouped = true;
         ov.stale = c.store_rev != sl.store_rev;
         ov.left_out = c.left_out;
-        ov.groups_total = c.groups.len();
-        for gr in c.groups.iter().take(groups) {
+        for gr in &c.groups {
+            let list = listed(sl, &gr.members);
+            let target = match list {
+                Listed::Name => {
+                    ov.groups_total += 1;
+                    (ov.groups.len() < groups).then_some(&mut ov.groups)
+                }
+                Listed::Unknown => {
+                    ov.unknown_total += 1;
+                    ov.unknown_faces += gr.members.len();
+                    (ov.unknown.len() < groups).then_some(&mut ov.unknown)
+                }
+                Listed::Skipped => {
+                    ov.skipped_groups += 1;
+                    None
+                }
+            };
+            let Some(target) = target else { continue };
             let keys: HashSet<u64> = gr.members.iter().filter_map(|x| sl.store.meta(*x).map(|m| m.key)).collect();
-            ov.groups.push(GroupView {
+            target.push(GroupView {
                 id: format!("g:{}", gr.members[0]),
                 person: None,
                 name: None,
@@ -309,10 +371,9 @@ fn tag(s: &mut Session, map: &HashMap<u64, Vec<PhotoId>>, keys: &HashSet<u64>, k
 /// theirs, removed from photos that no longer have one of their faces.
 fn sync_person(s: &mut Session, pid: u32) -> Result<(usize, usize)> {
     let map = key_map(s);
-    let (name, keys) = with_slot(s, |sl| {
-        let p = sl.state.person(pid);
-        (p.and_then(|p| p.name.clone()), p.map(|p| p.faces.iter().map(|f| f.0).collect::<HashSet<u64>>()).unwrap_or_default())
-    })?;
+    // the photos of their confirmed faces, plus those filed under them as a whole by hand: a photo
+    // keeps the keyword as long as one of the two says so (a photo can hold several people)
+    let (name, keys) = with_slot(s, |sl| (sl.state.person(pid).and_then(|p| p.name.clone()), person_keys(&sl.state, pid)))?;
     let Some(name) = name else { return Ok((0, 0)) };
     let kw = keyword_of(&name);
     let added = tag(s, &map, &keys, &kw, true)?;
@@ -323,11 +384,26 @@ fn sync_person(s: &mut Session, pid: u32) -> Result<(usize, usize)> {
     Ok((added, removed))
 }
 
+/// With `tagUnknown` on: the photos with a face marked "unknown person" carry `People|Unknown`, the
+/// others don't. Does nothing when the setting is off.
+fn sync_unknown(s: &mut Session) -> Result<(usize, usize)> {
+    let (on, keys) = with_slot(s, |sl| (sl.state.settings.tag_unknown, sl.state.unknown.iter().map(|f| f.0).collect::<HashSet<u64>>()))?;
+    if !on {
+        return Ok((0, 0));
+    }
+    let map = key_map(s);
+    let added = tag(s, &map, &keys, UNKNOWN_KEYWORD, true)?;
+    let all: HashSet<u64> = map.keys().copied().collect();
+    let stale: HashSet<u64> = all.difference(&keys).copied().collect();
+    let removed = tag(s, &map, &stale, UNKNOWN_KEYWORD, false)?;
+    Ok((added, removed))
+}
+
 /// Run `f` (a decision) as one undo step of the session and of the people file.
 fn decision<R>(s: &mut Session, label: &str, f: impl FnOnce(&mut Session) -> Result<R>) -> Result<R> {
     with_slot(s, |sl| remember(sl, label))?;
     let start = s.undo.len();
-    let r = f(s);
+    let r = f(s).and_then(|v| sync_unknown(s).map(|_| v));
     let added = s.undo.len().saturating_sub(start);
     if added > 1 {
         s.merge_undo(added, label);
@@ -353,7 +429,8 @@ pub fn status(s: &mut Session) -> Value {
         Some(sl) => (
             json!({
                 "photos": sl.store.photo_count(), "faces": sl.store.face_count(), "persons": sl.state.persons.len(),
-                "named": sl.state.persons.iter().filter(|p| p.name.is_some()).count(), "grouped": sl.computed.is_some(),
+                "named": sl.state.persons.iter().filter(|p| p.name.is_some()).count(), "unknownFaces": sl.state.unknown.len(),
+                "skippedFaces": sl.skipped.len(), "grouped": sl.computed.is_some(),
                 "groups": sl.computed.as_ref().map(|c| c.groups.len()), "suggestions": sl.computed.as_ref().map(|c| c.suggestions.len()),
                 "model": sl.model.id, "file": sl.dir.as_ref().map(|d| d.display().to_string()),
                 "settings": serde_json::to_value(&sl.state.settings).unwrap_or_default(),
@@ -557,6 +634,13 @@ fn auto_tag(s: &mut Session) -> Result<usize> {
 pub fn refresh(s: &mut Session, p: &Value) -> Result<Value> {
     ensure_open(s).map_err(other)?;
     let background = bool_or(p, "background", s.people.background);
+    // "Group again" shows what was skipped for now
+    with_slot(s, |sl| {
+        if !sl.skipped.is_empty() {
+            sl.skipped.clear();
+            sl.state_rev += 1;
+        }
+    })?;
     let started = s.people.core.start_compute(background).map_err(other)?;
     let arc = s.people.core.slot.clone();
     let g = lock(&arc);
@@ -597,7 +681,11 @@ pub fn photos(s: &mut Session, p: &Value) -> Result<Value> {
     let map = key_map(s);
     let keys: HashSet<u64> = with_slot(s, |sl| -> Result<HashSet<u64>> {
         let t = if p.get("person").is_some() { target_param(sl, p, "person", C)? } else { target_param(sl, p, "group", C)? };
-        Ok(faces_of(sl, &t).iter().map(|f| f.0).collect())
+        let mut keys: HashSet<u64> = faces_of(sl, &t).iter().map(|f| f.0).collect();
+        if let Target::Person(id) = t {
+            keys.extend(person_keys(&sl.state, id));
+        }
+        Ok(keys)
     })??;
     let ids = photos_of(&map, keys);
     if bool_or(p, "filter", false) {
@@ -610,6 +698,9 @@ pub fn name(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "people.name";
     ensure_open(s).map_err(other)?;
     let name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(C, "missing `name`"))?.replace('|', "-");
+    if name.eq_ignore_ascii_case("unknown") {
+        return Err(bad(C, "`Unknown` is the name of the keyword of unknown faces (People|Unknown): choose another name"));
+    }
     let key = if p.get("group").is_some() { "group" } else { "person" };
     let (target, existing) =
         with_slot(s, |sl| -> Result<(Target, Option<u32>)> { Ok((target_param(sl, p, key, C)?, sl.state.by_name(&name).map(|x| x.id))) })??;
@@ -839,28 +930,332 @@ pub fn rename(s: &mut Session, p: &Value) -> Result<Value> {
     name(s, p)
 }
 
+/// The named person whose keyword `kw` is (`People|<name>`), if any. A photo dropped on that
+/// keyword is filed under the person (see [`tag_photos`]).
+pub fn person_of_keyword(s: &mut Session, kw: &str) -> Option<u32> {
+    let rest = kw.strip_prefix(&format!("{KEYWORD_ROOT}|"))?;
+    if rest.is_empty() || rest.contains('|') {
+        return None;
+    }
+    with_slot(s, |sl| sl.state.by_name(rest).map(|x| x.id)).ok().flatten()
+}
+
+/// The faces a command names: `face` / `group` / `person` (one target each) and `faces` (a list),
+/// as face references, without doubles.
+fn faces_param(s: &mut Session, p: &Value, cmd: &str) -> Result<Vec<FaceRef>> {
+    let mut ids: Vec<String> = ["face", "group", "person"].iter().filter_map(|k| str_param(p, k)).map(String::from).collect();
+    if let Some(a) = p.get("faces").and_then(Value::as_array) {
+        ids.extend(a.iter().filter_map(Value::as_str).map(String::from));
+    }
+    if ids.is_empty() {
+        return Err(bad(cmd, "name the faces: `face`, `group` (g:N), `person` (p:N) or `faces` [KEY:N, …] (from people.list)"));
+    }
+    with_slot(s, |sl| -> Result<Vec<FaceRef>> {
+        let mut out: Vec<FaceRef> = Vec::new();
+        for t in &ids {
+            let target = resolve(sl, t).map_err(|e| bad(cmd, e))?;
+            for f in faces_of(sl, &target) {
+                if !out.contains(&f) {
+                    out.push(f);
+                }
+            }
+        }
+        Ok(out)
+    })?
+}
+
+/// The people (ids) who have one of `faces` among their confirmed faces.
+fn owners(sl: &Slot, faces: &[FaceRef]) -> Vec<u32> {
+    let mut out: Vec<u32> = Vec::new();
+    for f in faces {
+        if let Some(pe) = sl.state.person_of(*f)
+            && !out.contains(&pe.id)
+        {
+            out.push(pe.id);
+        }
+    }
+    out
+}
+
+/// Unnamed people left without a face or a photo (after faces were moved away) are forgotten.
+fn drop_empty_unnamed(sl: &mut Slot) {
+    let tags: HashSet<u32> = sl.state.photo_tags.iter().map(|(_, p)| *p).collect();
+    sl.state.persons.retain(|p| p.name.is_some() || !p.faces.is_empty() || tags.contains(&p.id));
+}
+
+/// "Not a real face": these faces are left out for good (a statue, a poster, a false detection).
+/// The keywords of other people in the same photos are never touched; the keyword of the person
+/// a face was taken from stays on a photo as long as another of their faces, or a photo filed
+/// under them, is in it.
 pub fn ignore(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "people.ignore";
     ensure_open(s).map_err(other)?;
-    let key = if p.get("group").is_some() { "group" } else { "face" };
-    let n = decision(s, "Ignore faces", |s| {
-        with_slot(s, |sl| -> Result<usize> {
-            let t = target_param(sl, p, key, C)?;
-            let faces = faces_of(sl, &t);
-            for f in &faces {
-                if !sl.state.ignored.contains(f) {
-                    sl.state.ignored.push(*f);
-                }
-                for person in &mut sl.state.persons {
-                    person.faces.retain(|x| x != f);
-                }
+    let faces = faces_param(s, p, C)?;
+    let n = decision(s, "Not a real face", |s| {
+        let touched = with_slot(s, |sl| -> Result<Vec<u32>> {
+            let touched = owners(sl, &faces);
+            sl.state.mark_ignored(&faces);
+            drop_empty_unnamed(sl);
+            reconcile(sl);
+            save(sl)?;
+            Ok(touched)
+        })??;
+        for pid in touched {
+            sync_person(s, pid)?;
+        }
+        Ok(faces.len())
+    })?;
+    Ok(json!({"ignored": n}))
+}
+
+/// "Unknown person": the user looked at these faces and does not know them. They leave the groups
+/// to name for a section of their own (`unknown` in people.list), where they can be named later.
+/// No keyword, unless `people.settings {tagUnknown: true}` (then `People|Unknown`). `off: true`
+/// puts them back among the groups to name.
+pub fn unknown(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "people.unknown";
+    ensure_open(s).map_err(other)?;
+    let off = bool_or(p, "off", false);
+    let faces = faces_param(s, p, C)?;
+    let n = decision(s, if off { "Not unknown any more" } else { "Unknown person" }, |s| {
+        let touched = with_slot(s, |sl| -> Result<Vec<u32>> {
+            let touched = owners(sl, &faces);
+            if off {
+                sl.state.unknown.retain(|f| !faces.contains(f));
+            } else {
+                sl.state.mark_unknown(&faces);
+                drop_empty_unnamed(sl);
             }
             reconcile(sl);
             save(sl)?;
-            Ok(faces.len())
-        })?
+            Ok(touched)
+        })??;
+        for pid in touched {
+            sync_person(s, pid)?;
+        }
+        Ok(faces.len())
     })?;
-    Ok(json!({"ignored": n}))
+    // they now group together (or with the groups they came back to)
+    let _ = s.people.core.start_compute(s.people.background);
+    Ok(json!({"unknown": n, "off": off}))
+}
+
+/// "Skip for now": hide these groups from the list to name until "Group again" (`people.refresh`)
+/// or `clear`. Decides nothing, writes nothing: not an undo step.
+pub fn skip(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "people.skip";
+    ensure_open(s).map_err(other)?;
+    let clear = bool_or(p, "clear", false);
+    let faces = if clear && !["face", "group", "person", "faces"].iter().any(|k| p.get(*k).is_some()) { Vec::new() } else { faces_param(s, p, C)? };
+    with_slot(s, |sl| {
+        if clear {
+            if faces.is_empty() {
+                sl.skipped.clear();
+            }
+            for f in &faces {
+                sl.skipped.remove(f);
+            }
+        } else {
+            sl.skipped.extend(faces.iter().copied());
+        }
+        sl.state_rev += 1;
+        json!({"skippedFaces": sl.skipped.len()})
+    })
+}
+
+/// "This face is actually that person": reassign faces to a person (`to: "p:N"`), to the person a
+/// group of faces would make (`"g:N"`), to "unknown person" (`"unknown"`) or to "not a real face"
+/// (`"ignored"`). The person a face leaves is told "not them" (never suggested for them again).
+/// Keywords follow at the level of the photo: the new person's keyword is added, and the old one's
+/// is removed only from photos where none of their other faces, and no photo tag, remain: a
+/// photo with several people keeps every other keyword. One undo step.
+pub fn move_faces(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "people.move";
+    ensure_open(s).map_err(other)?;
+    let to = str_param(p, "to").ok_or_else(|| bad(C, "missing `to`: p:N, g:N, unknown or ignored"))?.to_string();
+    match to.as_str() {
+        "unknown" => return unknown(s, p),
+        "ignored" | "notAFace" => return ignore(s, p),
+        _ => {}
+    }
+    let faces: Vec<FaceRef> = {
+        let mut q = p.clone();
+        if let Some(o) = q.as_object_mut() {
+            // the destination is not a source
+            o.remove("person");
+            o.remove("group");
+        }
+        faces_param(s, &q, C)?
+    };
+    let target = with_slot(s, |sl| resolve(sl, &to).map_err(|e| bad(C, e)))??;
+    if let Target::Face(_) = target {
+        return Err(bad(C, "`to` is a person (p:N), a group (g:N), unknown or ignored"));
+    }
+    let moving: Vec<FaceRef> = match &target {
+        Target::Person(pid) => with_slot(s, |sl| faces.iter().copied().filter(|f| sl.state.person_of(*f).map(|x| x.id) != Some(*pid)).collect())?,
+        // faces dropped on the group they are already in don't move
+        Target::Group(_) => with_slot(s, |sl| {
+            let own = faces_of(sl, &target);
+            faces.iter().copied().filter(|f| !own.contains(f)).collect()
+        })?,
+        Target::Face(_) => faces.clone(),
+    };
+    if moving.is_empty() {
+        return Ok(json!({"moved": 0, "person": to}));
+    }
+    let (pid, touched, added, removed) = decision(s, "Move faces", |s| {
+        let (pid, touched) = with_slot(s, |sl| -> Result<(u32, Vec<u32>)> {
+            let (pid, mut all) = match &target {
+                Target::Person(id) => (*id, Vec::new()),
+                Target::Group(_) => {
+                    let g = faces_of(sl, &target);
+                    (sl.state.new_person(None), g)
+                }
+                Target::Face(_) => return Err(bad(C, "not a destination")),
+            };
+            let mut touched = vec![pid];
+            for f in &moving {
+                if let Some(old) = sl.state.person_of(*f).map(|x| x.id).filter(|o| *o != pid) {
+                    sl.state.reject(*f, old);
+                    if !touched.contains(&old) {
+                        touched.push(old);
+                    }
+                }
+            }
+            all.extend(moving.iter().copied());
+            sl.state.assign(pid, &all);
+            drop_empty_unnamed(sl);
+            reconcile(sl);
+            save(sl)?;
+            Ok((pid, touched))
+        })??;
+        let (mut added, mut removed) = (0, 0);
+        for t in &touched {
+            let (a, r) = sync_person(s, *t)?;
+            added += a;
+            removed += r;
+        }
+        Ok((pid, touched, added, removed))
+    })?;
+    // the faces moved may change what looks like whom
+    let _ = s.people.core.start_compute(s.people.background);
+    let keyword = with_slot(s, |sl| sl.state.person(pid).and_then(|x| x.name.as_deref().map(keyword_of)))?;
+    Ok(
+        json!({"moved": moving.len(), "person": format!("p:{pid}"), "keyword": keyword, "keywordsAdded": added, "keywordsRemoved": removed, "touched": touched.iter().map(|t| format!("p:{t}")).collect::<Vec<_>>()}),
+    )
+}
+
+fn selected_key_map(s: &Session, p: &Value) -> HashMap<u64, Vec<PhotoId>> {
+    let mut m: HashMap<u64, Vec<PhotoId>> = HashMap::new();
+    for id in s.targets(p) {
+        if let Some(ph) = s.catalog.photo(id) {
+            m.entry(key_of(&crate::media::content_key(ph))).or_default().push(id);
+        }
+    }
+    m
+}
+
+fn named_person(s: &mut Session, p: &Value, cmd: &str) -> Result<(u32, String)> {
+    let pid = with_slot(s, |sl| match target_param(sl, p, "person", cmd)? {
+        Target::Person(id) => Ok(id),
+        _ => Err(bad(cmd, "`person` must be p:N")),
+    })??;
+    let name = with_slot(s, |sl| sl.state.person(pid).and_then(|x| x.name.clone()))?
+        .ok_or_else(|| bad(cmd, "this person has no name yet: name the group first (people.name)"))?;
+    Ok((pid, name))
+}
+
+/// File whole photos under a person (a photo dropped on them): the photos get `People|<name>`
+/// whether or not a face of theirs was found in them, and the photo is remembered as filed by hand
+/// (`photo_tags` in people.json), so syncing the person, moving one of its faces to someone else
+/// or regrouping never removes it. Other people's keywords on the photo are not touched; a photo
+/// that already has the keyword is not changed twice. One undo step.
+pub fn tag_photos(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "people.tagPhotos";
+    ensure_open(s).map_err(other)?;
+    let (pid, name) = named_person(s, p, C)?;
+    let sel = selected_key_map(s, p);
+    if sel.is_empty() {
+        return Err(bad(C, "no photos: give `ids` or select some"));
+    }
+    let kw = keyword_of(&name);
+    let keys: HashSet<u64> = sel.keys().copied().collect();
+    let total: usize = sel.values().map(Vec::len).sum();
+    let added = decision(s, &format!("Tag photos {name}"), |s| {
+        with_slot(s, |sl| {
+            for k in &keys {
+                if !sl.state.has_photo_tag(*k, pid) {
+                    sl.state.photo_tags.push((*k, pid));
+                }
+            }
+            save(sl)
+        })??;
+        tag(s, &sel, &keys, &kw, true)
+    })?;
+    Ok(json!({"person": format!("p:{pid}"), "keyword": kw, "photos": total, "added": added, "alreadyTagged": total - added}))
+}
+
+/// Undo of [`tag_photos`] by hand: the photos are no longer filed under the person as a whole; the
+/// keyword goes from those where none of the person's faces is.
+pub fn untag_photos(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "people.untagPhotos";
+    ensure_open(s).map_err(other)?;
+    let (pid, name) = named_person(s, p, C)?;
+    let sel = selected_key_map(s, p);
+    let kw = keyword_of(&name);
+    let keys: HashSet<u64> = sel.keys().copied().collect();
+    let removed = decision(s, &format!("Untag photos {name}"), |s| {
+        let faced: HashSet<u64> = with_slot(s, |sl| {
+            sl.state.photo_tags.retain(|(k, x)| !(*x == pid && keys.contains(k)));
+            save(sl).map(|_| sl.state.person(pid).map(|x| x.faces.iter().map(|f| f.0).collect()).unwrap_or_default())
+        })??;
+        let gone: HashSet<u64> = keys.difference(&faced).copied().collect();
+        tag(s, &sel, &gone, &kw, false)
+    })?;
+    Ok(json!({"person": format!("p:{pid}"), "keyword": kw, "removed": removed}))
+}
+
+/// The faces of a person or a group, best first, each with the other faces of its photo and who
+/// they are (so a viewer can tell which face of a group photo it drags).
+pub fn members(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "people.members";
+    ensure_open(s).map_err(other)?;
+    let (limit, offset) = (f64_or(p, "limit", 60.0).clamp(1.0, 2000.0) as usize, f64_or(p, "offset", 0.0).max(0.0) as usize);
+    let map = key_map(s);
+    let first: HashMap<u64, PhotoId> = map.iter().filter_map(|(k, v)| v.first().map(|p| (*k, *p))).collect();
+    with_slot(s, |sl| -> Result<Value> {
+        let key = if p.get("person").is_some() { "person" } else { "group" };
+        let t = target_param(sl, p, key, C)?;
+        let mut faces: Vec<(FaceRef, usize, f32)> = faces_of(sl, &t)
+            .into_iter()
+            .filter_map(|f| sl.store.slot(f).map(|slot| (f, slot, sl.store.meta(slot).map_or(0.0, |m| m.quality()))))
+            .collect();
+        faces.sort_by(|a, b| b.2.total_cmp(&a.2));
+        let total = faces.len();
+        let rows: Vec<Value> = faces
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .filter_map(|(f, slot, _)| {
+                let m = sl.store.meta(slot)?;
+                let photo = first.get(&f.0)?;
+                let others: Vec<Value> = sl
+                    .store
+                    .slots_of(f.0)
+                    .iter()
+                    .filter(|x| **x != slot)
+                    .filter_map(|x| sl.store.meta(*x))
+                    .map(|o| {
+                        let who = sl.state.person_of(o.face());
+                        json!({"face": face_id(o.face()), "rect": o.rect, "person": who.map(|x| format!("p:{}", x.id)), "name": who.and_then(|x| x.name.clone()),
+                               "unknown": sl.state.is_unknown(o.face()), "ignored": sl.state.ignored.contains(&o.face())})
+                    })
+                    .collect();
+                Some(json!({"face": face_id(f), "photo": photo.0, "rect": m.rect, "others": others}))
+            })
+            .collect();
+        Ok(json!({"faces": rows, "total": total}))
+    })?
 }
 
 pub fn delete(s: &mut Session, p: &Value) -> Result<Value> {
@@ -872,13 +1267,11 @@ pub fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     })??;
     let n = decision(s, "Delete person", |s| {
         let map = key_map(s);
-        let (name, keys) = with_slot(s, |sl| {
-            let pr = sl.state.person(pid);
-            (pr.and_then(|x| x.name.clone()), pr.map(|x| x.faces.iter().map(|f| f.0).collect::<HashSet<u64>>()).unwrap_or_default())
-        })?;
+        let (name, keys) = with_slot(s, |sl| (sl.state.person(pid).and_then(|x| x.name.clone()), person_keys(&sl.state, pid)))?;
         with_slot(s, |sl| {
             sl.state.persons.retain(|x| x.id != pid);
             sl.state.rejected.retain(|(_, x)| *x != pid);
+            sl.state.photo_tags.retain(|(_, x)| *x != pid);
             save(sl)
         })??;
         if let Some(n) = name {
@@ -954,7 +1347,7 @@ pub fn questions(s: &mut Session, p: &Value) -> Result<Value> {
         ));
     }
     // 2. groups that may be a known person, or one another
-    let big: Vec<&Group> = c.groups.iter().filter(|g| g.members.len() >= 2).take(400).collect();
+    let big: Vec<&Group> = c.groups.iter().filter(|g| g.members.len() >= 2 && listed(sl, &g.members) == Listed::Name).take(400).collect();
     for g in &big {
         for k in &known {
             let sc = cluster::dot(&g.centroid, &k.centroid);
@@ -1038,6 +1431,23 @@ pub fn settings(s: &mut Session, p: &Value) -> Result<Value> {
         save(sl)?;
         Ok(changed)
     })??;
+    if let Some(on) = p.get("tagUnknown").and_then(Value::as_bool)
+        && with_slot(s, |sl| sl.state.settings.tag_unknown != on)?
+    {
+        // switching it on tags the photos of the unknown faces, off takes the keyword away: one undo step
+        decision(s, "Tag unknown faces", |s| {
+            with_slot(s, |sl| {
+                sl.state.settings.tag_unknown = on;
+                save(sl)
+            })??;
+            if !on {
+                let map = key_map(s);
+                let all: HashSet<u64> = map.keys().copied().collect();
+                tag(s, &map, &all, UNKNOWN_KEYWORD, false)?;
+            }
+            Ok(())
+        })?;
+    }
     if changed_model {
         // the other model has its own index: reopen
         let arc = s.people.core.slot.clone();
@@ -1083,10 +1493,18 @@ pub fn faces(s: &mut Session, p: &Value) -> Result<Value> {
             .map(|m| {
                 let person = sl.state.person_of(m.face());
                 json!({"face": face_id(m.face()), "rect": m.rect, "size": m.size, "quality": m.quality(), "person": person.map(|x| format!("p:{}", x.id)), "name": person.and_then(|x| x.name.clone()),
-                       "ignored": sl.state.ignored.contains(&m.face())})
+                       "ignored": sl.state.ignored.contains(&m.face()), "unknown": sl.state.is_unknown(m.face())})
             })
             .collect();
-        json!({"id": id.0, "analysed": analysed, "faces": faces})
+        // people the photo is filed under as a whole (dropped on them), whatever its faces say
+        let filed: Vec<Value> = sl
+            .state
+            .photo_tags
+            .iter()
+            .filter(|(k, _)| *k == key)
+            .map(|(_, pid)| json!({"person": format!("p:{pid}"), "name": sl.state.person(*pid).and_then(|x| x.name.clone())}))
+            .collect();
+        json!({"id": id.0, "analysed": analysed, "faces": faces, "filedUnder": filed})
     })
 }
 

@@ -207,6 +207,45 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!(
+            "keyword.apply",
+            "Add Keyword to Photos",
+            ["Photo"],
+            None,
+            "{keyword, ids?: [photoIds] (default: the selection)} — add a keyword (a path such as `Places|France|Paris` or `People|Awa`) to the photos, only to those that lack it; one undo step. Dropping photos on the Keywords tree of the app does this. A keyword that is a named person's (`People|<name>`) files the photos under that person (`people.tagPhotos`: kept when the person is synced) → {keyword, photos, added, alreadyHad}",
+            super::has_selection,
+            |s, p| {
+                let k = clean(str_param(p, "keyword").ok_or_else(|| bad("keyword.apply", "missing `keyword`"))?);
+                if k.is_empty() {
+                    return Err(bad("keyword.apply", "the keyword is empty"));
+                }
+                let targets = s.targets(p);
+                if targets.is_empty() {
+                    return Err(bad("keyword.apply", "no photos: give `ids` or select some"));
+                }
+                #[cfg(feature = "people")]
+                if let Some(pid) = crate::people::ops::person_of_keyword(s, &k) {
+                    let mut q = json!({"person": format!("p:{pid}")});
+                    if let Some(ids) = p.get("ids") {
+                        q["ids"] = ids.clone();
+                    }
+                    let r = s.execute("people.tagPhotos", &q)?;
+                    return Ok(
+                        json!({"keyword": k, "photos": r["photos"], "added": r["added"], "alreadyHad": r["alreadyTagged"], "filedUnderPerson": true}),
+                    );
+                }
+                let changing: Vec<u64> = targets
+                    .iter()
+                    .filter(|id| s.catalog.photo(**id).is_some_and(|ph| !ph.meta.keywords.iter().any(|x| x.eq_ignore_ascii_case(&k))))
+                    .map(|i| i.0)
+                    .collect();
+                let n = targets.len();
+                if !changing.is_empty() {
+                    s.execute("photo.setMeta", &json!({"ids": changing, "addKeywords": [k.clone()]}))?;
+                }
+                Ok(json!({"keyword": k, "photos": n, "added": changing.len(), "alreadyHad": n - changing.len()}))
+            }
+        ),
+        cmd!(
             "keyword.delete",
             "Delete Keyword",
             [],

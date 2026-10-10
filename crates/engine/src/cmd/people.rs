@@ -79,7 +79,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "People",
             [],
             None,
-            "{groups?: n (30), suggestions?: n (30), thumbs?: n faces per entry (4)} — the people the user confirmed (`p:N`, name, faces, photos), the groups of similar faces nobody confirmed yet (`g:N`, biggest first, with `likely` known people) and the suggestions (faces that look like a known person), each with face thumbnails {photo, face, rect} → {indexedPhotos, indexedFaces, persons, groups, groupsTotal, suggestions, suggestionsTotal, leftOut, computing, stale}",
+            "{groups?: n (30), suggestions?: n (30), thumbs?: n faces per entry (4)} — the people the user confirmed (`p:N`, name, faces, photos), the groups of similar faces nobody confirmed yet (`g:N`, biggest first, with `likely` known people) and the suggestions (faces that look like a known person), each with face thumbnails {photo, face, rect} → {indexedPhotos, indexedFaces, persons, groups, groupsTotal, unknown, unknownTotal, unknownFaces, skippedGroups, suggestions, suggestionsTotal, leftOut, computing, stale}; `groups` are only those still to name (not the unknown ones, not the skipped ones)",
             always,
             ops::list
         ),
@@ -97,7 +97,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Faces of a Photo",
             [],
             None,
-            "{id?} — the faces found in a photo and who they are → {id, analysed, faces: [{face, rect, size, quality, person, name, ignored}]}",
+            "{id?} — the faces found in a photo and who they are → {id, analysed, faces: [{face, rect, size, quality, person, name, ignored, unknown}], filedUnder: [{person, name}]}",
             always,
             ops::faces
         ),
@@ -139,12 +139,66 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!(
             "people.ignore",
-            "Ignore Faces",
+            "Not a Real Face",
             [],
             None,
-            "{face|group} — leave these faces out (not a face, or not wanted); a face of a person is taken from them",
+            "{face|group|faces: [..]} — \"Not a real face\" (a statue, a poster, a false detection): these faces are left out for good; a face of a person is taken from them. Other people's keywords on the same photos are never touched; the person's own keyword stays on a photo while another of their faces (or a photo filed under them) is in it → {ignored}",
             always,
             ops::ignore
+        ),
+        cmd!(
+            "people.unknown",
+            "Unknown Person",
+            [],
+            None,
+            "{face|group|faces: [..], off?: bool} — the user looked at these faces and does not know them: they leave the groups to name for the `unknown` list of people.list, where they can be named later (people.name on the group). No keyword unless `people.settings {tagUnknown: true}` (then `People|Unknown`). `off: true` puts them back among the groups to name. One undo step (people.undo) → {unknown, off}",
+            always,
+            ops::unknown
+        ),
+        cmd!(
+            "people.skip",
+            "Skip Group for Now",
+            [],
+            None,
+            "{face|group|faces: [..], clear?: bool} — hide these groups from the groups to name for this session, or until `people.refresh` (Group again); decides nothing, writes nothing, not an undo step. `clear: true` alone shows everything again → {skippedFaces}",
+            always,
+            ops::skip
+        ),
+        cmd!(
+            "people.move",
+            "Move Faces",
+            [],
+            None,
+            "{faces: [KEY:N, …] | face, to: p:N | g:N | unknown | ignored} — these faces are actually that person (`p:N`), the person a group would make (`g:N`), an unknown person, or not a real face. The person a face leaves is told \"not them\". Keywords follow at the level of the photo: the new person's keyword is added; the old one's is removed only from photos where none of their other faces, and no photo filed under them, remain; the other people of the photo keep theirs. One undo step → {moved, person, keyword, touched}",
+            always,
+            ops::move_faces
+        ),
+        cmd!(
+            "people.tagPhotos",
+            "File Photos Under a Person",
+            [],
+            None,
+            "{person: p:N, ids? (default: the selection)} — whole photos belong to this named person (a photo dropped on them): they get `People|<name>` (not twice), whether or not a face of theirs was found, and are remembered as filed by hand (`photo_tags` in people.json), so syncing, regrouping or moving one face elsewhere never removes it. Other people's keywords on the photo are not touched. One undo step → {person, keyword, photos, added, alreadyTagged}",
+            always,
+            ops::tag_photos
+        ),
+        cmd!(
+            "people.untagPhotos",
+            "Unfile Photos from a Person",
+            [],
+            None,
+            "{person: p:N, ids?} — the photos are no longer filed under the person as a whole; the keyword goes from those where none of the person's faces is → {person, keyword, removed}",
+            always,
+            ops::untag_photos
+        ),
+        cmd!(
+            query "people.members",
+            "Faces of a Person or Group",
+            [],
+            None,
+            "{person|group: p:N | g:N, limit?: n (60), offset?} — their faces, best first, each {face, photo, rect, others: [{face, rect, person, name, unknown, ignored}]} (the other faces of the same photo and who they are) → {faces, total}",
+            always,
+            ops::members
         ),
         cmd!(
             "people.delete",
@@ -187,7 +241,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "People Settings",
             [],
             None,
-            "{link?: cosine (0.50: faces this alike are grouped), suggest?: cosine (0.45: this alike to a known person is suggested), autoTag?: cosine | null (null: always ask; e.g. 0.65 tags without asking above that), minFacePx?: n (40), model?: fast | accurate} → {settings, model}",
+            "{link?: cosine (0.50: faces this alike are grouped), suggest?: cosine (0.45: this alike to a known person is suggested), autoTag?: cosine | null (null: always ask; e.g. 0.65 tags without asking above that), minFacePx?: n (40), model?: fast | accurate, tagUnknown?: bool (false: faces marked unknown person get no keyword; true: their photos get `People|Unknown`)} → {settings, model}",
             always,
             ops::settings
         ),

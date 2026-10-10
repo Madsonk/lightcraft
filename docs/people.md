@@ -41,16 +41,69 @@ pure Rust (`crates/people`).
 | `people.cancel`, `people.refresh` | stop the run (what was done is kept); group the faces again |
 | `people.list {groups?, suggestions?, thumbs?}` | persons (`p:N`), groups to name (`g:N`), suggestions, with face thumbnails |
 | `people.name {group\|person, name, dryRun?}` | the group is this person: faces become theirs, photos get `People|<name>` |
-| `people.rename {person, name}`, `people.merge {from, into}`, `people.delete {person}`, `people.ignore {face\|group}` | edit people |
+| `people.rename {person, name}`, `people.merge {from, into}`, `people.delete {person}` | edit people |
+| `people.ignore {face\|group\|faces}` | **Not a real face**: a statue, a poster, a wrong detection; left out for good |
+| `people.unknown {face\|group\|faces, off?}` | **Unknown person**: seen, not known (see below) |
+| `people.skip {face\|group\|faces, clear?}` | **Skip for now**: hide a group until “Group again”; decides nothing |
+| `people.move {faces, to: p:N\|g:N\|unknown\|ignored}` | this face is actually that person (see below) |
+| `people.tagPhotos {person, ids?}` / `people.untagPhotos` | file whole photos under a person (a photo dropped on them) |
+| `people.members {person\|group, limit?}` | the faces of a person or group, each with the other faces of its photo and who they are |
+| `keyword.apply {keyword, ids?}` | add a keyword to the photos (only those that lack it; one undo step); `People|<name>` files them under the person |
 | `people.confirm {question\|face+person, answer: yes\|no\|unsure}` | "same person?" |
 | `people.questions {limit?}` | the doubtful cases, nearest to the thresholds first |
 | `people.suggest {ids?, limit?, minScore?}` | faces that look like a known person |
 | `people.photos {person\|group, filter?}`, `people.faces {id?}` | a person's photos; the faces of a photo and who they are |
 | `people.undo` | undo the last decision and the keywords it set (one step) |
-| `people.settings {link?, suggest?, autoTag?, minFacePx?, model?: fast\|accurate}` | thresholds, auto-tag, model |
+| `people.settings {link?, suggest?, autoTag?, minFacePx?, model?: fast\|accurate, tagUnknown?}` | thresholds, auto-tag, model, keyword for unknown faces |
 | `people.sync` | give every named person's photos their keyword again |
 
 In the app: View ▸ People ▸ **Recognition**.
+
+## A photo can hold several people
+
+The model is **face → person**; the keyword is at the level of the **photo**: `People|<name>` is on a photo as long as
+at least one face of that person is confirmed in it, or the photo was filed under them by hand. So:
+
+- moving **one** face from A to B adds `People|B` to the photo, and removes `People|A` **only if no other face of A is
+  confirmed in that photo** (two faces of A in one photo: A stays) and the photo was not filed under A by hand;
+- “Not a real face” or “Unknown person” on one face never removes the keyword of the **other** people of the photo;
+- a photo with a known face and an unknown one keeps the known person's keyword;
+- a photo dropped on a person is filed under them **as a whole**: it gets `People|<name>` (not twice), whether or not a
+  face of theirs was found, and it is remembered by hand in `people.json` (`photo_tags: [[photo key, person]]`), so
+  `people.sync`, regrouping, or moving a face of that photo to someone else never removes it. Other people's keywords are
+  untouched;
+- the person a face leaves is told “not them” (`rejected`): it is not suggested for them again.
+
+## Unknown person, Skip for now, Not a real face
+
+For a group you do not know, in the card of the group (People ▸ Recognition):
+
+- **Unknown person**: you looked, you do not know them. The group leaves the list to name, **without any keyword**, and
+  waits in **Unknown people** (nameable later: type a name, or drag them onto a person). Recorded in `people.json`
+  (`unknown`), one undo step (`people.undo`). Optional setting `people.settings {tagUnknown: true}` (off by default): the
+  photos of unknown faces get `People|Unknown` (switching it off removes it; a person cannot be named “Unknown”).
+- **Skip for now**: hides the group for the session or until “Group again”; nothing is decided or written.
+- **Not a real face**: the faces are left out for good (`ignored`).
+
+## Drag and drop
+
+In People ▸ Recognition, **click** a face to pick it (click again to unpick), **drag** it (or the picked ones) onto:
+
+- a **person** (their card): “this face is actually that person” (`people.move`); a **group** (its card): the same person
+  as that group (an unnamed person is made, name it later); **Unknown person** / **Not a real face** (the two zones at the
+  top). The target is highlighted; a ghost of the face with the count follows the pointer; a message says what was
+  done; **Undo** (or `people.undo`) takes the whole gesture back. Escape cancels a drag. The caption “N faces · M photos · drag” of a
+  group drags the whole group.
+- A photo may hold several faces: hover a face to see every face of its photo and who it is; a person's **Faces** list
+  shows each of their faces with the other faces of the same photo, named (“unknown”, “not a face”, “to name”); the
+  selected photo's faces are listed at the top. It is always **one face** that is dragged, never “the photo”.
+
+**Photos** are dragged from the grid or the filmstrip (the selection moves together; a photo that was not selected becomes
+the selection) onto the left panel: a **regular album** (adds them; a smart album or a folder refuses with a message), or
+a **keyword** of the Keywords tree (`keyword.apply`): that tree also holds `People|<name>` (files the photos under the
+person, see above) and `Places|…` (the place keyword of that node, nothing above it). A closed parent opens when you
+hover it. Nothing is written before the button is released over a target; releasing anywhere else, or Escape, writes
+nothing. Dragging in the loupe of the detail view still pans the photo: use the filmstrip to drag from there.
 
 ## The models (not part of LightCraft)
 
