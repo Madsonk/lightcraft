@@ -82,6 +82,36 @@ impl Space {
     }
 }
 
+/// The three steps of the Library space (v12, phases 3 and 4 of the UX study): **Import** is the home
+/// screen (resume, drop zone, essential import settings, background tasks), **Sort** is the grid with
+/// the Quick sort panel, **Classify** is the bench for an archive (health counters, questions, groups).
+/// A step only decides what the centre of the window shows (and which side panels give way); the
+/// layout, the selection and the filter are never touched by changing step.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Step {
+    Import,
+    #[default]
+    Sort,
+    Classify,
+}
+
+impl Step {
+    pub const ALL: [Step; 3] = [Step::Import, Step::Sort, Step::Classify];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Step::Import => "import",
+            Step::Sort => "sort",
+            Step::Classify => "classify",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Step> {
+        Step::ALL.into_iter().find(|s| s.name().eq_ignore_ascii_case(name.trim()))
+    }
+}
+
 /// What a space arranges: the shared panel state of [`crate::UiState`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -144,6 +174,8 @@ pub struct Prefs {
     pub version: u32,
     pub current: String,
     pub saved: Vec<Saved>,
+    /// The import settings the home screen remembers for the next import (v12).
+    pub home: Option<Value>,
 }
 
 impl Prefs {
@@ -182,6 +214,18 @@ pub struct Workspaces {
     pub context: Option<crate::context_bar::Summary>,
     /// The top bar had room for the space selector at the last frame (else the context bar carries it).
     pub selector_in_top_bar: bool,
+    /// The step of the Library space (v12).
+    pub step: Step,
+    /// The view seen at the last frame: a view changed by anything but a step leaves Import / Classify.
+    last_view: Option<ViewMode>,
+    /// The first frame has chosen the step (an empty library opens on Import).
+    step_chosen: bool,
+    /// The home screen (Import step).
+    pub home: crate::home::State,
+    /// The Quick sort panel (Sort step).
+    pub quick: crate::quick_sort::State,
+    /// The Classify bench.
+    pub classify: crate::classify::State,
 }
 
 impl Default for Workspaces {
@@ -198,6 +242,12 @@ impl Default for Workspaces {
             create: Default::default(),
             context: None,
             selector_in_top_bar: true,
+            step: Step::Sort,
+            last_view: None,
+            step_chosen: false,
+            home: Default::default(),
+            quick: Default::default(),
+            classify: Default::default(),
         }
     }
 }
@@ -311,6 +361,9 @@ pub fn apply(app: &mut LightcraftApp, layout: &Layout) {
     u.tool.clear();
     u.keyword_painter = None;
     u.fullscreen = false;
+    // a view applied by a space is not "a view the user changed" (see `tick`)
+    let view = app.ui.view;
+    app.workspaces.last_view = Some(view);
 }
 
 /// Open the space `name` (built-in or the user's own): remember what the space being left looks like,
@@ -422,6 +475,32 @@ fn retouch_selection(app: &mut LightcraftApp) -> Result<Value, String> {
     Ok(json!({"workspace": Space::Retouch.name(), "selected": app.session.selection.ids.len(), "switched": r}))
 }
 
+/// The step the centre of the Library space shows (`None`: workspaces off, or another space).
+pub fn step_of(app: &LightcraftApp) -> Option<Step> {
+    (enabled(app) && app.workspaces.kind == Space::Library).then_some(app.workspaces.step)
+}
+
+/// Import and Classify take the whole window (their own left, centre and right columns): the usual
+/// side panels give way while they are shown.
+pub fn owns_window(app: &LightcraftApp) -> bool {
+    matches!(step_of(app), Some(Step::Import | Step::Classify))
+}
+
+/// Go to a step of the Library space (opening the space first when another one is shown). Sort shows
+/// the grid again; nothing of the session (selection, filter, source) is touched.
+pub fn set_step(app: &mut LightcraftApp, step: Step) -> Result<Value, String> {
+    if app.workspaces.kind != Space::Library || app.workspaces.current != Space::Library.name() {
+        switch(app, Space::Library.name())?;
+    }
+    if step == Step::Sort && !matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid | ViewMode::Compare | ViewMode::Survey) {
+        app.ui.view = ViewMode::PhotoGrid;
+    }
+    app.workspaces.step = step;
+    app.workspaces.step_chosen = true;
+    app.workspaces.last_view = Some(app.ui.view);
+    Ok(json!({"workspace": "Library", "step": step.name()}))
+}
+
 /// `workspace.*` commands (UI commands: they act on the window, not the library).
 pub fn command(app: &mut LightcraftApp, id: &str, p: &Value) -> Result<Value, String> {
     let arg = |k: &str| p.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
@@ -450,6 +529,13 @@ pub fn command(app: &mut LightcraftApp, id: &str, p: &Value) -> Result<Value, St
         },
         "workspace.delete" => delete(app, &arg("name").unwrap_or_else(|| app.workspaces.current.clone())),
         "workspace.retouchSelection" => retouch_selection(app),
+        "workspace.step" => {
+            let name = arg("step").ok_or("workspace.step: missing `step` (import | sort | classify)")?;
+            set_step(app, Step::from_name(&name).ok_or_else(|| format!("unknown step `{name}` (import | sort | classify)"))?)
+        }
+        other if other.starts_with("workspace.home.") => crate::home::command(app, other, p),
+        other if other.starts_with("workspace.sort.") => crate::quick_sort::command(app, other, p),
+        other if other.starts_with("workspace.classify.") => crate::classify::command(app, other, p),
         "workspace.backToLibrary" => switch(app, "Library"),
         "workspace.clearContext" => {
             // the one explicit way to empty the context: the filter, then the selection
@@ -494,11 +580,16 @@ pub fn attach(app: &mut LightcraftApp, path: Option<PathBuf>) {
 pub fn tick(app: &mut LightcraftApp, now: f64) {
     // a kit started from the Create panel gets its manifest even if the workspaces were switched off meanwhile
     crate::create_space::tick(app);
+    // the sliced analysis (Sorting Help's too) goes on whatever the workspaces switch says
+    crate::quick_sort::tick(app, now);
     if !enabled(app) {
         // off: the window is the official one; forget what was seen so turning it on starts clean
         app.workspaces.seen = None;
         return;
     }
+    step_tick(app);
+    crate::home::tick(app, now);
+    crate::classify::tick(app, now);
     let kind = app.workspaces.kind;
     let layout = capture(app, kind);
     match &app.workspaces.seen {
@@ -511,6 +602,25 @@ pub fn tick(app: &mut LightcraftApp, now: f64) {
         Some(_) => {}
     }
     flush(app, now, false);
+}
+
+/// Once a frame: an empty library opens on Import; a view changed by anything but a step (View ▸ People,
+/// the loupe…) leaves Import and Classify, because the centre would not show it.
+fn step_tick(app: &mut LightcraftApp) {
+    if !app.workspaces.step_chosen {
+        app.workspaces.step_chosen = true;
+        if app.workspaces.kind == Space::Library && !app.session.catalog.photos().any(|p| p.in_library()) {
+            app.workspaces.step = Step::Import;
+        }
+    }
+    let view = app.ui.view;
+    if let Some(prev) = app.workspaces.last_view
+        && prev != view
+        && app.workspaces.step != Step::Sort
+    {
+        app.workspaces.step = Step::Sort;
+    }
+    app.workspaces.last_view = Some(view);
 }
 
 /// Write `workspaces.json` when it is out of date (and `force`, or a second has passed).
@@ -546,7 +656,12 @@ pub fn create_center(app: &LightcraftApp) -> bool {
 
 /// The tool strip (the rail of panel icons) is for the spaces that edit; Create has none.
 pub fn hides_strip(app: &LightcraftApp) -> bool {
-    enabled(app) && app.workspaces.kind == Space::Create
+    enabled(app) && (app.workspaces.kind == Space::Create || owns_window(app))
+}
+
+/// `workspaces.json` has something new to write (the home screen's remembered settings).
+pub fn mark_dirty(app: &mut LightcraftApp) {
+    app.workspaces.dirty = true;
 }
 
 /// `ui.inspect` → `workspaces`.
@@ -560,5 +675,9 @@ pub fn inspect(app: &LightcraftApp) -> Value {
         "file": w.path.as_ref().map(|p| p.display().to_string()),
         "context": w.context.as_ref().map(crate::context_bar::Summary::to_json),
         "create": w.create.last_kit,
+        "step": w.step,
+        "home": crate::home::inspect(app),
+        "quick": crate::quick_sort::inspect(app),
+        "classify": crate::classify::inspect(app),
     })
 }

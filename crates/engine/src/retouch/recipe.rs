@@ -678,10 +678,6 @@ fn settle(s: &mut Session, pp: &PhotoPlan, o: &Opts, dose: f32, c: &str) -> Resu
     unreachable!("the loop returns on its last round")
 }
 
-fn photo_json(s: &mut Session, pp: &PhotoPlan, o: &Opts, dose: f32, c: &str) -> Result<Value> {
-    Ok(photo_full(s, pp, o, dose, c)?.0)
-}
-
 /// The plan of a photo as JSON, with the settings it comes to and the dose it settled at.
 fn photo_full(s: &mut Session, pp: &PhotoPlan, o: &Opts, dose: f32, c: &str) -> Result<(Value, DevelopSettings, f32)> {
     let (dz, d, fin, q, reduced) = settle(s, pp, o, dose, c)?;
@@ -710,11 +706,20 @@ fn propose(s: &mut Session, p: &Value) -> Result<Value> {
     let dose = dose_of(p);
     let set = plans(s, &ids, p, C)?;
     let mut out = Vec::new();
+    // `settings`: also the settings the plan comes to, so a frontend can show the effect without writing it
+    let with_settings = bool_or(p, "settings", false);
     for pp in &set.photos {
-        out.push(photo_json(s, pp, &o, dose, C)?);
+        let (mut v, d, _) = photo_full(s, pp, &o, dose, C)?;
+        if with_settings {
+            v["settings"] = serde_json::to_value(&d).unwrap_or(Value::Null);
+        }
+        out.push(v);
     }
     Ok(json!({"recipe": RECIPE, "impact": round2(dose), "photos": out, "written": false}))
 }
+
+/// "Natural skin – Light": the name of a retouch copy (the dash is how `retouch.clear` finds them).
+const COPY_PREFIX: &str = "Natural skin – ";
 
 fn apply(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "retouch.apply";
@@ -723,6 +728,55 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
     let dose = dose_of(p);
     let set = plans(s, &ids, p, C)?;
     let variants = bool_or(p, "variants", false);
+    // `copy`: the retouch goes on virtual copies named "Natural skin – Light / Medium / Strong", stacked with
+    // the original, which is not touched (the app's Apply does this); without it the settings are written on
+    // the photo itself, as before
+    if bool_or(p, "copy", false) {
+        let undo0 = s.undo.len();
+        let impact = str_param(p, "impact").unwrap_or("medium").to_lowercase();
+        let doses: Vec<(&str, f32)> = if variants {
+            vec![("Light", LIGHT), ("Medium", MEDIUM), ("Strong", STRONG)]
+        } else {
+            vec![(
+                match impact.as_str() {
+                    "light" => "Light",
+                    "strong" => "Strong",
+                    _ => "Medium",
+                },
+                dose,
+            )]
+        };
+        let (mut out, mut made_all, mut shown) = (Vec::new(), Vec::new(), Vec::new());
+        // every plan is settled first: making a copy changes the catalog the plans were read from
+        let mut ready = Vec::new();
+        for pp in &set.photos {
+            for (label, dd) in &doses {
+                let (summary, mut d, dz) = photo_full(s, pp, &o, *dd, C)?;
+                d.masks.retain(|m| m.name.starts_with(super::PREFIX) || pp.ph.base.masks.iter().any(|b| b.id == m.id));
+                ready.push((pp.id, *label, summary, d, dz));
+            }
+        }
+        for (orig, label, summary, d, dz) in ready {
+            let r = s.execute("photo.virtualCopy", &json!({"ids": [orig.0], "name": format!("{COPY_PREFIX}{label}")}))?;
+            let Some(copy) = r["ids"].as_array().and_then(|a| a.first()).and_then(Value::as_u64).map(PhotoId) else { continue };
+            if let Some(op) = s.develop_op(copy, d, "Natural Skin Retouch") {
+                s.commit("Natural Skin Retouch", op)?;
+            }
+            made_all.push(copy);
+            if !variants || label == "Medium" {
+                shown.push(copy);
+            }
+            out.push(json!({"id": orig.0, "copy": copy.0, "name": format!("{COPY_PREFIX}{label}"), "dose": round2(dz), "summary": summary}));
+        }
+        let steps = s.undo.len().saturating_sub(undo0);
+        s.merge_undo(steps, "Natural Skin Retouch");
+        if let Some(last) = shown.last().copied() {
+            s.selection = crate::Selection { ids: shown.clone(), active: Some(last) };
+        }
+        return Ok(
+            json!({"recipe": RECIPE, "photos": out, "written": true, "variants": variants, "copies": made_all.iter().map(|i| i.0).collect::<Vec<_>>()}),
+        );
+    }
     let mut ops = Vec::new();
     let mut out = Vec::new();
     for pp in &set.photos {
@@ -753,8 +807,28 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"recipe": RECIPE, "photos": out, "written": true, "variants": variants}))
 }
 
+/// The retouch copies of `ids` (a copy given, or the copies of the photo given).
+fn retouch_copies(s: &Session, ids: &[PhotoId]) -> Vec<PhotoId> {
+    let mut v: Vec<PhotoId> = s
+        .catalog
+        .photos()
+        .filter(|c| !c.deleted && c.copy_name.as_deref().is_some_and(|n| n.starts_with(COPY_PREFIX)))
+        .filter(|c| ids.contains(&c.id) || c.copy_of.is_some_and(|m| ids.contains(&m)))
+        .map(|c| c.id)
+        .collect();
+    v.sort();
+    v
+}
+
 fn clear(s: &mut Session, p: &Value) -> Result<Value> {
     let ids = ids_of(s, p, "retouch.clear")?;
+    // retouch copies go to Recently Deleted (the original was never touched); only a photo that has none
+    // is cleared of the proposed-retouch masks, which is how v10/v11 wrote it
+    let copies = retouch_copies(s, &ids);
+    if !copies.is_empty() {
+        s.execute("photo.delete", &json!({"ids": copies.iter().map(|i| i.0).collect::<Vec<_>>()}))?;
+        return Ok(json!({"removed": 0, "copiesRemoved": copies.len()}));
+    }
     super::clear_masks(s, &ids, super::PREFIX, "Clear Proposed Retouch")
 }
 
@@ -779,7 +853,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Propose Retouch",
             [],
             None,
-            "{ids?, recipe?: \"natural-skin\", impact?: light|medium|strong|0.05..1 (medium 0.7), steps?: {camera|clean|skin_color|dnb_cleanup|dnb_sculpt|eyes|color|finish: bool}, target?: {palette|photo|hexes|scheme} (enables the colour step), person?: name, reference?: photo id, protectSkin?: true, confirmSpots?: [[x, y], …]} — plan the recipe's eight ordered steps for each photo and WRITE NOTHING: per step whether it applies, its masks, an explanation with measured figures (\"skin colour made uniform from ΔE 4.2 to 1.8\"), warnings; quality checks (skin texture change, halo, skin lightness, change outside the treated zones) and an automatic dose reduction when one is over its threshold → {recipe, impact, photos: [{id, mode, faces, dose, autoReduced, steps: [{n, id, label, enabled, explain, metrics, masks, warnings}], qc}], written: false}",
+            "{ids?, recipe?: \"natural-skin\", impact?: light|medium|strong|0.05..1 (medium 0.7), steps?: {camera|clean|skin_color|dnb_cleanup|dnb_sculpt|eyes|color|finish: bool}, target?: {palette|photo|hexes|scheme} (enables the colour step), person?: name, reference?: photo id, protectSkin?: true, confirmSpots?: [[x, y], …], settings?: bool (also return each photo's planned settings, to preview them without writing)} — plan the recipe's eight ordered steps for each photo and WRITE NOTHING: per step whether it applies, its masks, an explanation with measured figures (\"skin colour made uniform from ΔE 4.2 to 1.8\"), warnings; quality checks (skin texture change, halo, skin lightness, change outside the treated zones) and an automatic dose reduction when one is over its threshold → {recipe, impact, photos: [{id, mode, faces, dose, autoReduced, steps: [{n, id, label, enabled, explain, metrics, masks, warnings}], qc}], written: false}",
             always,
             propose
         ),
@@ -788,7 +862,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Apply Proposed Retouch",
             [],
             None,
-            "{…same as retouch.propose, variants?: bool} — write what retouch.propose planned as ordinary editable settings (masks \"Retouch: …\", the Colour Mixer, heal spots for sensor dust outside faces) in ONE undo step; `variants` also leaves \"Natural skin · Before / Light / Medium / Strong\" in Versions for before/after → {recipe, photos: [{id, dose, summary}], written, variants}. No mole, scar or tattoo is removed unless its position is in `confirmSpots`",
+            "{…same as retouch.propose, variants?: bool, copy?: bool} — write what retouch.propose planned as ordinary editable settings (masks \"Retouch: …\", the Colour Mixer, heal spots for sensor dust outside faces) in ONE undo step; `variants` also leaves \"Natural skin · Before / Light / Medium / Strong\" in Versions for before/after; `copy` (what the app's Apply uses) writes the retouch on virtual copies named \"Natural skin – Light / Medium / Strong\" (one copy at the impact chosen, three with `variants`) stacked with the untouched original instead → {recipe, photos: [{id, dose, summary}], written, variants}. No mole, scar or tattoo is removed unless its position is in `confirmSpots`",
             always,
             apply
         ),
@@ -881,6 +955,47 @@ mod tests {
         assert_eq!(s.undo.len(), undo + 1, "one undo step for the photo and its versions");
         s.execute("edit.undo", &json!({})).expect("undo");
         assert!(s.catalog.photo(id).expect("photo").versions.is_empty());
+    }
+
+    #[test]
+    fn a_copy_carries_the_retouch_and_the_original_is_never_touched() {
+        let (mut s, id) = demo();
+        let before = s.develop_of(id).expect("develop");
+        let (photos, undo0) = (s.catalog.photos().count(), s.undo.len());
+        let r = s.execute("retouch.apply", &json!({"id": id.0, "impact": "light", "copy": true})).expect("apply as a copy");
+        assert_eq!(r["copies"].as_array().map(Vec::len), Some(1), "{r}");
+        assert_eq!(s.catalog.photos().count(), photos + 1);
+        assert_eq!(s.undo.len(), undo0 + 1, "one undo step");
+        assert!(*s.develop_of(id).expect("develop") == *before, "the original keeps its settings");
+        assert!(s.catalog.photo(id).expect("photo").versions.is_empty(), "nothing written in Versions");
+        let copy = s.catalog.photos().find(|p| p.copy_of == Some(id)).expect("a copy").clone();
+        assert_eq!(copy.copy_name.as_deref(), Some("Natural skin – Light"));
+        assert!(copy.develop.masks.iter().all(|m| m.name.starts_with(super::super::PREFIX) || before.masks.iter().any(|b| b.id == m.id)));
+        assert!(s.catalog.stack_of(id).is_some_and(|st| st.photos.contains(&copy.id)), "stacked with the original");
+        // three copies with variants
+        let r = s.execute("retouch.apply", &json!({"id": id.0, "copy": true, "variants": true})).expect("apply 3 copies");
+        assert_eq!(r["copies"].as_array().map(Vec::len), Some(3), "{r}");
+        let mut names: Vec<String> = s.catalog.photos().filter(|p| p.copy_of == Some(id)).filter_map(|p| p.copy_name.clone()).collect();
+        names.sort();
+        assert_eq!(names.iter().filter(|n| n.ends_with("Light")).count(), 2, "{names:?}");
+        assert!(*s.develop_of(id).expect("develop") == *before);
+        // clear removes the copies and only them
+        let c = s.execute("retouch.clear", &json!({"id": id.0})).expect("clear");
+        assert_eq!(c["copiesRemoved"], 4, "{c}");
+        assert!(s.catalog.photos().filter(|p| p.copy_of == Some(id)).all(|p| p.deleted));
+        assert!(!s.catalog.photo(id).expect("photo").deleted && *s.develop_of(id).expect("develop") == *before);
+    }
+
+    #[test]
+    fn a_proposal_can_return_its_settings_for_a_preview_and_still_writes_nothing() {
+        let (mut s, id) = demo();
+        let (undo0, photos) = (s.undo.len(), s.catalog.photos().count());
+        let r = s.execute("retouch.propose", &json!({"id": id.0, "settings": true})).expect("propose");
+        assert!(r["photos"][0]["settings"].is_object(), "the planned settings come back");
+        assert!(serde_json::from_value::<DevelopSettings>(r["photos"][0]["settings"].clone()).is_ok(), "and they are settings");
+        let plain = s.execute("retouch.propose", &json!({"id": id.0})).expect("propose");
+        assert!(plain["photos"][0].get("settings").is_none());
+        assert_eq!((s.undo.len(), s.catalog.photos().count()), (undo0, photos));
     }
 
     #[test]

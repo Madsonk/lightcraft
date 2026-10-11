@@ -337,7 +337,13 @@ fn the_helpers_of_sorting_help_answer_honestly_without_their_models() {
     h.app.run("dialog.cull", json!({"section": "culling"})).unwrap();
     glide(&mut h);
     click(&mut h, "button:sortingCull");
-    assert!(h.app.sorting.culling.contains("photos scored"), "{}", h.app.sorting.culling);
+    // sliced and in the background now: a few frames until it ends
+    let t0 = std::time::Instant::now();
+    while h.app.workspaces.quick.job.is_some() && t0.elapsed() < SETTLE {
+        h.step();
+    }
+    let done = h.app.workspaces.quick.last.clone().expect("the analysis was recorded");
+    assert!(done["photos"].as_u64().unwrap_or(0) > 0, "{done}");
     // Suggested keywords without the search model: a background task that ends on the model's own message
     let first = h.app.session.catalog.photos().next().map(|p| p.id.0).unwrap();
     h.app.run("library.select", json!({"ids": [first]})).unwrap();

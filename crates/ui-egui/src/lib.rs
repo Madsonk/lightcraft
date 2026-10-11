@@ -7,8 +7,9 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 /// The version shown to people (About, System Info, `--version`): the upstream release plus the local build tag.
-pub const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-local-ia-v11");
+pub const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-local-ia-v12");
 
+pub mod classify;
 pub mod context_bar;
 pub mod control;
 pub mod create_space;
@@ -16,6 +17,7 @@ pub mod credits;
 pub mod export_task;
 pub mod headless;
 pub mod heavy;
+pub mod home;
 pub mod i18n;
 pub mod icons;
 pub mod import;
@@ -28,6 +30,7 @@ pub mod merge;
 mod model_setup;
 pub mod panels;
 pub mod pick;
+pub mod quick_sort;
 pub mod region;
 pub mod render;
 pub mod shortcuts;
@@ -83,6 +86,8 @@ mod tests_unsaved;
 mod tests_v10;
 #[cfg(test)]
 mod tests_v11;
+#[cfg(test)]
+mod tests_v12;
 #[cfg(test)]
 mod tests_v9;
 #[cfg(test)]
@@ -411,7 +416,7 @@ impl LightcraftApp {
                     panels::faces::offer_detector(self);
                 }
                 // Analyze Faces without its model: offer the download (never downloads by itself)
-                if e.contains(lightcraft_engine::facemesh::NOT_INSTALLED) && self.ui.dialog.is_none() {
+                if e.to_lowercase().contains(&lightcraft_engine::facemesh::NOT_INSTALLED.to_lowercase()) && self.ui.dialog.is_none() {
                     self.ui.dialog = Some(state::Dialog::FacemeshModel { error: None });
                 }
             }
@@ -902,6 +907,8 @@ impl LightcraftApp {
             if !photos.is_empty() {
                 if self.lightroom.is_some() {
                     self.toast(ctx, "Finish Lightroom catalog import before adding photos");
+                } else if home::on_drop(self, &photos) {
+                    // dropped on the home screen: scanned and reviewed there
                 } else if let Err(e) = import::start_paths(self, photos) {
                     self.toast(ctx, e);
                 }
@@ -1015,13 +1022,16 @@ impl LightcraftApp {
         if !workspaces::hides_strip(self) {
             panels::strip::show(self, ui);
         }
-        if self.ui.right != state::RightPanel::None {
+        // Import and Classify (Library steps) bring their own columns: the usual side panels give way
+        let owns_window = workspaces::owns_window(self);
+        quick_sort::show(self, ui);
+        if self.ui.right != state::RightPanel::None && !owns_window {
             panels::right::show(self, ui);
         }
-        if self.ui.presets {
+        if self.ui.presets && !owns_window {
             panels::presets::show(self, ui);
         }
-        if self.ui.left_panel {
+        if self.ui.left_panel && !owns_window {
             panels::left::show(self, ui);
         }
         panels::bottombar::show(self, ui);
@@ -1036,7 +1046,10 @@ impl LightcraftApp {
             self.caches.people_rec.visit = false;
         }
         let create_center = workspaces::create_center(self);
+        let step = workspaces::step_of(self).filter(|_| owns_window);
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(bg)).show(ui, |ui| match self.ui.view {
+            _ if step == Some(workspaces::Step::Import) => home::show(self, ui),
+            _ if step == Some(workspaces::Step::Classify) => classify::show(self, ui),
             state::ViewMode::PhotoGrid | state::ViewMode::SquareGrid if create_center => create_space::show(self, ui),
             state::ViewMode::PhotoGrid | state::ViewMode::SquareGrid => panels::grid::show(self, ui),
             state::ViewMode::Detail => panels::detail::show(self, ui),

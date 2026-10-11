@@ -7,10 +7,9 @@ use egui::{Align, Layout, Rect, Sense, Stroke, StrokeKind, UiBuilder, pos2, vec2
 use serde_json::{Value, json};
 
 use crate::LightcraftApp;
-use crate::state::ViewMode;
 use crate::theme::Tokens;
 use crate::widgets::{register, text_button};
-use crate::workspaces::{self, Space};
+use crate::workspaces::{self, Space, Step};
 
 /// Height of the context bar.
 pub const HEIGHT: f32 = 32.0;
@@ -124,7 +123,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     app.workspaces.context = Some(sum.clone());
     let kind = app.workspaces.kind;
     let selector_in_top = app.workspaces.selector_in_top_bar;
-    let in_classify = matches!(app.ui.view, ViewMode::People | ViewMode::Places);
+    let in_classify = app.workspaces.step == Step::Classify;
     let mut run: Option<(&'static str, Value)> = None;
     egui::Panel::top("context_bar")
         .exact_size(HEIGHT)
@@ -191,25 +190,21 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             }
             match kind {
                 Space::Library => {
-                    if text_button(&mut left, "ctxImport", "Import…", false)
-                        .on_hover_text(crate::i18n::tr("Import photos from a card or a folder"))
-                        .clicked()
-                    {
-                        run = Some(("file.addPhotos", json!({})));
-                    }
-                    if text_button(&mut left, "ctxSort", "Sort", !in_classify)
-                        .on_hover_text(crate::i18n::tr("Decide fast: grid, filters, ratings and flags"))
-                        .clicked()
-                        && !matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid)
-                    {
-                        run = Some(("view.photoGrid", json!({})));
-                    }
-                    if text_button(&mut left, "ctxClassify", "Classify", in_classify)
-                        .on_hover_text(crate::i18n::tr("Name people, places and keywords"))
-                        .clicked()
-                        && !in_classify
-                    {
-                        run = Some(("view.people", json!({})));
+                    // the three steps of the Library space: Import (home), Sort (grid + Quick sort), Classify (bench)
+                    let step = app.workspaces.step;
+                    for (id, label, tip, which) in [
+                        ("ctxImport", "Import", "Home: resume, drop a card or a folder, import without blocking the window", Step::Import),
+                        ("ctxSort", "Sort", "Decide fast: grid, Quick sort suggestions, ratings and flags", Step::Sort),
+                        (
+                            "ctxClassify",
+                            "Classify",
+                            "The archive bench: health counters, “same person?” questions, groups, places, keywords",
+                            Step::Classify,
+                        ),
+                    ] {
+                        if text_button(&mut left, id, label, step == which).on_hover_text(crate::i18n::tr(tip)).clicked() && step != which {
+                            run = Some(("workspace.step", json!({"step": which.name()})));
+                        }
                     }
                 }
                 Space::Retouch | Space::Create => {

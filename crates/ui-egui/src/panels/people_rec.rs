@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 
 use super::dnd::{self, FaceDrag, Over};
 use crate::LightcraftApp;
+use crate::render::Slot;
 use crate::theme::Tokens;
 use crate::widgets::register;
 
@@ -42,7 +43,39 @@ pub struct RecCache {
     members: Option<(String, Value)>,
     /// `people.faces` of the photos asked about since the last change (hover, selected photo).
     photo_faces: HashMap<u64, Value>,
+    /// How many groups / suggestions / faces of the open person or group are listed (0: the first page); each
+    /// "Load more" adds a page, so every group and every face can be reached.
+    pub groups_shown: usize,
+    pub suggestions_shown: usize,
+    pub members_shown: usize,
+    /// Questions waiting in all (the queue shows the first few and refills as they are answered).
+    pub questions_total: usize,
+    /// Questions answered this session (hidden while the engine still lists them).
+    answered: std::collections::HashSet<String>,
+    /// Which list the page shows.
+    pub section: Section,
+    /// Face tiles drawn this frame (the renderer keeps that many thumbnails).
+    drawn: usize,
 }
+
+/// The lists of the Recognition page, one at a time or all.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Section {
+    #[default]
+    All,
+    ToName,
+    Suggestions,
+    Unknown,
+    People,
+}
+
+/// Faces added by one "Load more".
+const PAGE: usize = 60;
+const FIRST_GROUPS: usize = 40;
+const FIRST_SUGGESTIONS: usize = 24;
+const FIRST_MEMBERS: usize = 48;
+/// Questions shown at once.
+const QUESTIONS_SHOWN: usize = 6;
 
 impl RecCache {
     pub fn ov_is_none(&self) -> bool {
@@ -64,16 +97,66 @@ fn rect_of(t: &Thumb) -> lightcraft_geom::Rect {
     lightcraft_geom::Rect { x0: f64::from(t.rect[0]), y0: f64::from(t.rect[1]), x1: f64::from(t.rect[2]), y1: f64::from(t.rect[3]) }
 }
 
-/// A face close-up (a square around the face); a gap while it renders.
-fn face(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Thumb, size: f32) {
+/// Paint the close-up of a face in `r` (a square around the face). Never an empty dark square without a
+/// reason: the crop of the photo's own preview when it renders; else the face cut out of the grid thumbnail
+/// (blurrier, but the face); else a spinner while it loads, or a "!" with the reason when it cannot be read
+/// (the original is offline and no preview was kept). Returns the failure, if any, for the tooltip.
+pub(crate) fn paint_face(app: &mut LightcraftApp, ui: &egui::Ui, r: Rect, t: &Thumb) -> Option<String> {
     let tk = Tokens::get(ui.ctx());
-    let (r, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
     ui.painter().rect_filled(r, 3.0, tk.canvas);
+    // only what is on screen is rendered: a page of hundreds of faces would otherwise queue hundreds of
+    // decodes of the originals (slow on a network drive) and none would ever show
+    if !ui.is_rect_visible(r) {
+        return None;
+    }
+    app.caches.people_rec.drawn += 1;
+    let size = r.width();
     let px = (size * ui.ctx().pixels_per_point()).ceil() as usize;
-    if let Some(job) = app.session.face_job(PhotoId(t.photo), rect_of(t), px)
-        && let Some(tex) = app.renderer.variant(job)
-    {
-        ui.painter().image(tex.tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+    let id = PhotoId(t.photo);
+    // 1. the sharp close-up, rendered from the photo's preview, when it is ready
+    let mut failure = None;
+    if let Some(job) = app.session.face_job(id, rect_of(t), px) {
+        let key = job.key;
+        if let Some(tex) = app.renderer.variant(job) {
+            ui.painter().image(tex.tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+            return None;
+        }
+        failure = app.renderer.failure(Slot::Variant(key)).map(str::to_string);
+    }
+    // 2. meanwhile (or when that cannot be rendered) the face cut out of the grid thumbnail, which comes
+    //    from the thumbnail cache and is quick: blurrier, but it is the face
+    super::grid::request_thumb(app, id, 256, 8);
+    let orient = app.session.catalog.photo(id).map(|p| p.develop.orientation);
+    if let Some(tex) = app.renderer.thumb(id) {
+        let [tw, th] = tex.size;
+        let f = orient.map_or(rect_of(t), |o| o.map_norm_rect(rect_of(t)));
+        let (w, h) = (tw as f64, th as f64);
+        let side = (((f.x1 - f.x0) * w).max((f.y1 - f.y0) * h) * 1.7).clamp(1.0, w.min(h));
+        let (cx, cy) = ((f.x0 + f.x1) / 2.0 * w, (f.y0 + f.y1) / 2.0 * h);
+        let (x0, y0) = (cx.clamp(side / 2.0, w - side / 2.0) - side / 2.0, cy.clamp(side / 2.0, h - side / 2.0) - side / 2.0);
+        let uv = Rect::from_min_max(pos2((x0 / w) as f32, (y0 / h) as f32), pos2(((x0 + side) / w) as f32, ((y0 + side) / h) as f32));
+        ui.painter().image(tex.tex.id(), r, uv, Color32::WHITE);
+        return None;
+    }
+    // 3. nothing yet: a loading mark, or a "!" when neither could be read
+    let thumb_failed = app.renderer.failure(Slot::Thumb(id)).map(str::to_string);
+    if failure.is_some() && thumb_failed.is_some() {
+        ui.painter().text(r.center(), Align2::CENTER_CENTER, "!", tk.semibold(16.0), tk.text_dim);
+        return failure.or(thumb_failed);
+    }
+    let a = ui.ctx().input(|i| i.time) as f32 * 4.0;
+    let c = r.center();
+    let k = (size * 0.12).max(3.0);
+    ui.painter().circle_filled(c + vec2(a.cos(), a.sin()) * k, 2.0, tk.text_dim);
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+    None
+}
+
+/// A face close-up (see [`paint_face`]).
+fn face(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Thumb, size: f32) {
+    let (r, resp) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
+    if let Some(why) = paint_face(app, ui, r, t) {
+        resp.on_hover_text(format!("This face cannot be shown: {why}"));
     }
 }
 
@@ -119,12 +202,20 @@ fn refresh(app: &mut LightcraftApp, now: f64) {
         app.caches.people_rec.dirty = false;
         app.caches.people_rec.photo_faces.clear();
         app.caches.people_rec.members = None;
-        let ov = app.session.people_overview(40, 24, 6).ok();
-        let q =
-            app.session.execute("people.questions", &json!({"limit": 3})).ok().and_then(|v| v["questions"].as_array().cloned()).unwrap_or_default();
+        let (g, sg) = {
+            let c = &app.caches.people_rec;
+            (c.groups_shown.max(FIRST_GROUPS), c.suggestions_shown.max(FIRST_SUGGESTIONS))
+        };
+        let ov = app.session.people_overview(g, sg, 6).ok();
+        let qv = app.session.execute("people.questions", &json!({"limit": QUESTIONS_SHOWN})).ok();
+        let mut q = qv.as_ref().and_then(|v| v["questions"].as_array().cloned()).unwrap_or_default();
+        let before = q.len();
+        q.retain(|x| x["id"].as_str().is_none_or(|id| !app.caches.people_rec.answered.contains(id)));
+        let total = qv.as_ref().and_then(|v| v["total"].as_u64()).map_or(before, |t| t as usize).saturating_sub(before - q.len());
         let c = &mut app.caches.people_rec;
         c.ov = ov;
         c.questions = q;
+        c.questions_total = total;
     }
 }
 
@@ -160,17 +251,75 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 setup(app, ui, &st);
                 controls(app, ui, &st);
                 this_photo(app, ui);
-                questions(app, ui);
-                persons(app, ui);
+                section_bar(app, ui);
+                let sec = app.caches.people_rec.section;
+                let all = sec == Section::All;
+                if all || sec == Section::ToName {
+                    questions(app, ui);
+                }
+                if all || sec == Section::People {
+                    persons(app, ui);
+                }
                 person_faces(app, ui);
-                groups(app, ui);
-                unknown_people(app, ui, &st);
-                suggestions(app, ui);
+                if all || sec == Section::ToName {
+                    groups(app, ui);
+                }
+                if all || sec == Section::Unknown {
+                    unknown_people(app, ui, &st);
+                }
+                if all || sec == Section::Suggestions {
+                    suggestions(app, ui);
+                }
             });
         });
         ui.add_space(30.0);
     });
+    // the renderer keeps as many face thumbnails as were drawn (else a long list evicts and re-renders the same few)
+    let drawn = std::mem::take(&mut app.caches.people_rec.drawn);
+    app.renderer.want_variants(drawn);
     let _ = t;
+}
+
+/// Which list to look at, with how many each holds ("showing 40 of 1220" is under each list).
+fn section_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    let Some(ov) = app.caches.people_rec.ov.clone() else { return };
+    let t = Tokens::get(ui.ctx());
+    let items = [
+        (Section::All, "All".to_string()),
+        (Section::ToName, format!("To name {}", ov.groups_total)),
+        (Section::Suggestions, format!("Suggestions {}", ov.suggestions_total)),
+        (Section::Unknown, format!("Unknown {}", ov.unknown_total)),
+        (Section::People, format!("People {}", ov.persons.len())),
+    ];
+    ui.horizontal_wrapped(|ui| {
+        ui.label(egui::RichText::new(format!("{} faces in {} photos.", ov.indexed_faces, ov.indexed_photos)).font(t.font(12.0)).color(t.text_dim));
+        for (sec, label) in items {
+            let on = app.caches.people_rec.section == sec;
+            let r = crate::widgets::text_button(ui, &format!("recSection{sec:?}"), &label, on);
+            if r.clicked() {
+                app.caches.people_rec.section = sec;
+            }
+        }
+    });
+    ui.add_space(6.0);
+}
+
+/// "Showing N of TOTAL" and a button that lists one more page: every group and face can be reached.
+fn more(app: &mut LightcraftApp, ui: &mut egui::Ui, id: &str, shown: usize, total: usize, first: usize, field: fn(&mut RecCache) -> &mut usize) {
+    let t = Tokens::get(ui.ctx());
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(format!("Showing {} of {total}", shown.min(total))).font(t.font(12.0)).color(t.text_dim));
+        if shown < total {
+            let b = ui.button(format!("Load {} more", PAGE.min(total - shown)));
+            register(ui.ctx(), format!("recMore:{id}"), b.rect);
+            if b.clicked() {
+                let c = &mut app.caches.people_rec;
+                let cur = field(c);
+                *cur = (*cur).max(first) + PAGE;
+                c.dirty = true;
+            }
+        }
+    });
 }
 
 fn setup(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &Value) {
@@ -292,7 +441,12 @@ fn questions(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         return;
     }
     let t = Tokens::get(ui.ctx());
-    ui.label(egui::RichText::new("Same person?").font(t.semibold(14.0)).color(t.text));
+    let total = app.caches.people_rec.questions_total.max(qs.len());
+    ui.label(
+        egui::RichText::new(format!("Same person? ({total} questions, {} shown: answer to see the next ones)", qs.len()))
+            .font(t.semibold(14.0))
+            .color(t.text),
+    );
     for q in qs {
         let id = q["id"].as_str().unwrap_or("").to_string();
         egui::Frame::new().fill(t.inset).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
@@ -312,6 +466,7 @@ fn questions(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     ui.horizontal(|ui| {
                         for (label, ans) in [("Yes", "yes"), ("No", "no"), ("Not sure", "unsure")] {
                             if ui.button(label).clicked() {
+                                app.caches.people_rec.answered.insert(id.clone());
                                 act(app, "people.confirm", json!({"question": id, "answer": ans}));
                             }
                         }
@@ -365,13 +520,11 @@ fn tile(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Thumb, size: f32, label:
     let (full, resp) = ui.allocate_exact_size(vec2(size.max(52.0), size + lh), Sense::click_and_drag());
     let r = Rect::from_min_size(full.min, vec2(size, size));
     register(ui.ctx(), format!("recFace:{}", t.face), r);
-    ui.painter().rect_filled(r, 3.0, tk.canvas);
-    let px = (size * ui.ctx().pixels_per_point()).ceil() as usize;
-    if let Some(job) = app.session.face_job(PhotoId(t.photo), rect_of(t), px)
-        && let Some(tex) = app.renderer.variant(job)
-    {
-        ui.painter().image(tex.tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-    }
+    let why = paint_face(app, ui, r, t);
+    let resp = match why {
+        Some(w) => resp.on_hover_text(format!("This face cannot be shown: {w}")),
+        None => resp,
+    };
     let picked = app.caches.people_rec.selected.contains(&t.face);
     if picked {
         ui.painter().rect_stroke(r, 3.0, Stroke::new(2.5, tk.accent), StrokeKind::Outside);
@@ -507,12 +660,8 @@ fn person_card(app: &mut LightcraftApp, ui: &mut egui::Ui, g: &GroupView) {
             if let Some(th) = g.thumbs.first() {
                 let (r, resp) = ui.allocate_exact_size(vec2(THUMB + 12.0, THUMB + 12.0), Sense::click());
                 let px = ((THUMB + 12.0) * ui.ctx().pixels_per_point()).ceil() as usize;
-                ui.painter().rect_filled(r, 3.0, t.canvas);
-                if let Some(job) = app.session.face_job(PhotoId(th.photo), rect_of(th), px)
-                    && let Some(tex) = app.renderer.variant(job)
-                {
-                    ui.painter().image(tex.tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-                }
+                let _ = px;
+                paint_face(app, ui, r, th);
                 if resp.hovered() {
                     ui.painter().rect_stroke(r, 3.0, Stroke::new(1.0, t.text_dim), StrokeKind::Outside);
                 }
@@ -533,6 +682,7 @@ fn person_card(app: &mut LightcraftApp, ui: &mut egui::Ui, g: &GroupView) {
             if b.clicked() {
                 app.caches.people_rec.open_person = if open { None } else { Some(g.id.clone()) };
                 app.caches.people_rec.members = None;
+                app.caches.people_rec.members_shown = 0;
             }
         })
         .response;
@@ -562,19 +712,28 @@ fn persons(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 fn person_faces(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let Some(pid) = app.caches.people_rec.open_person.clone() else { return };
     let t = Tokens::get(ui.ctx());
-    let name = app
-        .caches
-        .people_rec
-        .ov
-        .as_ref()
-        .and_then(|o| o.persons.iter().find(|g| g.id == pid))
-        .map(|g| g.name.clone().unwrap_or_else(|| "Unnamed".into()));
+    let name = app.caches.people_rec.ov.as_ref().and_then(|o| {
+        o.persons
+            .iter()
+            .find(|g| g.id == pid)
+            .map(|g| g.name.clone().unwrap_or_else(|| "Unnamed".into()))
+            .or_else(|| o.groups.iter().chain(o.unknown.iter()).find(|g| g.id == pid).map(|g| format!("group of {} faces", g.faces)))
+    });
     let Some(name) = name else {
         app.caches.people_rec.open_person = None;
         return;
     };
-    if app.caches.people_rec.members.as_ref().is_none_or(|(id, _)| *id != pid) {
-        let v = app.session.execute("people.members", &json!({"person": pid, "limit": 48})).unwrap_or(Value::Null);
+    let want = app.caches.people_rec.members_shown.max(FIRST_MEMBERS);
+    let stale = match app.caches.people_rec.members.as_ref() {
+        Some((id, v)) if *id == pid => {
+            let (n, total) = (v["faces"].as_array().map_or(0, Vec::len), v["total"].as_u64().unwrap_or(0) as usize);
+            n < want.min(total)
+        }
+        _ => true,
+    };
+    if stale {
+        let key = if pid.starts_with("p:") { "person" } else { "group" };
+        let v = app.session.execute("people.members", &json!({key: pid, "limit": want})).unwrap_or(Value::Null);
         app.caches.people_rec.members = Some((pid.clone(), v));
     }
     let v = app.caches.people_rec.members.as_ref().map(|(_, v)| v.clone()).unwrap_or(Value::Null);
@@ -582,12 +741,17 @@ fn person_faces(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         ui.label(egui::RichText::new(format!("Faces of {name} ({})", v["total"].as_u64().unwrap_or(0))).font(t.semibold(14.0)).color(t.text));
         if ui.small_button("Close").clicked() {
             app.caches.people_rec.open_person = None;
+            app.caches.people_rec.members_shown = 0;
         }
     });
+    // pick faces (click), then say what they are: several at once
+    bulk_bar(app, ui);
     ui.label(
-        egui::RichText::new("A photo can hold several people: each face is shown with its name. Drag one onto another person.")
-            .font(t.font(11.0))
-            .color(t.text_dim),
+        egui::RichText::new(
+            "A photo can hold several people: each face is shown with its name. Click faces to pick them, or drag one onto another person.",
+        )
+        .font(t.font(11.0))
+        .color(t.text_dim),
     );
     ui.horizontal_wrapped(|ui| {
         for m in v["faces"].as_array().cloned().unwrap_or_default() {
@@ -606,7 +770,44 @@ fn person_faces(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             });
         }
     });
+    let shown = v["faces"].as_array().map_or(0, Vec::len);
+    more(app, ui, "members", shown, v["total"].as_u64().unwrap_or(0) as usize, FIRST_MEMBERS, |c| &mut c.members_shown);
     ui.add_space(10.0);
+}
+
+/// Buttons for the faces that are picked: the same three outcomes as the drop zones, for many faces at once.
+fn bulk_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    let picked = app.caches.people_rec.selected.clone();
+    let persons: Vec<(String, String)> = app
+        .caches
+        .people_rec
+        .ov
+        .as_ref()
+        .map(|o| o.persons.iter().filter_map(|p| Some((p.id.clone(), p.name.clone()?))).collect())
+        .unwrap_or_default();
+    ui.horizontal_wrapped(|ui| {
+        ui.label(format!("{} picked", picked.len()));
+        let on = !picked.is_empty();
+        for (id, label, to) in [("recBulkUnknown", "Unknown person", "unknown"), ("recBulkNotFace", "Not a real face", "ignored")] {
+            let b = ui.add_enabled(on, egui::Button::new(label));
+            register(ui.ctx(), format!("button:{id}"), b.rect);
+            if b.clicked() && act(app, "people.move", json!({"faces": picked, "to": to})).is_some() {
+                app.caches.people_rec.selected.clear();
+            }
+        }
+        ui.add_enabled_ui(on && !persons.is_empty(), |ui| {
+            egui::ComboBox::from_id_salt("rec-bulk-person").selected_text("Same person as…").show_ui(ui, |ui| {
+                for (pid, name) in &persons {
+                    if ui.selectable_label(false, name).clicked() && act(app, "people.move", json!({"faces": picked, "to": pid})).is_some() {
+                        app.caches.people_rec.selected.clear();
+                    }
+                }
+            });
+        });
+        if on && ui.small_button("Clear").clicked() {
+            app.caches.people_rec.selected.clear();
+        }
+    });
 }
 
 /// The field to name a group, and its “Name” button; Enter names too.
@@ -658,9 +859,11 @@ fn groups(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             }
         });
     }
-    for g in ov.groups.iter().filter(|g| g.faces >= 2).chain(ov.groups.iter().filter(|g| g.faces < 2).take(6)) {
+    for g in &ov.groups {
         group_card(app, ui, g, false);
     }
+    let shown = ov.groups.len();
+    more(app, ui, "groups", shown, ov.groups_total, FIRST_GROUPS, |c| &mut c.groups_shown);
     ui.add_space(10.0);
 }
 
@@ -689,6 +892,14 @@ fn group_card(app: &mut LightcraftApp, ui: &mut egui::Ui, g: &GroupView, unknown
                 }
                 ui.horizontal(|ui| {
                     name_row(app, ui, &g.id);
+                    let open = app.caches.people_rec.open_person.as_deref() == Some(g.id.as_str());
+                    let b = ui.small_button(if open { "Hide faces" } else { "All faces" }).on_hover_text("List every face of this group, to pick several and say what they are");
+                    register(ui.ctx(), format!("recGroupFaces:{}", g.id), b.rect);
+                    if b.clicked() {
+                        app.caches.people_rec.open_person = if open { None } else { Some(g.id.clone()) };
+                        app.caches.people_rec.members = None;
+                        app.caches.people_rec.members_shown = 0;
+                    }
                 });
                 ui.horizontal(|ui| {
                     if unknown {
@@ -756,6 +967,8 @@ fn unknown_people(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &Value) {
     for g in &ov.unknown {
         group_card(app, ui, g, true);
     }
+    let shown = ov.unknown.len();
+    more(app, ui, "unknown", shown, ov.unknown_total, FIRST_GROUPS, |c| &mut c.groups_shown);
     ui.add_space(10.0);
 }
 
@@ -787,4 +1000,6 @@ fn suggestions(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             });
         }
     });
+    let shown = ov.suggestions.len();
+    more(app, ui, "suggestions", shown, ov.suggestions_total, FIRST_SUGGESTIONS, |c| &mut c.suggestions_shown);
 }

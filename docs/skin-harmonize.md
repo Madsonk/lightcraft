@@ -82,6 +82,15 @@ Eight ordered steps, each with a switch, an impact and a measured explanation
 {variants: true}` also leaves **Natural skin · Before / Light / Medium / Strong** in Versions for
 before/after. In the app: the **Proposals** section at the top of the Versions panel.
 
+**Copies (v12).** `retouch.apply {copy: true}` (what the app's buttons use) leaves the original **untouched**
+and writes the retouch on virtual copies named **Natural skin – Light / Medium / Strong** (the impact asked
+for, or the three with `variants`), stacked with the original, in one undo step. `retouch.clear` removes
+those copies (to Recently Deleted) and only falls back to clearing the `Retouch: …` masks of a photo that
+has no copy (what v10 and v11 wrote). `retouch.propose {settings: true}` also returns the settings each plan
+comes to: the app shows them in the loupe as a temporary look (**Preview on the photo**), written nowhere.
+The app plans one photo per frame with a progress bar (a single photo still takes its ~8 s in one go:
+the planning needs the session and cannot run on a worker).
+
 ### Red lines (each one has an automated test)
 
 * **No mole, scar or tattoo is removed without explicit confirmation.** Heal spots are only added,

@@ -1,9 +1,11 @@
 //! Proposals: the proposed retouch ("Natural skin") at the top of the Versions panel. Pressing
-//! Propose plans the eight ordered steps for the selected photos and writes nothing; every step
-//! has its switch and a one-line explanation with measured figures; Apply writes ordinary
-//! editable settings in one undo step, and "Apply with 3 variants" also leaves Before, Light,
-//! Medium and Strong in Versions below. Same commands as the CLI: `retouch.propose`,
-//! `retouch.apply`, `retouch.clear`.
+//! Propose plans the eight ordered steps for the selected photos (one photo per frame, with a progress
+//! bar) and writes nothing; every step has its switch and a one-line explanation with measured figures;
+//! **Preview on the photo** shows the planned retouch in the loupe without writing it (flip it off to
+//! see the original). Validating **never touches the original**: "Create retouched copy" makes a virtual
+//! copy named "Natural skin – Medium" (or the impact chosen), "Create 3 copies" makes Light, Medium and
+//! Strong, all stacked with the original; "Remove the retouch copies" takes only those copies away.
+//! Same commands as the CLI: `retouch.propose`, `retouch.apply {copy}`, `retouch.clear`.
 
 use std::collections::BTreeMap;
 
@@ -14,6 +16,16 @@ use crate::LightcraftApp;
 use crate::theme::Tokens;
 use crate::widgets::{register, text_button};
 
+/// A proposal being planned: one photo per frame, so the window shows progress instead of freezing.
+#[derive(Clone, Default)]
+struct Pending {
+    queue: Vec<u64>,
+    done: Vec<Value>,
+    total: usize,
+    /// Frames drawn since it started (the first draws the progress bar before any planning).
+    frames: u32,
+}
+
 /// What the section remembers between frames.
 #[derive(Clone, Default)]
 struct State {
@@ -22,6 +34,10 @@ struct State {
     steps: BTreeMap<String, bool>,
     result: Option<Value>,
     open: bool,
+    pending: Option<Pending>,
+    /// Show the planned retouch on the photo (nothing is written).
+    preview: bool,
+    last_copies: usize,
 }
 
 const IMPACTS: [(&str, &str); 3] = [("Light", "light"), ("Medium", "medium"), ("Strong", "strong")];
@@ -33,6 +49,38 @@ fn ids_of(app: &LightcraftApp) -> Vec<u64> {
 
 fn params(st: &State, ids: &[u64]) -> Value {
     json!({"ids": ids, "recipe": "natural-skin", "impact": IMPACTS[st.impact.min(2)].1, "steps": st.steps})
+}
+
+/// Validate: virtual copies, the original untouched. One call per photo (the plan of each is cached by the
+/// proposal), the undo steps merged into one. Returns how many copies were made.
+fn apply_copies(app: &mut LightcraftApp, ctx: &egui::Context, st: &State, ids: &[u64], variants: bool) -> usize {
+    let undo0 = app.session.undo.len();
+    let mut made = 0;
+    let mut shown: Vec<u64> = Vec::new();
+    for id in ids {
+        let mut p = params(st, &[*id]);
+        p["copy"] = json!(true);
+        if variants {
+            p["variants"] = json!(true);
+        }
+        match app.run("retouch.apply", p) {
+            Ok(v) => {
+                made += v["copies"].as_array().map_or(0, Vec::len);
+                shown.extend(app.session.selection.ids.iter().map(|i| i.0));
+            }
+            Err(e) => app.toast(ctx, format!("Create copy: {e}")),
+        }
+    }
+    let steps = app.session.undo.len().saturating_sub(undo0);
+    app.session.merge_undo(steps, "Natural Skin Retouch");
+    if made > 0 {
+        let _ = app.run("library.select", json!({"ids": shown}));
+        app.toast(
+            ctx,
+            format!("{made} retouched cop{} made, stacked with the original (untouched): one undo step", if made == 1 { "y" } else { "ies" }),
+        );
+    }
+    made
 }
 
 pub fn section(app: &mut LightcraftApp, ui: &mut egui::Ui) {
@@ -57,7 +105,7 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     }
     if st.open {
         ui.label(
-            RichText::new("Proposing writes nothing. Apply writes ordinary settings you can edit, in one undo step.").color(t.text_dim).size(10.5),
+            RichText::new("Proposing writes nothing. Validating makes a retouched COPY: the original is never touched.").color(t.text_dim).size(10.5),
         );
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
@@ -72,42 +120,95 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         });
         let ids = ids_of(app);
         ui.add_space(4.0);
+        // planning, a photo per frame
+        if let Some(mut pend) = st.pending.take() {
+            pend.frames += 1;
+            let frac = (pend.total - pend.queue.len()) as f32 / pend.total.max(1) as f32;
+            ui.add(egui::ProgressBar::new(frac).text(format!("Planning {} of {}…", pend.total - pend.queue.len() + 1, pend.total)));
+            if ui.small_button("Cancel").clicked() {
+                // dropped: nothing was written
+            } else {
+                if pend.frames > 1
+                    && let Some(id) = pend.queue.first().copied()
+                {
+                    pend.queue.remove(0);
+                    let mut p = params(&st, &[id]);
+                    p["settings"] = json!(true);
+                    match app.run("retouch.propose", p) {
+                        Ok(v) => pend.done.extend(v["photos"].as_array().cloned().unwrap_or_default()),
+                        Err(e) => app.toast(ui.ctx(), format!("Propose: {e}")),
+                    }
+                }
+                if pend.queue.is_empty() {
+                    st.result = Some(json!({"photos": pend.done, "written": false}));
+                } else {
+                    st.pending = Some(pend);
+                }
+            }
+            ui.ctx().request_repaint();
+        }
+        let planning = st.pending.is_some();
         ui.horizontal_wrapped(|ui| {
-            let r = ui.add_enabled(!ids.is_empty(), egui::Button::new("Propose"));
+            let r = ui.add_enabled(!ids.is_empty() && !planning, egui::Button::new("Propose"));
             register(ui.ctx(), "button:proposalsPropose", r.rect);
             if r.clicked() {
-                match app.run("retouch.propose", params(&st, &ids)) {
-                    Ok(v) => st.result = Some(v),
-                    Err(e) => app.toast(ui.ctx(), format!("Propose: {e}")),
-                }
-            }
-            let has = st.result.is_some();
-            let r = ui.add_enabled(has, egui::Button::new("Apply"));
-            register(ui.ctx(), "button:proposalsApply", r.rect);
-            if r.clicked() {
-                match app.run("retouch.apply", params(&st, &ids)) {
-                    Ok(_) => app.toast(ui.ctx(), "Natural skin applied: one undo step".to_string()),
-                    Err(e) => app.toast(ui.ctx(), format!("Apply: {e}")),
-                }
-            }
-            let r = ui.add_enabled(has, egui::Button::new("Apply with 3 variants"));
-            register(ui.ctx(), "button:proposalsApplyVariants", r.rect);
-            if r.clicked() {
-                let mut p = params(&st, &ids);
-                p["variants"] = json!(true);
-                match app.run("retouch.apply", p) {
-                    Ok(_) => app.toast(ui.ctx(), "Applied; Before, Light, Medium and Strong are in Versions".to_string()),
-                    Err(e) => app.toast(ui.ctx(), format!("Apply: {e}")),
-                }
-            }
-        });
-        if st.result.is_some() {
-            let r = ui.small_button("Remove the retouch");
-            register(ui.ctx(), "button:proposalsClear", r.rect);
-            if r.clicked() {
-                let _ = app.run("retouch.clear", json!({"ids": ids}));
+                st.pending = Some(Pending { total: ids.len(), queue: ids.clone(), ..Default::default() });
                 st.result = None;
             }
+        });
+        let has = st.result.is_some();
+        ui.horizontal_wrapped(|ui| {
+            let r = ui.add_enabled(has, egui::Button::new("Preview on the photo").selected(st.preview));
+            register(ui.ctx(), "button:proposalsPreview", r.rect);
+            if r.clicked() {
+                st.preview = !st.preview;
+            }
+            ui.label(
+                RichText::new(if st.preview { "showing the proposal (not written)" } else { "showing the original" }).color(t.text_dim).size(10.5),
+            );
+        });
+        ui.horizontal_wrapped(|ui| {
+            let r = ui.add_enabled(has, egui::Button::new(format!("Create retouched copy ({})", IMPACTS[st.impact.min(2)].0)));
+            register(ui.ctx(), "button:proposalsApply", r.rect);
+            if r.clicked() {
+                st.last_copies = apply_copies(app, ui.ctx(), &st, &ids, false);
+                st.preview = false;
+            }
+            let r = ui.add_enabled(has, egui::Button::new("Create 3 copies"));
+            register(ui.ctx(), "button:proposalsApplyVariants", r.rect);
+            if r.clicked() {
+                st.last_copies = apply_copies(app, ui.ctx(), &st, &ids, true);
+                st.preview = false;
+            }
+        });
+        let r = ui.small_button("Remove the retouch copies");
+        register(ui.ctx(), "button:proposalsClear", r.rect);
+        if r.clicked() {
+            match app.run("retouch.clear", json!({"ids": ids})) {
+                Ok(v) => {
+                    let n = v["copiesRemoved"].as_u64().unwrap_or(0);
+                    let m = v["removed"].as_u64().unwrap_or(0);
+                    app.toast(
+                        ui.ctx(),
+                        if n > 0 { format!("{n} retouch copies moved to Recently Deleted") } else { format!("{m} retouch masks removed") },
+                    );
+                }
+                Err(e) => app.toast(ui.ctx(), format!("Remove: {e}")),
+            }
+            st.result = None;
+            st.preview = false;
+        }
+        // the proposal on the photo, nothing written: the loupe's temporary look
+        if st.preview
+            && let Some(active) = app.session.active().map(|i| i.0)
+            && let Some(settings) = st
+                .result
+                .as_ref()
+                .and_then(|r| r["photos"].as_array())
+                .and_then(|a| a.iter().find(|p| p["id"].as_u64() == Some(active)))
+                .and_then(|p| serde_json::from_value::<lightcraft_develop::DevelopSettings>(p["settings"].clone()).ok())
+        {
+            app.hover_preview = Some(crate::HoverPreview { label: "Proposal: Natural skin".into(), settings });
         }
         // the plan of the active photo
         let active = app.session.active().map(|i| i.0);
@@ -160,10 +261,7 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 .size(10.0),
             );
             if changed {
-                match app.run("retouch.propose", params(&st, &ids)) {
-                    Ok(v) => st.result = Some(v),
-                    Err(e) => app.toast(ui.ctx(), format!("Propose: {e}")),
-                }
+                st.pending = Some(Pending { total: ids.len(), queue: ids.clone(), ..Default::default() });
             }
         }
     }

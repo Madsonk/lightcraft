@@ -193,24 +193,46 @@ fn culling(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, reject_below:
         t,
         "It measures technique only (focus, clipping, bursts): it knows nothing about your taste, and flags and rejects it sets are one undo step.",
     );
+    // sliced and cancellable (the Quick sort analysis): a big view must not freeze the window
+    let running = app.workspaces.quick.job.is_some();
     ui.horizontal(|ui| {
-        if text_button(ui, "sortingCull", "Analyze Photos", false).clicked() {
+        let b = ui.add_enabled(!running, egui::Button::new(crate::i18n::tr("Analyze Photos")));
+        register(ui.ctx(), "button:sortingCull", b.rect);
+        if b.clicked() {
             let mut p = json!({"pickBest": *pick_best});
             if *reject_below > 0.0 {
                 p["rejectBelow"] = json!(*reject_below);
             }
-            app.sorting.culling = match app.run("photo.analyze", p) {
-                Ok(v) => format!(
-                    "{} photos scored · {} bursts · {} rejected · {} picked",
-                    v["photos"].as_array().map_or(0, Vec::len),
-                    v["groups"].as_u64().unwrap_or(0),
-                    v["rejected"].as_u64().unwrap_or(0),
-                    v["picked"].as_u64().unwrap_or(0)
-                ),
+            let ids: Vec<u64> = if app.session.selection.ids.len() > 1 {
+                app.session.selection.ids.iter().map(|i| i.0).collect()
+            } else {
+                app.session.visible_cloned().iter().map(|i| i.0).collect()
+            };
+            app.sorting.culling = match crate::quick_sort::analyze_with(app, ids, p) {
+                Ok(()) => String::new(),
                 Err(e) => e,
             };
         }
-        if !app.sorting.culling.is_empty() {
+        if let Some(r) = crate::quick_sort::progress(app) {
+            ui.add(egui::ProgressBar::new(r.done as f32 / r.total.max(1) as f32).desired_width(140.0));
+            ui.label(RichText::new(format!("{} of {} photos", r.done, r.total)).size(12.0).color(t.text_label));
+            if text_button(ui, "sortingCullCancel", "Cancel", false).clicked() {
+                crate::quick_sort::cancel(app);
+            }
+            ui.ctx().request_repaint();
+        } else if let Some(l) = app.workspaces.quick.last.clone().filter(|_| app.sorting.culling.is_empty()) {
+            ui.label(
+                RichText::new(format!(
+                    "{} photos scored · {} rejected · {} picked{}",
+                    l["photos"],
+                    l["rejected"],
+                    l["picked"],
+                    if l["cancelled"] == true { " · stopped" } else { "" }
+                ))
+                .size(12.0)
+                .color(t.text_label),
+            );
+        } else if !app.sorting.culling.is_empty() {
             ui.label(RichText::new(&app.sorting.culling).size(12.0).color(t.text_label));
         }
     });

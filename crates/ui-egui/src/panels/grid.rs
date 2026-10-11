@@ -638,6 +638,8 @@ fn cell(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square
         ui.interact(br, egui::Id::new(("eyes-closed-badge", id.0)), Sense::hover())
             .on_hover_text(crate::i18n::tr("A closed eye was found on a face in this photo (Photo ▸ Analyze Faces)"));
     }
+    // Quick sort suggestions (soft, burst, same file) in the Sort step; a raw shown from its preview has a pill there already
+    crate::quick_sort::badges(app, ui, id, img_rect, if photo.preview_only.is_some() { 18.0 } else { 0.0 });
     if photo.flag == Flag::Reject {
         p.rect_filled(img_rect, 0.0, Color32::from_black_alpha(110));
     }
