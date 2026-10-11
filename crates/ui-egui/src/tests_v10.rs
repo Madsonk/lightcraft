@@ -34,13 +34,19 @@ fn click(h: &mut Headless, id: &str) {
     h.step();
 }
 
-/// Frames until the proposal has been planned (it plans a photo per frame).
-fn planned(h: &mut Headless) {
+/// Frames until the proposal has been planned (one stage per frame). Returns how many frames
+/// showed the progress bar's Cancel button, i.e. painted between two stages.
+fn planned(h: &mut Headless) -> usize {
     let t0 = std::time::Instant::now();
+    let mut painted = 0;
     while !has(h, "check:proposals:camera") && t0.elapsed() < SETTLE {
+        if has(h, "button:proposalsCancel") {
+            painted += 1;
+        }
         h.step();
     }
     assert!(has(h, "check:proposals:camera"), "the proposal was planned");
+    painted
 }
 
 #[test]
@@ -57,17 +63,38 @@ fn the_proposals_section_proposes_without_writing_then_creates_a_copy_and_leaves
     let steps = h.app.session.undo.len();
     let photos = h.app.session.catalog.photos().count();
     click(&mut h, "button:proposalsPropose");
-    planned(&mut h);
+    // v13: the planning is staged, the window paints between the stages (the plan, then the checks)
+    let painted = planned(&mut h);
+    assert!(painted >= 3, "the progress bar was painted between stages, {painted} frames");
+    assert!(!has(&h, "button:proposalsCancel"), "the progress bar went when the plan was ready");
     // eight steps, each with its switch
     for s in ["camera", "clean", "skin_color", "dnb_cleanup", "dnb_sculpt", "eyes", "color", "finish"] {
         assert!(has(&h, &format!("check:proposals:{s}")), "switch of step {s}");
     }
     assert!(*h.app.session.develop_of(id).expect("develop") == *before && h.app.session.undo.len() == steps, "proposing writes nothing");
     // the effect is visible before validating: the loupe's temporary look, nothing written
+    let edited_before = h.app.session.catalog.photo(id).expect("photo").is_edited();
     click(&mut h, "button:proposalsPreview");
     h.step();
     assert!(h.app.hover_preview.as_ref().is_some_and(|p| p.label.contains("Proposal")), "the proposal is shown on the photo");
     assert!(h.app.session.undo.len() == steps && h.app.session.catalog.photos().count() == photos, "the preview writes nothing");
+    // v13: a visible answer, and the photo is not marked as edited by looking
+    assert!(h.app.ui.toast.as_ref().is_some_and(|(m, ..)| m.contains("not saved")), "a toast says the preview is not saved: {:?}", h.app.ui.toast);
+    assert_eq!(h.app.session.catalog.photo(id).expect("photo").is_edited(), edited_before, "previewing does not mark the photo edited");
+    assert!(*h.app.session.develop_of(id).expect("develop") == *before);
+    click(&mut h, "button:proposalsPreview");
+    h.step();
+    assert!(h.app.hover_preview.is_none(), "flipped off: the original");
+    assert!(h.app.ui.toast.as_ref().is_some_and(|(m, ..)| m.contains("original")), "{:?}", h.app.ui.toast);
+    click(&mut h, "button:proposalsPreview");
+    h.step();
+    // the controls of the section do not overlap: an accessibility hit test on a button's centre finds it
+    let rects: Vec<(String, egui::Rect)> = h.app.widgets.iter().filter(|(w, _)| w.starts_with("button:proposals")).cloned().collect();
+    for (a, ra) in &rects {
+        for (b, rb) in &rects {
+            assert!(a == b || !ra.contains(rb.center()), "{a} covers the centre of {b}");
+        }
+    }
     assert!(has(&h, "button:proposalsApply") && has(&h, "button:proposalsApplyVariants"));
     click(&mut h, "button:proposalsApply");
     h.settle(SETTLE);

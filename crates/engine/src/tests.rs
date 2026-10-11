@@ -158,6 +158,32 @@ fn filters_and_delete_restore() {
 }
 
 #[test]
+fn library_filter_merges_and_is_lifted_by_null_or_clear() {
+    let mut s = demo();
+    let all = s.visible().len();
+    s.execute("develop.set", &json!({"control": "light.exposure", "value": 0.5})).unwrap();
+    s.execute("library.filter", &json!({"edited": true})).unwrap();
+    let edited = s.visible().len();
+    assert!(edited >= 1 && edited < all, "{edited} of {all}");
+    // `{}` is a partial filter: it merges nothing and lifts nothing
+    s.execute("library.filter", &json!({})).unwrap();
+    assert_eq!(s.visible().len(), edited, "an empty patch keeps the edited filter");
+    assert_eq!(s.filter.edited, Some(true));
+    // `null` removes that one field
+    s.execute("library.filter", &json!({"edited": null})).unwrap();
+    assert_eq!((s.filter.edited, s.visible().len()), (None, all));
+    // `clear: true` resets every field, then applies what else is given
+    s.execute("library.filter", &json!({"edited": true, "rating": 4})).unwrap();
+    assert!(s.visible().len() < edited.max(1) + 1);
+    let r = s.execute("library.filter", &json!({"clear": true, "rating": 4})).unwrap();
+    assert_eq!((s.filter.edited, s.filter.rating), (None, 4));
+    assert_eq!(r["count"].as_u64().map(|c| c as usize), Some(s.visible().len()));
+    s.execute("library.filter", &json!({"clear": true})).unwrap();
+    assert_eq!(s.filter, lightcraft_catalog::Filter::default());
+    assert_eq!(s.visible().len(), all);
+}
+
+#[test]
 fn deleting_photos_selects_a_neighbour_in_the_current_view() {
     for params in [json!({}), json!({"key": "fileName", "ascending": false}), json!({"key": "random", "seed": 123})] {
         for at_end in [false, true] {

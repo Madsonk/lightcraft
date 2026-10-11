@@ -82,14 +82,32 @@ Eight ordered steps, each with a switch, an impact and a measured explanation
 {variants: true}` also leaves **Natural skin · Before / Light / Medium / Strong** in Versions for
 before/after. In the app: the **Proposals** section at the top of the Versions panel.
 
-**Copies (v12).** `retouch.apply {copy: true}` (what the app's buttons use) leaves the original **untouched**
-and writes the retouch on virtual copies named **Natural skin – Light / Medium / Strong** (the impact asked
-for, or the three with `variants`), stacked with the original, in one undo step. `retouch.clear` removes
-those copies (to Recently Deleted) and only falls back to clearing the `Retouch: …` masks of a photo that
-has no copy (what v10 and v11 wrote). `retouch.propose {settings: true}` also returns the settings each plan
-comes to: the app shows them in the loupe as a temporary look (**Preview on the photo**), written nowhere.
-The app plans one photo per frame with a progress bar (a single photo still takes its ~8 s in one go:
-the planning needs the session and cannot run on a worker).
+**Copies (v13: the default).** `retouch.apply` — from the CLI, MCP or a script exactly as from the app's
+buttons — leaves the original **untouched** and writes the retouch on virtual copies named **Natural skin –
+Light / Medium / Strong** (the impact asked for, or the three with `variants`), stacked with the original,
+in one undo step → `{photos: [{id, copy, name, dose, summary}], copies: [{original, copy, name, dose}],
+written: true, inPlace: false}`. `retouch.apply {inPlace: true}` is the old behaviour (v10–v12 without
+`copy`): the settings go on the photo itself and `variants` leaves **Natural skin · Before / Light / Medium /
+Strong** in Versions → `{…, copies: [], inPlace: true}`. `copy: true` is still accepted and means the
+default; `copy` and `inPlace` together are refused. `retouch.clear` moves the copies of the photos given
+(a copy itself, or the photo it was made from) to Recently Deleted and only falls back to clearing the
+`Retouch: …` masks of a photo that has none. `retouch.propose {settings: true}` also returns the settings
+each plan comes to: the app shows them in the loupe as a temporary look (**Preview on the photo**, a toast
+says it is not saved), written nowhere and the photo is not marked as edited.
+
+**Staged planning (v13).** The plan needs the session, so it cannot run on a worker thread. Instead
+`retouch.propose {stage: true}` does **one unit of work per call** — the plan (survey, dust, the eight
+steps) on the first call, then **one quality check** (a few renders) per call — and answers `{done: false,
+stage: "plan" | "check", photo}` until `{done: true}`; the plain `retouch.propose` that follows finds
+everything cached and answers at once. The app calls one stage per frame: the progress bar, a
+"Computing…" line and a busy cursor are painted before the first stage, the Propose button is disabled
+meanwhile, and the window pauses for the length of one stage (one check ≈ a quarter of the old freeze)
+instead of the whole plan. Cancel between two stages drops the rest (nothing was written).
+
+**Accessibility (v13).** A wrapped label in the same `horizontal_wrapped` row as a button gets an
+accessibility frame that covers the button (macOS `AXUIElementCopyElementAtPosition` then answers the
+text, and an AXPress lands on it): the Proposals controls each sit on their own row, and a UI test checks
+that no `button:proposals*` rect contains another's centre.
 
 ### Red lines (each one has an automated test)
 

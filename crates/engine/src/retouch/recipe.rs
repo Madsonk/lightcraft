@@ -393,7 +393,7 @@ fn resample(p: &Plane, w: usize, h: usize) -> Plane {
 /// Edge of the frames the texture is measured on (pores are finer than the analysis frame).
 const TEX_EDGE: usize = 2400;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Qc {
     texture_change: Option<f32>,
     texture_change_lstar: Option<f32>,
@@ -428,8 +428,46 @@ fn texture(s: &mut Session, pp: &PhotoPlan, d: &DevelopSettings, c: &str) -> Res
     Ok(Some((qc::texture_change(vb / n.max(1.0), va / n.max(1.0)), qc::texture_change(lb / n.max(1.0), la / n.max(1.0)))))
 }
 
+/// The quality checks already run, by photo, base and composed settings: a staged proposal
+/// (`retouch.propose {stage: true}`) runs one check per call and the final call finds them all here.
+fn checks() -> &'static Mutex<Vec<(u64, (DevelopSettings, Arc<Frame>, Qc))>> {
+    static C: Mutex<Vec<(u64, (DevelopSettings, Arc<Frame>, Qc))>> = Mutex::new(Vec::new());
+    &C
+}
+
+fn check_key(pp: &PhotoPlan, d: &DevelopSettings) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    pp.id.0.hash(&mut h);
+    pp.ph.base.hash64().hash(&mut h);
+    d.hash64().hash(&mut h);
+    h.finish()
+}
+
 fn check(s: &mut Session, pp: &PhotoPlan, o: &Opts, dose: f32, c: &str) -> Result<(DevelopSettings, Arc<Frame>, Qc)> {
     let d = compose(pp, o, dose, false);
+    let key = check_key(pp, &d);
+    {
+        let g = checks().lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((_, v)) = g.iter().find(|(k, _)| *k == key) {
+            return Ok(v.clone());
+        }
+    }
+    let r = check_uncached(s, pp, o, dose, d, c)?;
+    let mut g = checks().lock().unwrap_or_else(PoisonError::into_inner);
+    g.push((key, r.clone()));
+    if g.len() > 32 {
+        g.remove(0);
+    }
+    Ok(r)
+}
+
+fn check_is_cached(pp: &PhotoPlan, o: &Opts, dose: f32) -> bool {
+    let key = check_key(pp, &compose(pp, o, dose, false));
+    checks().lock().unwrap_or_else(PoisonError::into_inner).iter().any(|(k, _)| *k == key)
+}
+
+fn check_uncached(s: &mut Session, pp: &PhotoPlan, o: &Opts, dose: f32, d: DevelopSettings, c: &str) -> Result<(DevelopSettings, Arc<Frame>, Qc)> {
     let fin = analysis::render(s, pp.id, &d, analysis::EDGE, c)?;
     let tx = texture(s, pp, &d, c)?;
     let mut q = Qc { texture_change: tx.map(|t| t.0), texture_change_lstar: tx.map(|t| t.1), ..Default::default() };
@@ -663,19 +701,67 @@ fn plans(s: &mut Session, ids: &[PhotoId], p: &Value, c: &str) -> Result<Arc<Pla
 
 /// Settle a photo at `dose`: reduce the dose while a check is over its threshold.
 fn settle(s: &mut Session, pp: &PhotoPlan, o: &Opts, dose: f32, c: &str) -> Result<(f32, DevelopSettings, Arc<Frame>, Qc, Option<Value>)> {
+    let mut unbounded = usize::MAX;
+    Ok(settle_within(s, pp, o, dose, c, &mut unbounded)?.expect("an unbounded budget settles"))
+}
+
+/// [`settle`] that runs at most `budget` checks that are not cached yet (each one is a few renders):
+/// `None` when the budget ran out before the photo settled. With a budget of one, a frontend calls
+/// this once per frame and paints between the calls instead of freezing for the whole plan.
+#[allow(clippy::type_complexity)]
+fn settle_within(
+    s: &mut Session,
+    pp: &PhotoPlan,
+    o: &Opts,
+    dose: f32,
+    c: &str,
+    budget: &mut usize,
+) -> Result<Option<(f32, DevelopSettings, Arc<Frame>, Qc, Option<Value>)>> {
     let mut dz = dose;
     let mut reduced = None;
     for round in 0..4 {
+        if !check_is_cached(pp, o, dz) {
+            if *budget == 0 {
+                return Ok(None);
+            }
+            *budget -= 1;
+        }
         let (d, fin, q) = check(s, pp, o, dz, c)?;
         match over(&q) {
             Some(why) if round < 3 => {
                 reduced = Some(json!({"from": round2(dose), "to": round2(dz * 0.75), "reason": why}));
                 dz *= 0.75;
             }
-            _ => return Ok((dz, d, fin, q, reduced)),
+            _ => return Ok(Some((dz, d, fin, q, reduced))),
         }
     }
     unreachable!("the loop returns on its last round")
+}
+
+/// Is the plan of `ids` with these options already made?
+fn plan_is_cached(s: &Session, ids: &[PhotoId], p: &Value) -> bool {
+    let key = key_of(s, ids, p);
+    cache().lock().unwrap_or_else(PoisonError::into_inner).iter().any(|(k, _)| *k == key)
+}
+
+/// One stage of a proposal: the plan (survey, dust, the eight steps of every photo) if it is not made
+/// yet, else ONE quality check that is not run yet; `done` once everything is cached, so that the
+/// `retouch.propose` that follows answers at once. Writes nothing.
+fn propose_stage(s: &mut Session, ids: &[PhotoId], p: &Value, c: &str) -> Result<Value> {
+    if !plan_is_cached(s, ids, p) {
+        plans(s, ids, p, c)?;
+        return Ok(json!({"recipe": RECIPE, "written": false, "done": false, "stage": "plan"}));
+    }
+    let o = opts_of(p);
+    let dose = dose_of(p);
+    let set = plans(s, ids, p, c)?;
+    let mut budget = 1usize;
+    for pp in &set.photos {
+        if settle_within(s, pp, &o, dose, c, &mut budget)?.is_none() {
+            return Ok(json!({"recipe": RECIPE, "written": false, "done": false, "stage": "check", "photo": pp.id.0}));
+        }
+    }
+    Ok(json!({"recipe": RECIPE, "written": false, "done": true}))
 }
 
 /// The plan of a photo as JSON, with the settings it comes to and the dose it settled at.
@@ -701,6 +787,11 @@ fn propose(s: &mut Session, p: &Value) -> Result<Value> {
         && r != RECIPE
     {
         return Err(bad(C, format!("unknown recipe `{r}` (retouch.recipes)")));
+    }
+    // `stage`: one unit of work per call (the plan, then one check at a time), for a frontend that paints
+    // between the calls; the final plain call finds everything cached
+    if bool_or(p, "stage", false) {
+        return propose_stage(s, &ids, p, C);
     }
     let o = opts_of(p);
     let dose = dose_of(p);
@@ -728,10 +819,15 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
     let dose = dose_of(p);
     let set = plans(s, &ids, p, C)?;
     let variants = bool_or(p, "variants", false);
-    // `copy`: the retouch goes on virtual copies named "Natural skin – Light / Medium / Strong", stacked with
-    // the original, which is not touched (the app's Apply does this); without it the settings are written on
-    // the photo itself, as before
-    if bool_or(p, "copy", false) {
+    // By default (v13, what the app's buttons do) the retouch goes on virtual copies named
+    // "Natural skin – Light / Medium / Strong", stacked with the original, which is not touched.
+    // `inPlace: true` writes the settings on the photo itself (what v10-v12 did without `copy`).
+    // `copy: true` is still accepted: it is the default.
+    let in_place = bool_or(p, "inPlace", false);
+    if in_place && bool_or(p, "copy", false) {
+        return Err(bad(C, "`inPlace` and `copy` exclude each other"));
+    }
+    if !in_place {
         let undo0 = s.undo.len();
         let impact = str_param(p, "impact").unwrap_or("medium").to_lowercase();
         let doses: Vec<(&str, f32)> = if variants {
@@ -762,7 +858,7 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
             if let Some(op) = s.develop_op(copy, d, "Natural Skin Retouch") {
                 s.commit("Natural Skin Retouch", op)?;
             }
-            made_all.push(copy);
+            made_all.push(json!({"original": orig.0, "copy": copy.0, "name": format!("{COPY_PREFIX}{label}"), "dose": round2(dz)}));
             if !variants || label == "Medium" {
                 shown.push(copy);
             }
@@ -773,9 +869,7 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
         if let Some(last) = shown.last().copied() {
             s.selection = crate::Selection { ids: shown.clone(), active: Some(last) };
         }
-        return Ok(
-            json!({"recipe": RECIPE, "photos": out, "written": true, "variants": variants, "copies": made_all.iter().map(|i| i.0).collect::<Vec<_>>()}),
-        );
+        return Ok(json!({"recipe": RECIPE, "photos": out, "written": true, "variants": variants, "inPlace": false, "copies": made_all}));
     }
     let mut ops = Vec::new();
     let mut out = Vec::new();
@@ -804,7 +898,7 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
     if !ops.is_empty() {
         s.commit("Natural Skin Retouch", Op::Batch { ops })?;
     }
-    Ok(json!({"recipe": RECIPE, "photos": out, "written": true, "variants": variants}))
+    Ok(json!({"recipe": RECIPE, "photos": out, "written": true, "variants": variants, "inPlace": true, "copies": []}))
 }
 
 /// The retouch copies of `ids` (a copy given, or the copies of the photo given).
@@ -853,7 +947,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Propose Retouch",
             [],
             None,
-            "{ids?, recipe?: \"natural-skin\", impact?: light|medium|strong|0.05..1 (medium 0.7), steps?: {camera|clean|skin_color|dnb_cleanup|dnb_sculpt|eyes|color|finish: bool}, target?: {palette|photo|hexes|scheme} (enables the colour step), person?: name, reference?: photo id, protectSkin?: true, confirmSpots?: [[x, y], …], settings?: bool (also return each photo's planned settings, to preview them without writing)} — plan the recipe's eight ordered steps for each photo and WRITE NOTHING: per step whether it applies, its masks, an explanation with measured figures (\"skin colour made uniform from ΔE 4.2 to 1.8\"), warnings; quality checks (skin texture change, halo, skin lightness, change outside the treated zones) and an automatic dose reduction when one is over its threshold → {recipe, impact, photos: [{id, mode, faces, dose, autoReduced, steps: [{n, id, label, enabled, explain, metrics, masks, warnings}], qc}], written: false}",
+            "{ids?, recipe?: \"natural-skin\", impact?: light|medium|strong|0.05..1 (medium 0.7), steps?: {camera|clean|skin_color|dnb_cleanup|dnb_sculpt|eyes|color|finish: bool}, target?: {palette|photo|hexes|scheme} (enables the colour step), person?: name, reference?: photo id, protectSkin?: true, confirmSpots?: [[x, y], …], settings?: bool (also return each photo's planned settings, to preview them without writing), stage?: bool (one unit of work per call — the plan, then one quality check at a time — → {done, stage: plan|check, photo?}; repeat until `done`, then the plain call answers at once: how the app keeps painting while it proposes)} — plan the recipe's eight ordered steps for each photo and WRITE NOTHING: per step whether it applies, its masks, an explanation with measured figures (\"skin colour made uniform from ΔE 4.2 to 1.8\"), warnings; quality checks (skin texture change, halo, skin lightness, change outside the treated zones) and an automatic dose reduction when one is over its threshold → {recipe, impact, photos: [{id, mode, faces, dose, autoReduced, steps: [{n, id, label, enabled, explain, metrics, masks, warnings}], qc}], written: false}",
             always,
             propose
         ),
@@ -862,7 +956,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Apply Proposed Retouch",
             [],
             None,
-            "{…same as retouch.propose, variants?: bool, copy?: bool} — write what retouch.propose planned as ordinary editable settings (masks \"Retouch: …\", the Colour Mixer, heal spots for sensor dust outside faces) in ONE undo step; `variants` also leaves \"Natural skin · Before / Light / Medium / Strong\" in Versions for before/after; `copy` (what the app's Apply uses) writes the retouch on virtual copies named \"Natural skin – Light / Medium / Strong\" (one copy at the impact chosen, three with `variants`) stacked with the untouched original instead → {recipe, photos: [{id, dose, summary}], written, variants}. No mole, scar or tattoo is removed unless its position is in `confirmSpots`",
+            "{…same as retouch.propose, variants?: bool, inPlace?: bool (default false)} — write what retouch.propose planned (masks \"Retouch: …\", the Colour Mixer, heal spots for sensor dust outside faces) in ONE undo step. By default — the same as the app's \"Create retouched copy\" — on a virtual copy named \"Natural skin – Light / Medium / Strong\" at the impact chosen (three copies with `variants`), stacked with the original, which is NOT touched → {recipe, photos: [{id, copy, name, dose, summary}], copies: [{original, copy, name, dose}], written: true, inPlace: false}. `inPlace: true` writes the settings on the photo itself instead (`variants` then leaves \"Natural skin · Before / Light / Medium / Strong\" in Versions) → {…, copies: [], inPlace: true}; `copy: true` is accepted and means the default. No mole, scar or tattoo is removed unless its position is in `confirmSpots`",
             always,
             apply
         ),
@@ -871,7 +965,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Remove Proposed Retouch",
             [],
             None,
-            "{ids?} — remove every \"Retouch: …\" mask (skin, dodge & burn, eyes, finishing) → {removed}",
+            "{ids?} — move the retouch copies of these photos (\"Natural skin – …\", a copy itself or the photo it was made from) to Recently Deleted → {removed: 0, copiesRemoved}; a photo that has none is cleared of its \"Retouch: …\" masks (skin, dodge & burn, eyes, finishing: what `inPlace` wrote) → {removed}",
             always,
             clear
         ),
@@ -921,11 +1015,11 @@ mod tests {
     }
 
     #[test]
-    fn apply_is_one_undo_step_and_writes_only_ordinary_settings() {
+    fn apply_in_place_is_one_undo_step_and_writes_only_ordinary_settings() {
         let (mut s, id) = demo();
         let before = (*s.develop_of(id).expect("develop")).clone();
         let undo = s.undo.len();
-        let r = s.execute("retouch.apply", &json!({"id": id.0})).expect("apply");
+        let r = s.execute("retouch.apply", &json!({"id": id.0, "inPlace": true})).expect("apply");
         assert_eq!(r["written"], true, "{r}");
         let after = (*s.develop_of(id).expect("develop")).clone();
         assert_eq!(s.undo.len(), undo + 1, "one undo step");
@@ -947,7 +1041,7 @@ mod tests {
     fn variants_leave_before_light_medium_strong_in_versions() {
         let (mut s, id) = demo();
         let undo = s.undo.len();
-        s.execute("retouch.apply", &json!({"id": id.0, "variants": true})).expect("apply");
+        s.execute("retouch.apply", &json!({"id": id.0, "variants": true, "inPlace": true})).expect("apply");
         let names: Vec<String> = s.catalog.photo(id).expect("photo").versions.iter().map(|v| v.name.clone()).collect();
         for n in ["Before", "Light", "Medium", "Strong"] {
             assert!(names.iter().any(|x| x == &format!("Natural skin · {n}")), "{n} in {names:?}");
@@ -987,6 +1081,76 @@ mod tests {
     }
 
     #[test]
+    fn apply_makes_a_copy_by_default_like_the_app_and_in_place_is_explicit() {
+        let (mut s, id) = demo();
+        let before = s.develop_of(id).expect("develop");
+        let (photos, undo0) = (s.catalog.photos().count(), s.undo.len());
+        // the plain command, as the CLI / MCP call it: a copy, the original intact
+        let r = s.execute("retouch.apply", &json!({"ids": [id.0], "impact": "light"})).expect("apply");
+        assert_eq!((r["written"].as_bool(), r["inPlace"].as_bool()), (Some(true), Some(false)), "{r}");
+        let copies = r["copies"].as_array().expect("copies");
+        assert_eq!(copies.len(), 1, "{r}");
+        assert_eq!(copies[0]["original"].as_u64(), Some(id.0), "{r}");
+        let copy = PhotoId(copies[0]["copy"].as_u64().expect("copy id"));
+        assert_eq!(copies[0]["name"], "Natural skin – Light");
+        assert_eq!(s.catalog.photos().count(), photos + 1, "one copy, nothing else");
+        assert_eq!(s.undo.len(), undo0 + 1, "one undo step");
+        assert!(*s.develop_of(id).expect("develop") == *before, "the original keeps its settings");
+        assert!(s.catalog.photo(id).expect("photo").versions.is_empty(), "nothing in Versions");
+        let c = s.catalog.photo(copy).expect("the copy");
+        assert_eq!((c.copy_of, c.copy_name.as_deref()), (Some(id), Some("Natural skin – Light")));
+        assert!(c.develop.masks.iter().any(|m| m.name.starts_with(super::super::PREFIX)), "the copy carries the retouch");
+        // `copy: true` (what v12 wrote) is the same thing
+        let r = s.execute("retouch.apply", &json!({"ids": [id.0], "copy": true})).expect("apply, copy");
+        assert_eq!(r["copies"].as_array().map(Vec::len), Some(1));
+        assert_eq!(r["copies"][0]["name"], "Natural skin – Medium");
+        assert!(*s.develop_of(id).expect("develop") == *before);
+        // variants: three copies
+        let r = s.execute("retouch.apply", &json!({"ids": [id.0], "variants": true})).expect("apply, variants");
+        let names: Vec<&str> = r["copies"].as_array().expect("copies").iter().filter_map(|c| c["name"].as_str()).collect();
+        assert_eq!(names, ["Natural skin – Light", "Natural skin – Medium", "Natural skin – Strong"]);
+        assert!(s.catalog.photo(id).expect("photo").versions.is_empty(), "variants as copies write no version on the original");
+        // retouch.clear takes the copies away (5 by now) and leaves the original
+        let c = s.execute("retouch.clear", &json!({"ids": [id.0]})).expect("clear");
+        assert_eq!(c["copiesRemoved"], 5, "{c}");
+        assert!(!s.catalog.photo(id).expect("photo").deleted && *s.develop_of(id).expect("develop") == *before);
+        // the old behaviour is explicit, and the two flags exclude each other
+        assert!(s.execute("retouch.apply", &json!({"ids": [id.0], "inPlace": true, "copy": true})).is_err());
+        let photos = s.catalog.photos().count();
+        let r = s.execute("retouch.apply", &json!({"ids": [id.0], "inPlace": true})).expect("apply in place");
+        assert_eq!((r["inPlace"].as_bool(), r["copies"].as_array().map(Vec::len)), (Some(true), Some(0)), "{r}");
+        assert_eq!(s.catalog.photos().count(), photos, "no copy");
+        assert!(s.develop_of(id).expect("develop").masks.iter().any(|m| m.name.starts_with(super::super::PREFIX)), "written on the photo");
+    }
+
+    #[test]
+    fn a_staged_proposal_ends_cached_and_writes_nothing() {
+        let (mut s, id) = demo();
+        let before = s.develop_of(id).expect("develop");
+        let (photos, undo0) = (s.catalog.photos().count(), s.undo.len());
+        let p = json!({"ids": [id.0], "impact": "strong", "stage": true});
+        let mut stages = Vec::new();
+        for _ in 0..24 {
+            let r = s.execute("retouch.propose", &p).expect("stage");
+            assert_eq!(r["written"], false, "{r}");
+            if r["done"] == true {
+                break;
+            }
+            stages.push(r["stage"].as_str().unwrap_or("").to_string());
+        }
+        assert_eq!(stages.first().map(String::as_str), Some("plan"), "{stages:?}");
+        assert!(stages.len() >= 2 && stages[1..].iter().all(|st| st == "check"), "then one check per call: {stages:?}");
+        let r = s.execute("retouch.propose", &p).expect("stage");
+        assert_eq!(r["done"], true, "stays done");
+        // the plain call gives the same plan as an unstaged one, from the caches
+        let staged = s.execute("retouch.propose", &json!({"ids": [id.0], "impact": "strong", "settings": true})).expect("propose");
+        let direct = s.execute("retouch.propose", &json!({"ids": [id.0], "impact": "strong", "settings": true})).expect("propose");
+        assert_eq!(staged["photos"], direct["photos"]);
+        assert_eq!(staged["photos"][0]["steps"].as_array().map(Vec::len), Some(8));
+        assert!(*s.develop_of(id).expect("develop") == *before && s.undo.len() == undo0 && s.catalog.photos().count() == photos);
+    }
+
+    #[test]
     fn a_proposal_can_return_its_settings_for_a_preview_and_still_writes_nothing() {
         let (mut s, id) = demo();
         let (undo0, photos) = (s.undo.len(), s.catalog.photos().count());
@@ -1001,10 +1165,10 @@ mod tests {
     #[test]
     fn a_stronger_impact_is_a_bigger_dose_of_the_same_masks() {
         let (mut s, id) = demo();
-        s.execute("retouch.apply", &json!({"id": id.0, "impact": "light"})).expect("light");
+        s.execute("retouch.apply", &json!({"id": id.0, "impact": "light", "inPlace": true})).expect("light");
         let light = s.develop_of(id).expect("develop").masks.iter().map(|m| m.adjust.exposure.abs()).sum::<f64>();
         s.execute("edit.undo", &json!({})).expect("undo");
-        s.execute("retouch.apply", &json!({"id": id.0, "impact": "strong"})).expect("strong");
+        s.execute("retouch.apply", &json!({"id": id.0, "impact": "strong", "inPlace": true})).expect("strong");
         let strong = s.develop_of(id).expect("develop").masks.iter().map(|m| m.adjust.exposure.abs()).sum::<f64>();
         assert!(strong > light * 1.5, "{light} vs {strong}");
     }
@@ -1015,10 +1179,10 @@ mod tests {
         let at = |s: &Session, x: f64, y: f64| {
             s.develop_of(id).expect("develop").spots.iter().any(|sp| sp.points.first().is_some_and(|p| (p.x - x).hypot(p.y - y) < 0.02))
         };
-        s.execute("retouch.apply", &json!({"id": id.0, "steps": {"clean": true}})).expect("apply");
+        s.execute("retouch.apply", &json!({"id": id.0, "steps": {"clean": true}, "inPlace": true})).expect("apply");
         let spots_without = s.develop_of(id).expect("develop").spots.len();
         s.execute("edit.undo", &json!({})).expect("undo");
-        s.execute("retouch.apply", &json!({"id": id.0, "confirmSpots": [[0.5, 0.5]]})).expect("apply");
+        s.execute("retouch.apply", &json!({"id": id.0, "confirmSpots": [[0.5, 0.5]], "inPlace": true})).expect("apply");
         assert!(at(&s, 0.5, 0.5), "the confirmed spot is there");
         assert_eq!(s.develop_of(id).expect("develop").spots.len(), spots_without + 1);
     }

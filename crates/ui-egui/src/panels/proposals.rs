@@ -1,11 +1,17 @@
 //! Proposals: the proposed retouch ("Natural skin") at the top of the Versions panel. Pressing
-//! Propose plans the eight ordered steps for the selected photos (one photo per frame, with a progress
-//! bar) and writes nothing; every step has its switch and a one-line explanation with measured figures;
-//! **Preview on the photo** shows the planned retouch in the loupe without writing it (flip it off to
-//! see the original). Validating **never touches the original**: "Create retouched copy" makes a virtual
-//! copy named "Natural skin – Medium" (or the impact chosen), "Create 3 copies" makes Light, Medium and
-//! Strong, all stacked with the original; "Remove the retouch copies" takes only those copies away.
-//! Same commands as the CLI: `retouch.propose`, `retouch.apply {copy}`, `retouch.clear`.
+//! Propose plans the eight ordered steps for the selected photos and writes nothing: the planning is
+//! **staged** (`retouch.propose {stage: true}`: the plan, then one quality check per frame), the window
+//! paints a progress bar, a "Computing…" line and a busy cursor between the stages and the button is
+//! disabled meanwhile (the session is not shareable: a stage still runs on the UI thread, so the window
+//! pauses for the length of one stage, not of the whole plan); every step has its switch and a one-line
+//! explanation with measured figures; **Preview on the photo** shows the planned retouch in the loupe
+//! without writing it (a toast says so; flip it off to see the original). Validating **never touches the
+//! original**: "Create retouched copy" makes a virtual copy named "Natural skin – Medium" (or the impact
+//! chosen), "Create 3 copies" makes Light, Medium and Strong, all stacked with the original; "Remove the
+//! retouch copies" takes only those copies away. Same commands as the CLI: `retouch.propose`,
+//! `retouch.apply` (copies by default), `retouch.clear`. Each control sits on its own row: a wrapped
+//! label in the same row as a button gets an accessibility frame that covers the button (macOS AX hit
+//! tests then land on the text).
 
 use std::collections::BTreeMap;
 
@@ -24,6 +30,10 @@ struct Pending {
     total: usize,
     /// Frames drawn since it started (the first draws the progress bar before any planning).
     frames: u32,
+    /// Stages run so far on the photo at the head of the queue (0 = its plan is not made yet).
+    stages: u32,
+    /// What the last stage was ("plan", "check"), for the progress line.
+    stage: String,
 }
 
 /// What the section remembers between frames.
@@ -120,27 +130,64 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         });
         let ids = ids_of(app);
         ui.add_space(4.0);
-        // planning, a photo per frame
+        // planning, one stage per frame: the progress bar, the "Computing…" line and the busy cursor are
+        // painted BEFORE the first stage runs (frames == 1 draws and computes nothing)
         if let Some(mut pend) = st.pending.take() {
             pend.frames += 1;
-            let frac = (pend.total - pend.queue.len()) as f32 / pend.total.max(1) as f32;
-            ui.add(egui::ProgressBar::new(frac).text(format!("Planning {} of {}…", pend.total - pend.queue.len() + 1, pend.total)));
-            if ui.small_button("Cancel").clicked() {
+            let n = pend.total - pend.queue.len();
+            let frac = (n as f32 + (pend.stages.min(8) as f32) / 9.0) / pend.total.max(1) as f32;
+            ui.add(egui::ProgressBar::new(frac).text(format!("Planning {} of {}…", (n + 1).min(pend.total), pend.total)));
+            ui.label(
+                RichText::new(if pend.frames <= 1 {
+                    "Computing… the window pauses for a few seconds per step".to_string()
+                } else {
+                    format!(
+                        "Computing… {} (stage {}). The window pauses for a few seconds per stage.",
+                        if pend.stage == "check" { "quality checks" } else { "the plan" },
+                        pend.stages + 1
+                    )
+                })
+                .color(t.text_dim)
+                .size(10.5),
+            );
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Progress);
+            let cancel = ui.small_button("Cancel");
+            register(ui.ctx(), "button:proposalsCancel", cancel.rect);
+            if cancel.clicked() {
                 // dropped: nothing was written
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
             } else {
                 if pend.frames > 1
                     && let Some(id) = pend.queue.first().copied()
                 {
-                    pend.queue.remove(0);
                     let mut p = params(&st, &[id]);
-                    p["settings"] = json!(true);
+                    p["stage"] = json!(true);
                     match app.run("retouch.propose", p) {
-                        Ok(v) => pend.done.extend(v["photos"].as_array().cloned().unwrap_or_default()),
-                        Err(e) => app.toast(ui.ctx(), format!("Propose: {e}")),
+                        Ok(v) if v["done"] == true => {
+                            // everything is cached: the plain call answers at once
+                            pend.queue.remove(0);
+                            pend.stages = 0;
+                            let mut p = params(&st, &[id]);
+                            p["settings"] = json!(true);
+                            match app.run("retouch.propose", p) {
+                                Ok(v) => pend.done.extend(v["photos"].as_array().cloned().unwrap_or_default()),
+                                Err(e) => app.toast(ui.ctx(), format!("Propose: {e}")),
+                            }
+                        }
+                        Ok(v) => {
+                            pend.stages += 1;
+                            pend.stage = v["stage"].as_str().unwrap_or("").to_string();
+                        }
+                        Err(e) => {
+                            pend.queue.remove(0);
+                            pend.stages = 0;
+                            app.toast(ui.ctx(), format!("Propose: {e}"));
+                        }
                     }
                 }
                 if pend.queue.is_empty() {
                     st.result = Some(json!({"photos": pend.done, "written": false}));
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
                 } else {
                     st.pending = Some(pend);
                 }
@@ -157,16 +204,21 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             }
         });
         let has = st.result.is_some();
-        ui.horizontal_wrapped(|ui| {
-            let r = ui.add_enabled(has, egui::Button::new("Preview on the photo").selected(st.preview));
-            register(ui.ctx(), "button:proposalsPreview", r.rect);
-            if r.clicked() {
-                st.preview = !st.preview;
-            }
-            ui.label(
-                RichText::new(if st.preview { "showing the proposal (not written)" } else { "showing the original" }).color(t.text_dim).size(10.5),
+        // the button and its status line are two rows on purpose (see the module note)
+        let r = ui.add_enabled(has, egui::Button::new("Preview on the photo").selected(st.preview));
+        register(ui.ctx(), "button:proposalsPreview", r.rect);
+        if r.clicked() {
+            st.preview = !st.preview;
+            app.toast(
+                ui.ctx(),
+                if st.preview {
+                    "Proposal preview: shown on the photo, not saved (the photo is unchanged)"
+                } else {
+                    "Preview off: showing the original"
+                },
             );
-        });
+        }
+        ui.label(RichText::new(if st.preview { "showing the proposal (not written)" } else { "showing the original" }).color(t.text_dim).size(10.5));
         ui.horizontal_wrapped(|ui| {
             let r = ui.add_enabled(has, egui::Button::new(format!("Create retouched copy ({})", IMPACTS[st.impact.min(2)].0)));
             register(ui.ctx(), "button:proposalsApply", r.rect);

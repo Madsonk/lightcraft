@@ -318,11 +318,17 @@ pub fn specs() -> Vec<CommandSpec> {
             "Filter",
             [],
             None,
-            "partial Filter: {text?, rating?, ratingOp?: atLeast|exactly|atMost, flag?: pick|reject|none|null, label?, kind?, merged?: hdr|panorama|hdrPanorama|any, edited?, date?, libraryFolder?: a path from library.folders, keyword? (hierarchy included), untagged? (true = photos with no keyword, false = photos with at least one, null = either), person?, faces?: any|none|closedEyes|eyesOpen|unanalyzed, camera?}",
+            "partial Filter, MERGED into the active one ({} changes nothing): {text?, rating?, ratingOp?: atLeast|exactly|atMost, flag?: pick|reject|none|null, label?, kind?, merged?: hdr|panorama|hdrPanorama|any, edited?: true|false|null, date?, libraryFolder?: a path from library.folders, keyword? (hierarchy included), untagged? (true = photos with no keyword, false = photos with at least one, null = either), person?, faces?: any|none|closedEyes|eyesOpen|unanalyzed, camera?}. A field set to `null` is removed (`{edited: null}` lifts the edited filter); `{clear: true}` resets every field first, then applies the rest (`{clear: true}` alone = library.clearFilter)",
             always,
             |s, p| {
-                let mut v = serde_json::to_value(&s.filter).unwrap_or_default();
-                lightcraft_develop::presets::deep_merge(&mut v, p);
+                // `clear`: start from no filter at all, then apply what else is given
+                let clear = p.get("clear").and_then(Value::as_bool).unwrap_or(false);
+                let mut v = serde_json::to_value(if clear { Filter::default() } else { s.filter.clone() }).unwrap_or_default();
+                let mut p = p.clone();
+                if let Some(o) = p.as_object_mut() {
+                    o.remove("clear");
+                }
+                lightcraft_develop::presets::deep_merge(&mut v, &p);
                 let f: Filter = serde_json::from_value(v).map_err(|e| bad("library.filter", e.to_string()))?;
                 let mut f = f;
                 // a blank folder is no folder: no hidden "filters active" state
