@@ -228,5 +228,13 @@
   "{} places confirmed": "{} places confirmed",
   "“{name}” is not available right now": "“{name}” is not available right now",
   "… and {} more": "… and {} more",
-  "Preview: {reject} proposed rejects · {pick} proposed picks · no changes": "プレビュー：却下の候補 {reject} · 採用の候補 {pick} · 変更なし"
+  "Preview: {reject} proposed rejects · {pick} proposed picks · no changes": "プレビュー：却下の候補 {reject} · 採用の候補 {pick} · 変更なし",
+  "Action found, person not recognized ({n})": "動作は見つかったが人物は認識されず（{n}）",
+  "Person present, action not detected ({n})": "人物はいるが動作は検出されず（{n}）",
+  "Play at {t}": "{t} から再生",
+  "video · {t}": "動画 · {t}",
+  "{n} moments described · {c} confirmed": "説明済みの場面 {n} · 確認済み {c}",
+  "{n} results": "{n} 件",
+  "{n} videos": "動画 {n} 本",
+  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher：動画 {m} 本、説明 {a} 件を追加"
 }

@@ -228,5 +228,13 @@
   "{} places confirmed": "{} places confirmed",
   "“{name}” is not available right now": "“{name}” is not available right now",
   "… and {} more": "… and {} more",
-  "Preview: {reject} proposed rejects · {pick} proposed picks · no changes": "Prévia: {reject} rejeições propostas · {pick} seleções propostas · sem alterações"
+  "Preview: {reject} proposed rejects · {pick} proposed picks · no changes": "Prévia: {reject} rejeições propostas · {pick} seleções propostas · sem alterações",
+  "Action found, person not recognized ({n})": "Ação encontrada, pessoa não reconhecida ({n})",
+  "Person present, action not detected ({n})": "Pessoa presente, ação não detectada ({n})",
+  "Play at {t}": "Reproduzir em {t}",
+  "video · {t}": "vídeo · {t}",
+  "{n} moments described · {c} confirmed": "{n} momentos descritos · {c} confirmados",
+  "{n} results": "{n} resultados",
+  "{n} videos": "{n} vídeos",
+  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher: {m} vídeos, {a} descrições adicionadas"
 }

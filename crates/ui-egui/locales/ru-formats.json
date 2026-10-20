@@ -228,5 +228,13 @@
   "{} places confirmed": "{} places confirmed",
   "“{name}” is not available right now": "“{name}” is not available right now",
   "… and {} more": "… and {} more",
-  "Preview: {reject} proposed rejects · {pick} proposed picks · no changes": "Предпросмотр: {reject} предложено отклонить · {pick} предложено выбрать · без изменений"
+  "Preview: {reject} proposed rejects · {pick} proposed picks · no changes": "Предпросмотр: {reject} предложено отклонить · {pick} предложено выбрать · без изменений",
+  "Action found, person not recognized ({n})": "Действие найдено, человек не распознан ({n})",
+  "Person present, action not detected ({n})": "Человек есть, действие не обнаружено ({n})",
+  "Play at {t}": "Смотреть с {t}",
+  "video · {t}": "видео · {t}",
+  "{n} moments described · {c} confirmed": "Описано моментов: {n} · подтверждено: {c}",
+  "{n} results": "Результатов: {n}",
+  "{n} videos": "Видео: {n}",
+  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher: видео — {m}, добавлено описаний — {a}"
 }

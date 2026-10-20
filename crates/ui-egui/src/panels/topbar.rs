@@ -135,6 +135,41 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 let q = app.ui.search.clone();
                 let _ = app.run("library.filter", json!({"text": q}));
             }
+            // Enter: "who + what" over photos and videos ("Madson conduit une voiture"), or by meaning
+            // with `semantic: …`; the results open in the Videos view
+            if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !app.ui.search.trim().is_empty() {
+                let q = app.ui.search.clone();
+                crate::panels::videos::search_from_field(app, &q);
+                if app.ui.view == crate::state::ViewMode::Videos {
+                    let _ = app.run("library.filter", json!({"text": ""}));
+                }
+            }
+            // names of people as they are typed
+            if focused || resp.has_focus() {
+                let now = ui.input(|i| i.time);
+                let text = app.ui.search.clone();
+                let names = crate::panels::videos::complete_names(app, now, &text);
+                if !names.is_empty() {
+                    egui::Area::new(egui::Id::new("search-names")).order(egui::Order::Foreground).fixed_pos(sr.left_bottom() + vec2(0.0, 4.0)).show(
+                        ui.ctx(),
+                        |ui| {
+                            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                                for n in names {
+                                    let r = ui.add(egui::Button::new(n.as_str()).frame(false));
+                                    register(ui.ctx(), format!("button:searchName:{n}"), r.rect);
+                                    if r.clicked() {
+                                        let mut words: Vec<&str> = text.split(' ').collect();
+                                        words.pop();
+                                        words.push(n.as_str());
+                                        app.ui.search = format!("{} ", words.join(" "));
+                                        ui.memory_mut(|m| m.request_focus(id));
+                                    }
+                                }
+                            });
+                        },
+                    );
+                }
+            }
             // filter icon right of the search field
             let fr = Rect::from_center_size(pos2(sr.right() + 22.0, sr.center().y), vec2(28.0, 28.0));
             let fresp = ui.interact(fr, egui::Id::new("filter-btn"), Sense::click());

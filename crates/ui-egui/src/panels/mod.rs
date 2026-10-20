@@ -34,6 +34,7 @@ pub mod sorting_help;
 pub mod strip;
 pub mod topbar;
 pub mod unnamed;
+pub mod videos;
 
 use egui::{Align2, Rect, pos2, vec2};
 

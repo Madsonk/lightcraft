@@ -228,5 +228,13 @@
   "{} places confirmed": "{} places confirmed",
   "“{name}” is not available right now": "“{name}” is not available right now",
   "… and {} more": "… and {} more",
-  "Preview: {reject} proposed rejects · {pick} proposed picks · no changes": "预览：建议拒绝 {reject} 张 · 建议选中 {pick} 张 · 无更改"
+  "Preview: {reject} proposed rejects · {pick} proposed picks · no changes": "预览：建议拒绝 {reject} 张 · 建议选中 {pick} 张 · 无更改",
+  "Action found, person not recognized ({n})": "找到动作，未识别出人物（{n}）",
+  "Person present, action not detected ({n})": "人物在场，未检测到动作（{n}）",
+  "Play at {t}": "从 {t} 播放",
+  "video · {t}": "视频 · {t}",
+  "{n} moments described · {c} confirmed": "已描述 {n} 个时刻 · 已确认 {c} 个",
+  "{n} results": "{n} 个结果",
+  "{n} videos": "{n} 个视频",
+  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher：{m} 个视频，添加了 {a} 条描述"
 }

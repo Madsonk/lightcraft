@@ -20,6 +20,8 @@ pub enum ViewMode {
     People,
     /// The places photos were taken at: list, geotag, naming, suggestions.
     Places,
+    /// The library's videos, a video's moments to describe, the results of a who + what search.
+    Videos,
 }
 
 /// The right-hand tool/panel shown next to the tool strip.

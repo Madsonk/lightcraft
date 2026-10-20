@@ -63,6 +63,10 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // arms the "Resume" bar again (the desktop app arms it at launch)
     ("view.resumeBar", "Show Resume Bar", None, ""),
     ("view.places", "Places", None, "View"),
+    ("view.videos", "Videos", None, "View"),
+    ("videos.import", "Import Videos…", None, ""),
+    ("videos.importVideoCatcher", "Resume the Video Catcher Import", None, ""),
+    ("videos.open", "Open a Moment", None, ""),
     ("view.faceBoxes", "Face Boxes", None, "View"),
     ("view.reference", "Reference View", Some("Shift+R"), "View"),
     ("photo.setReference", "Set as Reference Photo", None, ""),
@@ -402,6 +406,81 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         "view.places" => {
             app.ui.view = ViewMode::Places;
             Ok(json!({"places": app.session.catalog.places_in(&lightcraft_catalog::Filter::default()).placed}))
+        }
+        "view.videos" => {
+            app.ui.view = ViewMode::Videos;
+            if app.caches.videos.section != crate::panels::videos::Section::Sheet {
+                app.caches.videos.section = crate::panels::videos::Section::List;
+            }
+            app.caches.videos.dirty = true;
+            Ok(json!({"videos": app.session.catalog.photos().filter(|q| q.in_library() && q.kind == lightcraft_catalog::MediaKind::Video).count()}))
+        }
+        "videos.open" => {
+            // {id, ms?}: the sheet of a video (or a photo), at a moment
+            let Some(id) = p.get("id").and_then(Value::as_u64) else { return Some(Err("videos.open: missing `id`".into())) };
+            if app.session.catalog.photo(lightcraft_catalog::PhotoId(id)).is_none() {
+                return Some(Err(format!("videos.open: no photo or video {id}")));
+            }
+            crate::panels::videos::open_moment(app, id, p.get("ms").and_then(Value::as_u64));
+            Ok(json!({"id": id}))
+        }
+        "videos.import" => {
+            // {path?}: a folder imported with its videos (the folder dialog when no path is given)
+            let path = match p.get("path").and_then(Value::as_str).filter(|x| !x.trim().is_empty()) {
+                Some(x) => x.to_string(),
+                None => match crate::pick::ask(
+                    app,
+                    "videos.import",
+                    p,
+                    "path",
+                    crate::pick::PickRequest::folder(crate::i18n::tr("Import Videos…")),
+                    |sv| sv.pick_folder.as_mut().map(|f| f().into_iter().collect()),
+                ) {
+                    crate::pick::Picked::Now(paths) => match paths.into_iter().next() {
+                        Some(x) => x,
+                        None => return Some(Ok(json!({"cancelled": true}))),
+                    },
+                    crate::pick::Picked::Later => return Some(Ok(json!({"asking": true}))),
+                    crate::pick::Picked::Unavailable => return Some(Err("videos.import: no folder dialog here: pass `path`".into())),
+                },
+            };
+            crate::import::start_paths_with(app, vec![path], json!({"mode": "add", "videos": true}))
+        }
+        "videos.importVideoCatcher" => {
+            // {db?}: Video Catcher's videos the catalog lacks are imported (in the background, like
+            // any import), then its pictures and descriptions are read
+            let db = p.get("db").and_then(Value::as_str).map(str::to_string).or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(crate::panels::videos::VIDEO_CATCHER_DB).display().to_string())
+            });
+            let db = match db.filter(|d| std::path::Path::new(d).is_file()) {
+                Some(d) => d,
+                None => match crate::pick::ask(
+                    app,
+                    "videos.importVideoCatcher",
+                    p,
+                    "db",
+                    crate::pick::PickRequest::file(
+                        crate::i18n::tr("Video Catcher database"),
+                        crate::i18n::tr("Video Catcher database"),
+                        &["sqlite3", "sqlite", "db"],
+                    ),
+                    |sv| sv.pick_files.as_mut().map(|f| f()),
+                ) {
+                    crate::pick::Picked::Now(paths) => match paths.into_iter().next() {
+                        Some(x) => x,
+                        None => return Some(Ok(json!({"cancelled": true}))),
+                    },
+                    crate::pick::Picked::Later => return Some(Ok(json!({"asking": true}))),
+                    crate::pick::Picked::Unavailable => return Some(Err("videos.importVideoCatcher: pass `db`".into())),
+                },
+            };
+            let dry = match app.session.execute("video.importVideoCatcher", &json!({"db": db, "createMissing": true, "dryRun": true})) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e.to_string())),
+            };
+            let missing: Vec<String> = dry["missingPaths"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect();
+            app.caches.videos.after_import = Some(db);
+            if missing.is_empty() { Ok(json!({"importing": 0})) } else { crate::import::start_paths_with(app, missing, json!({"mode": "add"})) }
         }
         "view.survey" => {
             app.ui.view = ViewMode::Survey;

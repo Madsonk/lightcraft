@@ -1,0 +1,1029 @@
+//! Videos: the library's videos with who is in them, the moments of one video (or the one moment
+//! of a photo) to describe — scene, action, description — with the proposals beside what the user
+//! typed, and the results of a "who + what" search. Everything is done by engine commands
+//! (`video.list`, `video.moments`, `describe.*`, `video.frames`, `people.index`, `video.open`); this
+//! panel only draws them and sends the user's gestures back.
+
+use std::collections::{HashMap, HashSet, VecDeque};
+
+use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
+use serde_json::{Value, json};
+
+use crate::LightcraftApp;
+use crate::i18n::tr;
+use crate::icons::{Icon, paint};
+use crate::theme::Tokens;
+use crate::widgets::{icon_button, register, text_button};
+
+const PAD: f32 = 20.0;
+/// Width of a moment's card on the sheet.
+const CARD: f32 = 250.0;
+/// Width of a video's card in the list.
+const VCARD: f32 = 230.0;
+/// Pictures decoded at once (the rest wait their turn, a frame at a time).
+const MAX_TEXTURES: usize = 400;
+/// Where Video Catcher keeps its database on this Mac, when nobody chose another.
+pub const VIDEO_CATCHER_DB: &str = "Movies/VideoCatalog/libraries/e7f6a598ad826a8d/runtime/video-catcher.sqlite3";
+
+/// The page the view shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Section {
+    #[default]
+    List,
+    /// One video's (or photo's) moments.
+    Sheet,
+    /// The results of a who + what search.
+    Search,
+}
+
+/// The pictures of moments as textures: decoded off the UI thread, kept for the most recently
+/// used ones.
+#[derive(Default)]
+pub struct FrameTextures {
+    textures: HashMap<String, (egui::TextureHandle, [usize; 2])>,
+    order: VecDeque<String>,
+    failed: HashSet<String>,
+    pending: HashSet<String>,
+    #[cfg(not(target_arch = "wasm32"))]
+    worker: Option<(std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<(String, Option<egui::ColorImage>)>)>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn decode_picture(path: &str) -> Option<egui::ColorImage> {
+    let (w, h, px) = lightcraft_engine::video::picture_rgba(std::path::Path::new(path), 640)?;
+    (px.len() == w * h * 4).then(|| egui::ColorImage::from_rgba_unmultiplied([w, h], &px))
+}
+
+impl FrameTextures {
+    /// Pictures asked for and not decoded yet (the headless harness waits for them).
+    pub fn pending(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// The picture at `path`, asked for if it is not there yet.
+    pub fn get(&mut self, ctx: &egui::Context, path: &str) -> Option<(egui::TextureId, [usize; 2])> {
+        self.receive(ctx);
+        if let Some((t, size)) = self.textures.get(path) {
+            return Some((t.id(), *size));
+        }
+        if self.failed.contains(path) || self.pending.contains(path) {
+            return None;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if self.worker.is_none() {
+                let (tx, rx) = std::sync::mpsc::channel::<String>();
+                let (otx, orx) = std::sync::mpsc::channel();
+                let repaint = ctx.clone();
+                let started = std::thread::Builder::new().name("lc-video-pictures".into()).spawn(move || {
+                    for p in rx {
+                        let img = std::panic::catch_unwind(|| decode_picture(&p)).ok().flatten();
+                        if otx.send((p, img)).is_err() {
+                            break;
+                        }
+                        repaint.request_repaint();
+                    }
+                });
+                if started.is_err() {
+                    self.failed.insert(path.to_string());
+                    return None;
+                }
+                self.worker = Some((tx, orx));
+            }
+            if let Some((tx, _)) = &self.worker
+                && tx.send(path.to_string()).is_ok()
+            {
+                self.pending.insert(path.to_string());
+            }
+        }
+        None
+    }
+
+    fn receive(&mut self, ctx: &egui::Context) {
+        #[cfg(not(target_arch = "wasm32"))]
+        while let Some(Ok((path, img))) = self.worker.as_ref().map(|(_, rx)| rx.try_recv()) {
+            self.pending.remove(&path);
+            match img {
+                Some(img) => {
+                    let size = img.size;
+                    let tex = ctx.load_texture(format!("video-picture:{path}"), img, egui::TextureOptions::LINEAR);
+                    self.textures.insert(path.clone(), (tex, size));
+                    self.order.push_back(path);
+                    while self.order.len() > MAX_TEXTURES {
+                        if let Some(old) = self.order.pop_front() {
+                            self.textures.remove(&old);
+                        }
+                    }
+                }
+                None => {
+                    self.failed.insert(path);
+                }
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = ctx;
+    }
+
+    pub fn failed(&self, path: &str) -> bool {
+        self.failed.contains(path)
+    }
+}
+
+/// What the view holds between frames.
+#[derive(Default)]
+pub struct VideosUi {
+    pub section: Section,
+    /// The video (or photo) whose moments are shown.
+    pub open: Option<u64>,
+    /// The moment to bring into view (and outline) on the sheet.
+    pub focus_ms: Option<u64>,
+    scroll_to_focus: bool,
+    pub dirty: bool,
+    list: Option<(u64, Value)>,
+    sheet: Option<(u64, u64, Value)>,
+    /// Filters of the list.
+    pub person: Option<String>,
+    pub described: Option<bool>,
+    pub status: Option<&'static str>,
+    /// Text being typed in a field, by `id:ms:field`.
+    edits: HashMap<String, String>,
+    /// The last who + what search.
+    pub search: Option<Value>,
+    pub show_diagnostics: bool,
+    pub frames: FrameTextures,
+    /// Background runs, asked about now and then: (when, video.status, describe.status, people.status).
+    jobs: (f64, Value, Value, Value),
+    /// Named people, for the search field's completion (when, names).
+    names: (f64, Vec<String>),
+    /// After the files of a Video Catcher import are in: the database to read.
+    pub after_import: Option<String>,
+    /// The Info panel's description of the selected photo or video: (id, catalog revision, moments).
+    info: Option<(u64, u64, Value)>,
+}
+
+impl VideosUi {
+    /// The catalog revision and annotation edits are what the lists depend on; asked again when either moves.
+    fn stale(&self, rev: u64) -> bool {
+        self.dirty || self.list.as_ref().is_none_or(|(r, _)| *r != rev)
+    }
+}
+
+#[cfg(test)]
+impl VideosUi {
+    /// Put data in the view as if the engine had answered it (tests of what any data draws).
+    pub(crate) fn inject(&mut self, rev: u64, list: Option<Value>, sheet: Option<(u64, Value)>, search: Option<Value>) {
+        if let Some(l) = list {
+            self.list = Some((rev, l));
+        }
+        if let Some((id, v)) = sheet {
+            self.sheet = Some((id, rev, v));
+            self.open = Some(id);
+        }
+        if search.is_some() {
+            self.search = search;
+        }
+        self.dirty = false;
+    }
+}
+
+/// `m:ss` (or `h:mm:ss`).
+pub fn timecode(ms: u64) -> String {
+    lightcraft_engine::video::views::timecode(ms)
+}
+
+/// Run a command; a failure goes to the status line. The lists are asked for again.
+fn act(app: &mut LightcraftApp, id: &str, params: Value) -> Option<Value> {
+    let r = app.run(id, params);
+    app.caches.videos.dirty = true;
+    match r {
+        Ok(v) => Some(v),
+        Err(e) => {
+            app.ui.status = e;
+            None
+        }
+    }
+}
+
+/// Open the sheet of `id` (a video or a photo), at `ms` for a moment of a video.
+pub fn open_moment(app: &mut LightcraftApp, id: u64, ms: Option<u64>) {
+    let c = &mut app.caches.videos;
+    c.open = Some(id);
+    c.focus_ms = ms;
+    c.scroll_to_focus = ms.is_some();
+    c.section = Section::Sheet;
+    c.sheet = None;
+    app.ui.view = crate::state::ViewMode::Videos;
+}
+
+/// Paint the picture at `path` into `r`; with `face` (a box as fractions of the picture), the face
+/// cut out of it (a square around it). A spinner while it loads, a dim square if it cannot be read.
+pub fn paint_picture(app: &mut LightcraftApp, ui: &egui::Ui, r: Rect, path: &str, face: Option<[f32; 4]>) -> bool {
+    let tk = Tokens::get(ui.ctx());
+    ui.painter().rect_filled(r, 3.0, tk.canvas);
+    if !ui.is_rect_visible(r) {
+        return false;
+    }
+    let Some((tex, [w, h])) = app.caches.videos.frames.get(ui.ctx(), path) else {
+        if app.caches.videos.frames.failed(path) {
+            ui.painter().text(r.center(), Align2::CENTER_CENTER, "!", tk.semibold(14.0), tk.text_dim);
+        } else {
+            let a = ui.ctx().input(|i| i.time) as f32 * 4.0;
+            ui.painter().circle_filled(r.center() + vec2(a.cos(), a.sin()) * 4.0, 2.0, tk.text_dim);
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        return false;
+    };
+    let (w, h) = (w.max(1) as f32, h.max(1) as f32);
+    let uv = match face {
+        Some(f) if f.iter().all(|v| v.is_finite()) => {
+            let side = ((f[2] - f[0]).abs() * w).max((f[3] - f[1]).abs() * h) * 1.7;
+            let side = side.clamp(1.0, w.min(h));
+            let (cx, cy) = ((f[0] + f[2]) / 2.0 * w, (f[1] + f[3]) / 2.0 * h);
+            let x0 = cx.clamp(side / 2.0, w - side / 2.0) - side / 2.0;
+            let y0 = cy.clamp(side / 2.0, h - side / 2.0) - side / 2.0;
+            Rect::from_min_max(pos2(x0 / w, y0 / h), pos2((x0 + side) / w, (y0 + side) / h))
+        }
+        _ => {
+            // the whole picture, centred in `r` without stretching
+            let k = (r.width() / w).min(r.height() / h);
+            let inner = Rect::from_center_size(r.center(), vec2(w * k, h * k));
+            ui.painter().image(tex, inner, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+            return true;
+        }
+    };
+    ui.painter().image(tex, r, uv, Color32::WHITE);
+    true
+}
+
+/// A face of a video in Recognition: cut out of the picture it was found in, with a "video · m:ss"
+/// mark. Returns the mark's rectangle (a click there opens the moment).
+pub fn paint_video_face(app: &mut LightcraftApp, ui: &egui::Ui, r: Rect, v: &lightcraft_engine::people::VideoAt, rect: [f32; 4]) -> Rect {
+    let tk = Tokens::get(ui.ctx());
+    paint_picture(app, ui, r, &v.frame, Some(rect));
+    let text = crate::i18n::tr_format!("video · {t}", t = timecode(v.ms));
+    let g = ui.painter().layout_no_wrap(text, tk.semibold(9.5), Color32::WHITE);
+    let mark =
+        Rect::from_min_size(pos2(r.left() + 2.0, r.bottom() - g.size().y - 4.0), vec2((g.size().x + 6.0).min(r.width() - 4.0), g.size().y + 2.0));
+    ui.painter().rect_filled(mark, 2.0, Color32::from_black_alpha(170));
+    ui.painter().galley(mark.min + vec2(3.0, 1.0), g, Color32::WHITE);
+    mark
+}
+
+/// Per frame: the background runs of videos and descriptions, with a Cancel button each, above the
+/// app's own task panels.
+pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
+    let now = ctx.input(|i| i.time);
+    let any = [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]].iter().any(|j| j["running"] == true);
+    if now - app.caches.videos.jobs.0 > if any { 0.5 } else { 3.0 } {
+        let v = app.session.execute("video.status", &json!({})).unwrap_or(Value::Null);
+        let d = app.session.execute("describe.status", &json!({})).unwrap_or(Value::Null);
+        let p = if app.session.people.job_running() { app.session.execute("people.status", &json!({})).unwrap_or(Value::Null) } else { Value::Null };
+        let was = any;
+        app.caches.videos.jobs = (now, v, d, p);
+        let still =
+            [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]].iter().any(|j| j["running"] == true);
+        if was && !still {
+            app.caches.videos.dirty = true;
+            app.caches.people_rec.dirty = true;
+        }
+    }
+    // a Video Catcher import whose files are in: now its pictures and moments
+    if app.import.is_none()
+        && let Some(db) = app.caches.videos.after_import.take()
+    {
+        match app.run("video.importVideoCatcher", json!({"db": db})) {
+            Ok(r) => app.toast(
+                ctx,
+                crate::i18n::tr_format!(
+                    "Video Catcher: {m} videos, {a} descriptions added",
+                    m = r["matched"].as_u64().unwrap_or(0),
+                    a = r["annotationsAdded"].as_u64().unwrap_or(0)
+                ),
+            ),
+            Err(e) => app.toast_error(ctx, e),
+        }
+        app.caches.videos.dirty = true;
+    }
+    let mut slot = app.tasks.labels().len();
+    let rows = [
+        ("videoFrames", "Cutting pictures from videos", app.caches.videos.jobs.1["job"].clone(), "video.cancel"),
+        ("describeSuggest", "Proposing descriptions", app.caches.videos.jobs.2.clone(), "describe.cancel"),
+        ("peopleIndex", "Finding faces", app.caches.videos.jobs.3["job"].clone(), "people.cancel"),
+    ];
+    for (key, label, j, cancel) in rows {
+        if j["running"] != true {
+            continue;
+        }
+        let (done, total) = (j["done"].as_u64().unwrap_or(0) as usize, j["total"].as_u64().unwrap_or(0) as usize);
+        if crate::tasks::progress_window(ctx, key, slot, label, done, total, "", j["cancelled"] == true) {
+            let _ = app.run(cancel, json!({}));
+        }
+        slot += 1;
+    }
+}
+
+/// The view.
+pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    match app.caches.videos.section {
+        Section::Sheet if app.caches.videos.open.is_some() => sheet(app, ui),
+        Section::Search if app.caches.videos.search.is_some() => results(app, ui),
+        _ => list(app, ui),
+    }
+}
+
+fn title_row(app: &mut LightcraftApp, ui: &mut egui::Ui, back: bool, title: &str, sub: &str) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let mut went_back = false;
+    ui.horizontal(|ui| {
+        if back && icon_button(ui, "videosBack", Icon::Back, vec2(28.0, 28.0), false, true, "Back to the videos").clicked() {
+            went_back = true;
+        }
+        ui.label(egui::RichText::new(title).font(t.semibold(18.0)).color(t.text));
+        if !sub.is_empty() {
+            ui.label(egui::RichText::new(sub).font(t.font(13.0)).color(t.text_dim));
+        }
+    });
+    if back && ui.input(|i| i.key_pressed(egui::Key::Escape)) && !ui.ctx().egui_wants_keyboard_input() {
+        went_back = true;
+    }
+    if went_back {
+        app.caches.videos.section = Section::List;
+    }
+    went_back
+}
+
+// ------------------------------------------------------------------------------------ the list
+
+fn list(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    let rev = app.session.catalog.revision;
+    if app.caches.videos.stale(rev) {
+        let c = &app.caches.videos;
+        let mut p = json!({});
+        if let Some(n) = &c.person {
+            p["person"] = json!(n);
+        }
+        if let Some(d) = c.described {
+            p["described"] = json!(d);
+        }
+        if let Some(s) = c.status {
+            p["status"] = json!(s);
+        }
+        let v = app.session.execute("video.list", &p).unwrap_or(Value::Null);
+        app.caches.videos.list = Some((rev, v));
+        app.caches.videos.dirty = false;
+    }
+    let v = app.caches.videos.list.as_ref().map(|(_, v)| v.clone()).unwrap_or(Value::Null);
+    let rows = v["videos"].as_array().cloned().unwrap_or_default();
+    let t = Tokens::get(ui.ctx());
+    egui::ScrollArea::vertical().id_salt("videos-list").auto_shrink(false).show(ui, |ui| {
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.add_space(PAD);
+            ui.vertical(|ui| {
+                let n = rows.len();
+                title_row(app, ui, false, tr("Videos"), &crate::i18n::tr_format!("{n} videos", n = n));
+                ui.add_space(6.0);
+                ui.horizontal_wrapped(|ui| {
+                    if text_button(ui, "videosImport", "Import videos…", false)
+                        .on_hover_text(tr("Adds the videos of a folder (and its photos) to the library"))
+                        .clicked()
+                    {
+                        let _ = app.run("videos.import", json!({}));
+                    }
+                    if text_button(ui, "videosVideoCatcher", "Resume the Video Catcher import", false)
+                        .on_hover_text(tr("Brings in the videos, pictures and descriptions Video Catcher already made"))
+                        .clicked()
+                    {
+                        let _ = app.run("videos.importVideoCatcher", json!({}));
+                    }
+                    if n > 0 {
+                        let ids: Vec<u64> = rows.iter().filter_map(|r| r["id"].as_u64()).collect();
+                        if text_button(ui, "videosFrames", "Cut pictures", false)
+                            .on_hover_text(tr("Cuts a few pictures out of each video, to find faces and describe moments"))
+                            .clicked()
+                        {
+                            act(app, "video.frames", json!({"ids": ids, "background": true}));
+                        }
+                        if text_button(ui, "videosFaces", "Find faces", false)
+                            .on_hover_text(tr("Looks for faces in the pictures of these videos"))
+                            .clicked()
+                        {
+                            act(app, "people.index", json!({"ids": ids, "background": true}));
+                        }
+                    }
+                });
+                ui.add_space(8.0);
+                filters(app, ui, &v);
+                ui.add_space(10.0);
+                if rows.is_empty() {
+                    let msg = if app.caches.videos.person.is_some() || app.caches.videos.described.is_some() || app.caches.videos.status.is_some() {
+                        "No video matches these filters"
+                    } else {
+                        "No video in the library yet: import a folder of videos"
+                    };
+                    ui.label(egui::RichText::new(tr(msg)).color(t.text_dim));
+                    return;
+                }
+                let per_row = ((ui.available_width() + 12.0) / (VCARD + 12.0)).floor().max(1.0) as usize;
+                for chunk in rows.chunks(per_row) {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 12.0;
+                        for r in chunk {
+                            video_card(app, ui, r);
+                        }
+                    });
+                    ui.add_space(12.0);
+                }
+            });
+        });
+    });
+}
+
+fn filters(app: &mut LightcraftApp, ui: &mut egui::Ui, v: &Value) {
+    let t = Tokens::get(ui.ctx());
+    ui.horizontal_wrapped(|ui| {
+        ui.label(egui::RichText::new(tr("Person")).color(t.text_label));
+        let current = app.caches.videos.person.clone().unwrap_or_else(|| tr("Everyone").to_string());
+        egui::ComboBox::from_id_salt("videosPerson").selected_text(current).show_ui(ui, |ui| {
+            if ui.selectable_label(app.caches.videos.person.is_none(), tr("Everyone")).clicked() {
+                app.caches.videos.person = None;
+                app.caches.videos.dirty = true;
+            }
+            for n in v["people"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                if ui.selectable_label(app.caches.videos.person.as_deref() == Some(n), n).clicked() {
+                    app.caches.videos.person = Some(n.to_string());
+                    app.caches.videos.dirty = true;
+                }
+            }
+        });
+        ui.add_space(12.0);
+        let d = match app.caches.videos.described {
+            None => 0,
+            Some(true) => 1,
+            Some(false) => 2,
+        };
+        let pick = ui
+            .allocate_ui(vec2(330.0, 24.0), |ui| {
+                crate::widgets::segmented(ui, "videosDescribed", &[("All", "all"), ("Described", "yes"), ("Not described", "no")], Some(d), 3)
+            })
+            .inner;
+        if let Some(i) = pick {
+            app.caches.videos.described = [None, Some(true), Some(false)].get(i).copied().flatten();
+            app.caches.videos.dirty = true;
+        }
+        ui.add_space(12.0);
+        let s = match app.caches.videos.status {
+            Some("confirmed") => 1,
+            Some(_) => 2,
+            None => 0,
+        };
+        let pick = ui
+            .allocate_ui(vec2(330.0, 24.0), |ui| {
+                crate::widgets::segmented(ui, "videosStatus", &[("All", "all"), ("Confirmed", "confirmed"), ("To confirm", "toConfirm")], Some(s), 3)
+            })
+            .inner;
+        if let Some(i) = pick {
+            app.caches.videos.status = [None, Some("confirmed"), Some("toConfirm")].get(i).copied().flatten();
+            app.caches.videos.dirty = true;
+        }
+    });
+}
+
+/// A small rounded mark: a person's name, a state.
+fn chip(ui: &mut egui::Ui, id: &str, text: &str, on: bool) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let g = ui.painter().layout_no_wrap(text.to_string(), t.font(11.0), if on { t.text } else { t.text_label });
+    let (r, resp) = ui.allocate_exact_size(vec2(g.size().x + 12.0, 20.0), Sense::click());
+    register(ui.ctx(), format!("chip:{id}"), r);
+    let fill = if resp.hovered() {
+        t.hover
+    } else if on {
+        t.pressed
+    } else {
+        t.button
+    };
+    ui.painter().rect(r, 10.0, fill, Stroke::new(1.0, t.button_border), StrokeKind::Inside);
+    ui.painter().galley(pos2(r.left() + 6.0, r.center().y - g.size().y / 2.0), g, t.text);
+    resp
+}
+
+/// Where a video's analysis stands: pictures cut, faces looked for, described.
+fn states(ui: &mut egui::Ui, r: &Value) {
+    let t = Tokens::get(ui.ctx());
+    let frames = r["frames"].as_u64().unwrap_or(0);
+    let looked = r["facesLooked"].as_u64().unwrap_or(0);
+    let moments = r["moments"].as_u64().unwrap_or(0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        for (done, label) in [(frames > 0, "Pictures"), (frames > 0 && looked >= frames, "Faces"), (moments > 0, "Described")] {
+            let c = if done { t.accent } else { t.text_disabled };
+            // a dot (filled when done), then the step
+            let (dot, _) = ui.allocate_exact_size(vec2(8.0, 14.0), Sense::hover());
+            if done {
+                ui.painter().circle_filled(dot.center(), 3.5, c);
+            } else {
+                ui.painter().circle_stroke(dot.center(), 3.0, Stroke::new(1.0, c));
+            }
+            ui.label(egui::RichText::new(tr(label)).font(t.font(10.5)).color(c));
+        }
+    });
+}
+
+fn video_card(app: &mut LightcraftApp, ui: &mut egui::Ui, r: &Value) {
+    let t = Tokens::get(ui.ctx());
+    let Some(id) = r["id"].as_u64() else { return };
+    ui.vertical(|ui| {
+        ui.set_width(VCARD);
+        let (pr, resp) = ui.allocate_exact_size(vec2(VCARD, VCARD * 9.0 / 16.0), Sense::click());
+        register(ui.ctx(), format!("videoCard:{id}"), pr);
+        let shown = match r["poster"].as_str() {
+            Some(p) => paint_picture(app, ui, pr, p, None),
+            None => false,
+        };
+        if !shown {
+            // no pictures cut yet: the grid's poster
+            let pid = lightcraft_catalog::PhotoId(id);
+            super::grid::request_thumb(app, pid, 256, 8);
+            if let Some(tex) = app.renderer.thumb(pid) {
+                ui.painter().image(tex.tex.id(), pr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+            }
+        }
+        if let Some(d) = r["duration"].as_f64().filter(|d| d.is_finite() && *d >= 0.0) {
+            let text = timecode((d * 1000.0) as u64);
+            let g = ui.painter().layout_no_wrap(text, t.semibold(10.5), Color32::WHITE);
+            let br = Rect::from_min_size(pr.right_bottom() - vec2(g.size().x + 10.0, g.size().y + 8.0), vec2(g.size().x + 6.0, g.size().y + 4.0));
+            ui.painter().rect_filled(br, 3.0, Color32::from_black_alpha(170));
+            ui.painter().galley(br.min + vec2(3.0, 2.0), g, Color32::WHITE);
+        }
+        if resp.hovered() {
+            ui.painter().rect_stroke(pr, 3.0, Stroke::new(1.5, t.accent), StrokeKind::Outside);
+        }
+        if resp.clicked() {
+            open_moment(app, id, None);
+        }
+        let name = r["name"].as_str().unwrap_or_default();
+        let g = crate::widgets::one_line(ui.painter(), name, t.semibold(12.0), t.text, VCARD);
+        let (nr, _) = ui.allocate_exact_size(vec2(VCARD, 18.0), Sense::hover());
+        ui.painter().galley(nr.left_center() - vec2(0.0, g.size().y / 2.0), g, t.text);
+        let people: Vec<&str> = r["people"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+            for n in people.iter().take(4) {
+                if chip(ui, &format!("videoPerson:{id}:{n}"), n, false).on_hover_text(tr("Shows this person's photos and videos")).clicked() {
+                    let _ = app.run("view.person", json!({"name": n}));
+                }
+            }
+            if people.len() > 4 {
+                ui.label(egui::RichText::new(format!("+{}", people.len() - 4)).color(t.text_dim));
+            }
+        });
+        states(ui, r);
+        let (m, c) = (r["moments"].as_u64().unwrap_or(0), r["confirmed"].as_u64().unwrap_or(0));
+        if m > 0 {
+            ui.label(
+                egui::RichText::new(crate::i18n::tr_format!("{n} moments described · {c} confirmed", n = m, c = c))
+                    .font(t.font(10.5))
+                    .color(t.text_dim),
+            );
+        }
+    });
+}
+
+// ------------------------------------------------------------------------------------ the sheet
+
+fn sheet(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    let Some(id) = app.caches.videos.open else { return };
+    let rev = app.session.catalog.revision;
+    let fresh = app.caches.videos.sheet.as_ref().is_some_and(|(i, r, _)| *i == id && *r == rev) && !app.caches.videos.dirty;
+    if !fresh {
+        let v = app.session.execute("video.moments", &json!({"id": id})).unwrap_or(Value::Null);
+        app.caches.videos.sheet = Some((id, rev, v));
+        app.caches.videos.dirty = false;
+    }
+    let v = app.caches.videos.sheet.as_ref().map(|(_, _, v)| v.clone()).unwrap_or(Value::Null);
+    let moments = v["moments"].as_array().cloned().unwrap_or_default();
+    let video = v["video"] == true;
+    let t = Tokens::get(ui.ctx());
+    egui::ScrollArea::vertical().id_salt("videos-sheet").auto_shrink(false).show(ui, |ui| {
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.add_space(PAD);
+            ui.vertical(|ui| {
+                let name = v["name"].as_str().unwrap_or_default().to_string();
+                let dur = v["duration"].as_f64().filter(|d| d.is_finite() && *d >= 0.0).map(|d| timecode((d * 1000.0) as u64)).unwrap_or_default();
+                if title_row(app, ui, true, &name, &dur) {
+                    return;
+                }
+                ui.add_space(6.0);
+                ui.horizontal_wrapped(|ui| {
+                    if video && text_button(ui, "sheetPlay", "Play", false).on_hover_text(tr("Opens the video in your video player")).clicked() {
+                        act(app, "video.open", json!({"id": id}));
+                    }
+                    if text_button(ui, "sheetSuggest", "Propose descriptions", false)
+                        .on_hover_text(tr("Proposes a scene and an action for each moment; nothing is confirmed without you"))
+                        .clicked()
+                    {
+                        act(app, "describe.suggest", json!({"ids": [id], "background": true}));
+                    }
+                    if video {
+                        if text_button(ui, "sheetFrames", "Cut pictures", false).clicked() {
+                            act(app, "video.frames", json!({"ids": [id], "background": true}));
+                        }
+                        if text_button(ui, "sheetFaces", "Find faces", false).clicked() {
+                            act(app, "people.index", json!({"ids": [id], "background": true}));
+                        }
+                    }
+                });
+                ui.add_space(10.0);
+                if moments.is_empty() {
+                    ui.label(
+                        egui::RichText::new(tr(if video { "No moment yet: cut pictures from this video first" } else { "Nothing to show" }))
+                            .color(t.text_dim),
+                    );
+                    return;
+                }
+                let per_row = ((ui.available_width() + 14.0) / (CARD + 14.0)).floor().max(1.0) as usize;
+                for chunk in moments.chunks(per_row) {
+                    ui.horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = 14.0;
+                        for m in chunk {
+                            ui.vertical(|ui| {
+                                ui.set_width(CARD);
+                                moment_card(app, ui, id, m, CARD, video);
+                            });
+                        }
+                    });
+                    ui.add_space(16.0);
+                }
+            });
+        });
+    });
+}
+
+/// The editor of one moment's description (also the photo's, in the Info panel): the picture (a
+/// video's), the time, who is there, then scene, action and description — Enter saves what is
+/// typed, a proposal is one click away, Confirm is the explicit "this is right".
+pub fn moment_card(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64, m: &Value, width: f32, video: bool) {
+    let t = Tokens::get(ui.ctx());
+    let ms = m["ms"].as_u64();
+    let key = format!("{id}:{}", ms.map_or_else(|| "-".to_string(), |x| x.to_string()));
+    let focused = video && ms.is_some() && app.caches.videos.focus_ms == ms;
+    if let Some(frame) = m["frame"].as_str() {
+        let (r, resp) = ui.allocate_exact_size(vec2(width, width * 9.0 / 16.0), Sense::click());
+        register(ui.ctx(), format!("moment:{key}"), r);
+        paint_picture(app, ui, r, frame, None);
+        // the faces, outlined thinly
+        for f in m["faces"].as_array().into_iter().flatten() {
+            let b: Vec<f32> = f["rect"].as_array().into_iter().flatten().filter_map(Value::as_f64).map(|x| x as f32).collect();
+            if let [x0, y0, x1, y1] = b[..] {
+                let fr = Rect::from_min_max(
+                    pos2(r.left() + x0 * r.width(), r.top() + y0 * r.height()),
+                    pos2(r.left() + x1 * r.width(), r.top() + y1 * r.height()),
+                );
+                ui.painter().rect_stroke(fr, 2.0, Stroke::new(1.0, Color32::from_white_alpha(170)), StrokeKind::Outside);
+            }
+        }
+        if focused {
+            ui.painter().rect_stroke(r, 3.0, Stroke::new(2.5, t.accent), StrokeKind::Outside);
+            if std::mem::take(&mut app.caches.videos.scroll_to_focus) {
+                ui.scroll_to_rect(r, Some(egui::Align::Center));
+            }
+        }
+        if resp.double_clicked() {
+            act(app, "video.open", json!({"id": id, "ms": ms.unwrap_or(0)}));
+        }
+    }
+    let a = &m["annotation"];
+    ui.horizontal(|ui| {
+        if let Some(ms) = ms {
+            ui.label(egui::RichText::new(timecode(ms)).font(t.semibold(12.0)).color(t.text));
+            if video && text_button(ui, &format!("play:{key}"), &crate::i18n::tr_format!("Play at {t}", t = timecode(ms)), false).clicked() {
+                act(app, "video.open", json!({"id": id, "ms": ms}));
+            }
+        }
+        if !a.is_null() {
+            let confirmed = a["status"] == "confirmed";
+            let (text, c) = if confirmed { (tr("Confirmed"), t.accent) } else { (tr("Proposed"), t.caution) };
+            ui.label(egui::RichText::new(text).font(t.semibold(10.5)).color(c));
+        }
+    });
+    // who is there
+    let faces = m["faces"].as_array().cloned().unwrap_or_default();
+    if !faces.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+            let mut unnamed = 0;
+            for f in &faces {
+                match f["name"].as_str() {
+                    Some(n) => {
+                        if chip(ui, &format!("who:{key}:{n}"), n, true).on_hover_text(tr("Shows this person's photos and videos")).clicked() {
+                            let _ = app.run("view.person", json!({"name": n}));
+                        }
+                    }
+                    None => unnamed += 1,
+                }
+            }
+            if unnamed > 0 && chip(ui, &format!("whoUnnamed:{key}"), tr("Faces to name"), false).clicked() {
+                let _ = app.run("view.people", json!({}));
+            }
+        });
+    }
+    let proposals = a["proposals"].as_array().cloned().unwrap_or_default();
+    for (field, label, lines) in [("scene", "Scene", 1), ("action", "Action", 1), ("description", "Description", 2)] {
+        let value = a[field].as_str().unwrap_or_default().to_string();
+        let ek = format!("{key}:{field}");
+        ui.label(egui::RichText::new(tr(label)).font(t.font(10.5)).color(t.text_dim));
+        let mut text = app.caches.videos.edits.get(&ek).cloned().unwrap_or_else(|| value.clone());
+        let edit = if lines > 1 {
+            egui::TextEdit::multiline(&mut text).desired_rows(lines).desired_width(width).id(egui::Id::new(("moment-field", &ek)))
+        } else {
+            egui::TextEdit::singleline(&mut text).desired_width(width).id(egui::Id::new(("moment-field", &ek)))
+        };
+        let resp = ui.add(edit);
+        register(ui.ctx(), format!("field:{ek}"), resp.rect);
+        if resp.changed() {
+            app.caches.videos.edits.insert(ek.clone(), text.clone());
+        }
+        // Enter (or leaving the field) saves what was typed; Shift+Enter makes a new line in a description
+        let enter = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift);
+        if (enter || resp.lost_focus()) && app.caches.videos.edits.contains_key(&ek) {
+            let typed = app.caches.videos.edits.remove(&ek).unwrap_or_default();
+            if typed.trim() != value.trim() {
+                let mut p = json!({"id": id, field: typed.trim_end_matches('\n')});
+                if let Some(ms) = ms {
+                    p["ms"] = json!(ms);
+                }
+                act(app, "describe.set", p);
+            }
+            if enter {
+                resp.surrender_focus();
+            }
+        }
+        // the programs' proposals that differ from the value: one click takes one
+        let offers: Vec<String> =
+            proposals.iter().filter_map(|p| p[field].as_str()).filter(|s| !s.trim().is_empty() && s.trim() != value.trim()).map(str::to_string).fold(
+                Vec::new(),
+                |mut v, s| {
+                    if !v.contains(&s) {
+                        v.push(s);
+                    }
+                    v
+                },
+            );
+        if !offers.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+                for (i, o) in offers.iter().take(3).enumerate() {
+                    let short: String = if o.chars().count() > 40 { format!("{}…", o.chars().take(39).collect::<String>()) } else { o.clone() };
+                    if chip(ui, &format!("offer:{ek}:{i}"), &format!("+ {short}"), false).on_hover_text(tr("Use this proposal")).clicked() {
+                        let mut p = json!({"id": id, field: o});
+                        if let Some(ms) = ms {
+                            p["ms"] = json!(ms);
+                        }
+                        act(app, "describe.set", p);
+                    }
+                }
+            });
+        }
+    }
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        let can = !a.is_null() && a["status"] != "confirmed";
+        let mut p = json!({"id": id});
+        if let Some(ms) = ms {
+            p["ms"] = json!(ms);
+        }
+        if can && text_button(ui, &format!("confirm:{key}"), "Confirm", false).on_hover_text(tr("Says this description is right")).clicked() {
+            act(app, "describe.confirm", p.clone());
+        }
+        let mine = a["status"] == "confirmed" || a["from"].as_array().is_some_and(|f| f.iter().any(|x| x == "manual"));
+        if mine
+            && text_button(ui, &format!("clear:{key}"), "Clear mine", false)
+                .on_hover_text(tr("Takes back what you wrote; the proposals show again"))
+                .clicked()
+        {
+            act(app, "describe.delete", p);
+        }
+    });
+}
+
+/// The Info panel's "Description": for a photo, its editor; for a video, how many moments are
+/// described and the way to its sheet.
+pub fn info_section(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64, width: f32, title: bool) {
+    let width = (width - 8.0).max(80.0);
+    let t = Tokens::get(ui.ctx());
+    let rev = app.session.catalog.revision;
+    let fresh = !app.caches.videos.dirty && app.caches.videos.info.as_ref().is_some_and(|(i, r, _)| *i == id && *r == rev);
+    if !fresh {
+        let v = app.session.execute("video.moments", &json!({"id": id})).unwrap_or(Value::Null);
+        app.caches.videos.info = Some((id, rev, v));
+    }
+    let v = app.caches.videos.info.as_ref().map(|(_, _, v)| v.clone()).unwrap_or(Value::Null);
+    if title {
+        ui.label(egui::RichText::new(tr("Description")).font(t.semibold(12.5)).color(t.text));
+        ui.add_space(4.0);
+    }
+    if v["video"] == true {
+        let described = v["moments"].as_array().into_iter().flatten().filter(|m| !m["annotation"].is_null()).count();
+        ui.label(
+            egui::RichText::new(crate::i18n::tr_format!(
+                "{n} moments described · {c} confirmed",
+                n = described,
+                c = v["moments"].as_array().into_iter().flatten().filter(|m| m["annotation"]["status"] == "confirmed").count()
+            ))
+            .color(t.text_dim),
+        );
+        if text_button(ui, "infoOpenVideo", "Open the moments", false).clicked() {
+            open_moment(app, id, None);
+        }
+        return;
+    }
+    if let Some(m) = v["moments"].as_array().and_then(|a| a.first()).cloned() {
+        moment_card(app, ui, id, &m, width, false);
+    }
+    if text_button(ui, "infoSuggest", "Propose descriptions", false)
+        .on_hover_text(tr("Proposes a scene and an action for the selected photos; nothing is confirmed without you"))
+        .clicked()
+    {
+        let ids: Vec<u64> = if app.session.selection.ids.is_empty() { vec![id] } else { app.session.selection.ids.iter().map(|i| i.0).collect() };
+        act(app, "describe.suggest", json!({"ids": ids, "background": true}));
+    }
+}
+
+// ------------------------------------------------------------------------------------ search
+
+/// The search field asked for `query` (Enter): `semantic: …` searches by meaning (photos), any
+/// other text searches who + what over photos and videos; the results open in this view.
+pub fn search_from_field(app: &mut LightcraftApp, query: &str) {
+    let q = query.trim();
+    if q.is_empty() {
+        return;
+    }
+    if let Some(rest) = q.strip_prefix("semantic:").map(str::trim).filter(|r| !r.is_empty()) {
+        match app.run("search.semantic", json!({"query": rest, "filter": true})) {
+            Ok(r) => {
+                let n = r["photos"].as_array().map_or(0, Vec::len);
+                app.ui.status = crate::i18n::tr_format!("{n} results", n = n);
+            }
+            Err(e) => app.ui.status = e,
+        }
+        return;
+    }
+    match app.run("describe.search", json!({"query": q, "limit": 120})) {
+        Ok(r) => {
+            app.caches.videos.search = Some(r);
+            app.caches.videos.section = Section::Search;
+            app.caches.videos.show_diagnostics = false;
+            app.ui.view = crate::state::ViewMode::Videos;
+        }
+        Err(e) => app.ui.status = e,
+    }
+}
+
+/// Named people whose name continues the last word of `text` (for the search field).
+pub fn complete_names(app: &mut LightcraftApp, now: f64, text: &str) -> Vec<String> {
+    if now - app.caches.videos.names.0 > 5.0 {
+        let v = app.session.execute("people.list", &json!({"groups": 0, "suggestions": 0, "thumbs": 0})).unwrap_or(Value::Null);
+        let names: Vec<String> = v["persons"].as_array().into_iter().flatten().filter_map(|p| p["name"].as_str().map(str::to_string)).collect();
+        app.caches.videos.names = (now, names);
+    }
+    let last = text.rsplit(' ').next().unwrap_or("").to_lowercase();
+    if last.chars().count() < 2 {
+        return Vec::new();
+    }
+    app.caches.videos.names.1.iter().filter(|n| n.to_lowercase().starts_with(&last) && n.to_lowercase() != last).take(5).cloned().collect()
+}
+
+fn results(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    let Some(r) = app.caches.videos.search.clone() else { return };
+    let t = Tokens::get(ui.ctx());
+    let rows = r["results"].as_array().cloned().unwrap_or_default();
+    egui::ScrollArea::vertical().id_salt("videos-results").auto_shrink(false).show(ui, |ui| {
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.add_space(PAD);
+            ui.vertical(|ui| {
+                let q = r["query"].as_str().unwrap_or_default();
+                let total = r["total"].as_u64().unwrap_or(0);
+                if title_row(app, ui, true, &format!("« {q} »"), &crate::i18n::tr_format!("{n} results", n = total)) {
+                    return;
+                }
+                // what the search understood, in plain words
+                let people: Vec<&str> = r["people"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+                let words: Vec<&str> = r["words"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+                ui.horizontal_wrapped(|ui| {
+                    if !people.is_empty() {
+                        ui.label(egui::RichText::new(tr("Who")).color(t.text_dim));
+                        for p in &people {
+                            chip(ui, &format!("searchWho:{p}"), p, true);
+                        }
+                    }
+                    if !words.is_empty() {
+                        ui.label(egui::RichText::new(tr("What")).color(t.text_dim));
+                        ui.label(egui::RichText::new(words.join(" ")).color(t.text));
+                    }
+                });
+                ui.add_space(10.0);
+                if rows.is_empty() {
+                    ui.label(egui::RichText::new(tr("Nothing found")).color(t.text_dim));
+                }
+                result_grid(app, ui, &rows, "res");
+                ui.add_space(14.0);
+                // apart, never mixed in: the people are there but the words were not found
+                let d = &r["diagnostics"]["personPresentWhatNotDetected"];
+                let n = d["total"].as_u64().unwrap_or(0);
+                if n > 0 {
+                    let label = crate::i18n::tr_format!("Person present, action not detected ({n})", n = n);
+                    let open = app.caches.videos.show_diagnostics;
+                    if text_button(ui, "searchDiagnostics", &label, open).clicked() {
+                        app.caches.videos.show_diagnostics = !open;
+                    }
+                    if open {
+                        ui.label(
+                            egui::RichText::new(tr(
+                                "Not detected is not absent: a description may not say it, or a face may be too small or not confirmed",
+                            ))
+                            .font(t.font(11.0))
+                            .color(t.text_dim),
+                        );
+                        let ex = d["examples"].as_array().cloned().unwrap_or_default();
+                        result_grid(app, ui, &ex, "diag");
+                    }
+                }
+                let w = &r["diagnostics"]["whatFoundPeopleNotRecognized"];
+                let n = w["total"].as_u64().unwrap_or(0);
+                if n > 0 {
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(crate::i18n::tr_format!("Action found, person not recognized ({n})", n = n))
+                            .font(t.font(11.5))
+                            .color(t.text_dim),
+                    );
+                }
+            });
+        });
+    });
+}
+
+fn result_grid(app: &mut LightcraftApp, ui: &mut egui::Ui, rows: &[Value], salt: &str) {
+    let t = Tokens::get(ui.ctx());
+    let w = 200.0;
+    let per_row = ((ui.available_width() + 12.0) / (w + 12.0)).floor().max(1.0) as usize;
+    for chunk in rows.chunks(per_row) {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 12.0;
+            for x in chunk {
+                let Some(id) = x["id"].as_u64() else { continue };
+                let ms = x["ms"].as_u64();
+                ui.vertical(|ui| {
+                    ui.set_width(w);
+                    let (r, resp) = ui.allocate_exact_size(vec2(w, w * 9.0 / 16.0), Sense::click());
+                    register(ui.ctx(), format!("result:{salt}:{id}:{}", ms.unwrap_or(0)), r);
+                    let shown = x["frame"].as_str().is_some_and(|f| paint_picture(app, ui, r, f, None));
+                    if !shown {
+                        let pid = lightcraft_catalog::PhotoId(id);
+                        super::grid::request_thumb(app, pid, 256, 8);
+                        if let Some(tex) = app.renderer.thumb(pid) {
+                            let [tw, th] = tex.size;
+                            let k = (r.width() / tw.max(1) as f32).min(r.height() / th.max(1) as f32);
+                            let inner = Rect::from_center_size(r.center(), vec2(tw as f32 * k, th as f32 * k));
+                            ui.painter().image(tex.tex.id(), inner, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+                        } else {
+                            ui.painter().rect_filled(r, 3.0, t.canvas);
+                        }
+                    }
+                    if resp.hovered() {
+                        ui.painter().rect_stroke(r, 3.0, Stroke::new(1.5, t.accent), StrokeKind::Outside);
+                    }
+                    if resp.clicked() {
+                        open_moment(app, id, ms);
+                    }
+                    ui.horizontal(|ui| {
+                        let kind = if ms.is_some() { Icon::Video } else { Icon::Photos };
+                        let (ir, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+                        paint(ui.painter(), ir, kind, t.icon);
+                        if let Some(ms) = ms {
+                            ui.label(egui::RichText::new(timecode(ms)).font(t.semibold(11.5)).color(t.text));
+                        }
+                        if let Some(st) = x["status"].as_str() {
+                            let (text, c) = if st == "confirmed" { (tr("Confirmed"), t.accent) } else { (tr("Proposed"), t.caution) };
+                            ui.label(egui::RichText::new(text).font(t.font(10.5)).color(c));
+                        }
+                    });
+                    let people: Vec<&str> = x["people"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+                    if !people.is_empty() {
+                        ui.label(egui::RichText::new(people.join(", ")).font(t.semibold(11.0)).color(t.text_label));
+                    }
+                    let what =
+                        [x["action"].as_str(), x["scene"].as_str()].into_iter().flatten().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ");
+                    if !what.is_empty() {
+                        let g = crate::widgets::one_line(ui.painter(), &what, t.font(11.0), t.text_dim, w);
+                        let (lr, _) = ui.allocate_exact_size(vec2(w, 16.0), Sense::hover());
+                        ui.painter().galley(lr.left_center() - vec2(0.0, g.size().y / 2.0), g, t.text_dim);
+                    }
+                });
+            }
+        });
+        ui.add_space(12.0);
+    }
+}

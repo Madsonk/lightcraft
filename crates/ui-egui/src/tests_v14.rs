@@ -39,6 +39,7 @@ const OUR_FILES: &[(&str, &str)] = &[
     ("panels/strip.rs", include_str!("panels/strip.rs")),
     ("panels/resume.rs", include_str!("panels/resume.rs")),
     ("tasks.rs", include_str!("tasks.rs")),
+    ("panels/videos.rs", include_str!("panels/videos.rs")),
 ];
 
 /// The string literal that opens right after `at` (`"…"`, with simple escapes), if any.

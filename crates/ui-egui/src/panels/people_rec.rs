@@ -110,6 +110,11 @@ pub(crate) fn paint_face(app: &mut LightcraftApp, ui: &egui::Ui, r: Rect, t: &Th
         return None;
     }
     app.caches.people_rec.drawn += 1;
+    // a face seen in a video: cut out of the picture it was found in, marked "video · m:ss"
+    if let Some(v) = &t.video {
+        super::videos::paint_video_face(app, ui, r, v, t.rect);
+        return None;
+    }
     let size = r.width();
     let px = (size * ui.ctx().pixels_per_point()).ceil() as usize;
     let id = PhotoId(t.photo);
@@ -180,7 +185,7 @@ fn thumbs_of_json(v: &Value) -> Vec<Thumb> {
                         photo: t["photo"].as_u64()?,
                         face: t["face"].as_str()?.to_string(),
                         rect: [*r.first()?, *r.get(1)?, *r.get(2)?, *r.get(3)?],
-                        video: None,
+                        video: video_of(&t["video"]),
                     })
                 })
                 .collect()
@@ -511,9 +516,19 @@ fn who(f: &Value) -> String {
     }
 }
 
+/// The moment of a video a face was seen at (`{video, ms, frame}`), when it was.
+fn video_of(v: &Value) -> Option<lightcraft_engine::people::VideoAt> {
+    Some(lightcraft_engine::people::VideoAt { video: v["video"].as_u64()?, ms: v["ms"].as_u64()?, frame: v["frame"].as_str()?.to_string() })
+}
+
 fn thumb_of(photo: u64, f: &Value) -> Option<Thumb> {
     let r: Vec<f32> = f["rect"].as_array()?.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
-    Some(Thumb { photo, face: f["face"].as_str()?.to_string(), rect: [*r.first()?, *r.get(1)?, *r.get(2)?, *r.get(3)?], video: None })
+    Some(Thumb {
+        photo,
+        face: f["face"].as_str()?.to_string(),
+        rect: [*r.first()?, *r.get(1)?, *r.get(2)?, *r.get(3)?],
+        video: video_of(&f["video"]),
+    })
 }
 
 /// A face you can pick (click) and drag (alone, or with the other picked ones) onto a person, a group,
@@ -539,6 +554,14 @@ fn tile(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Thumb, size: f32, label:
     if let Some(l) = label {
         let l: String = if l.chars().count() > 11 { format!("{}…", l.chars().take(10).collect::<String>()) } else { l.to_string() };
         ui.painter().text(full.left_bottom() + vec2(1.0, -7.0), Align2::LEFT_CENTER, l, tk.font(10.5), tk.text_label);
+    }
+    // the "video · m:ss" mark of a face seen in a video opens that moment
+    let on_mark = t.video.is_some() && resp.interact_pointer_pos().is_some_and(|p| p.y > r.bottom() - 16.0 && r.contains(p));
+    if resp.clicked() && on_mark {
+        if let Some(v) = &t.video {
+            super::videos::open_moment(app, v.video, Some(v.ms));
+        }
+        return resp;
     }
     if resp.clicked() {
         let sel = &mut app.caches.people_rec.selected;

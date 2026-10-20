@@ -82,10 +82,14 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let mut recognition = app.caches.people_rec.recognition;
     ui.horizontal(|ui| {
         ui.add_space(PAD);
-        if ui.selectable_label(!recognition, crate::i18n::tr("Named in XMP")).clicked() {
+        let named = ui.selectable_label(!recognition, crate::i18n::tr("Named in XMP"));
+        crate::widgets::register(ui.ctx(), "button:peopleTabNamed", named.rect);
+        if named.clicked() {
             recognition = false;
         }
-        if ui.selectable_label(recognition, crate::i18n::tr("Recognition")).clicked() {
+        let rec = ui.selectable_label(recognition, crate::i18n::tr("Recognition"));
+        crate::widgets::register(ui.ctx(), "button:peopleTabRecognition", rec.rect);
+        if rec.clicked() {
             recognition = true;
         }
     });

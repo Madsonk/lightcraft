@@ -33,6 +33,11 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 }
                 library_batch_tools(app, ui);
                 egui::CollapsingHeader::new(crate::i18n::tr("Keywords")).default_open(true).show(ui, |ui| keywords(app, ui, id));
+                // what the photo (or video) shows: scene, action, description
+                egui::CollapsingHeader::new(crate::i18n::tr("Description")).default_open(true).show(ui, |ui| {
+                    let w = ui.available_width();
+                    crate::panels::videos::info_section(app, ui, id.0, w, false);
+                });
                 egui::CollapsingHeader::new(crate::i18n::tr("Metadata")).show(ui, |ui| info(app, ui, id));
                 return;
             }
@@ -793,6 +798,14 @@ fn info(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
             let _ = app.run("dialog.allMetadata", json!({}));
         }
     });
+    // what the photo (or video) shows, last (the Library space shows it in a section of its own)
+    if !(crate::workspaces::enabled(app) && app.workspaces.kind == crate::workspaces::Space::Library) {
+        divider(ui);
+        padded(ui, |ui| {
+            let w = ui.available_width();
+            crate::panels::videos::info_section(app, ui, id.0, w, true);
+        });
+    }
 }
 
 /// The camera card at the top of Info: camera, lens, size · file size and format, then the

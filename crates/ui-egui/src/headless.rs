@@ -272,6 +272,7 @@ impl Headless {
             || !self.app.tasks.is_empty()
             || self.app.healing.is_some()
             || !self.app.synthetic.is_empty()
+            || self.app.caches.videos.frames.pending() > 0
             || !self.events.is_empty()
     }
 

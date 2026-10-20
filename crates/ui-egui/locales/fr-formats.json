@@ -228,5 +228,13 @@
   "“{name}” is not available right now": "« {name} » n'est pas disponible pour l'instant",
   "•  {assumption}": "•  {assumption}",
   "… and {more} more": "… et {more} de plus",
-  "… and {} more": "… et {} de plus"
+  "… and {} more": "… et {} de plus",
+  "Action found, person not recognized ({n})": "Action trouvée, personne non reconnue ({n})",
+  "Person present, action not detected ({n})": "Personne présente, action non détectée ({n})",
+  "Play at {t}": "Lire à {t}",
+  "video · {t}": "vidéo · {t}",
+  "{n} moments described · {c} confirmed": "{n} moments décrits · {c} confirmés",
+  "{n} results": "{n} résultats",
+  "{n} videos": "{n} vidéos",
+  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher : {m} vidéos, {a} descriptions ajoutées"
 }

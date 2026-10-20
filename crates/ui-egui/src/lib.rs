@@ -96,6 +96,8 @@ mod tests_v14;
 #[cfg(test)]
 mod tests_v9;
 #[cfg(test)]
+mod tests_videos;
+#[cfg(test)]
 mod tests_zoom;
 
 use std::sync::mpsc::{Receiver, Sender};
@@ -1112,6 +1114,7 @@ impl LightcraftApp {
             state::ViewMode::Reference => panels::compare::show_reference(self, ui),
             state::ViewMode::People => panels::people::show(self, ui),
             state::ViewMode::Places => panels::places::show(self, ui),
+            state::ViewMode::Videos => panels::videos::show(self, ui),
         });
         panels::second::show(self, &ctx);
         panels::notices::show(self, &ctx);
@@ -1123,6 +1126,7 @@ impl LightcraftApp {
         lightroom_import::progress(self, &ctx);
         export_task::poll(self, &ctx);
         tasks::show(self, &ctx);
+        panels::videos::jobs(self, &ctx);
         heavy::pump(self, &ctx);
         panels::resume::show(self, &ctx);
         pick::poll(self, &ctx);
@@ -1282,6 +1286,8 @@ pub struct Caches {
     pub grid_stats: panels::grid::GridStats,
     /// People ▸ Recognition: what the view lists.
     pub people_rec: panels::people_rec::RecCache,
+    /// Videos: the list, a video's moments, the last who + what search, the pictures' textures.
+    pub videos: panels::videos::VideosUi,
 }
 
 /// The left panel's counts.
