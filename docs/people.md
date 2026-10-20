@@ -59,6 +59,38 @@ pure Rust (`crates/people`).
 
 In the app: View ▸ People ▸ **Recognition**.
 
+## Faces in videos
+
+A video of the catalog is recognized through a few **pictures cut out of it**, which go through the same face finder,
+alignment and ArcFace network as photos, into the **same index**:
+
+1. `video.frames {ids?, every?, max?, force?, maxBytes?}` cuts the pictures with **FFmpeg**, run as a helper program
+   (never linked: found on `PATH`, in `/opt/homebrew/bin`, `/usr/local/bin`, or named by `LIGHTCRAFT_FFMPEG` /
+   `LIGHTCRAFT_FFPROBE`; each call has a deadline and is killed after it). By default 12 pictures spread over the video
+   (one every 2 s for a short one; 120 at most per video with `every`, never more than 240), JPEG, 1280 px. They are kept
+   in `<library>/video/<16 hex digits of key_of(content key)>/t<ms>.jpg` with a `frames.json` that lists them — never
+   next to the video, never in the catalog journal; all of them together stay under `maxBytes` (4 GiB by default). The
+   list is written after every picture: an interrupted run resumes, and a picture already there is not cut again
+   (`force` cuts them again). The folder is a cache, deleting it loses nothing but work.
+2. `people.index` (`videos: true` by default) also looks at the pictures of the videos in scope; videos without
+   pictures are counted in `videosWithoutFrames`. The faces of a picture are stored under the key of its moment,
+   **`key_of("<content key of the video>@<ms>")`**, where a photo's are under `key_of("<content key>")`.
+3. From there a face of a video is a face like any other: it is grouped with the faces of the photos, suggested for a
+   person named on photos, named, merged, moved, ignored, marked unknown, said "not this person"; **`People|<name>`
+   goes on the video** (the catalog item) as long as one of the person's faces is confirmed in one of its pictures (or
+   the video was filed under them by hand).
+4. What the lists say of a face of a video: `people.list` (thumbnails of persons, groups and suggestions),
+   `people.members`, `people.faces {id: video}` add `video: {video, ms, frame}` (catalog id, milliseconds into the
+   video, path of the picture; the face's `rect` is a fraction of that picture, not of the video's poster);
+   `people.photos` adds `videos` (how many of `ids` are videos) and `moments: [{video, ms, frame}]`.
+
+`video.importVideoCatcher {db, dryRun?}` takes the pictures Video Catcher already cut (and its described moments, see
+[`describe.md`](describe.md)) for the catalog's videos it knows by path, instead of cutting them again.
+
+Importing a video: `library.import {paths: [file]}` with the file named (folder imports do not pick videos up yet).
+Its size and duration come from `ffprobe`; its content key is a hash of its size and three 1 MiB samples (`vs1-…`; a
+video is not read whole); the grid shows a picture FFmpeg cuts at 1 s.
+
 ## A photo can hold several people
 
 The model is **face → person**; the keyword is at the level of the **photo**: `People|<name>` is on a photo as long as
