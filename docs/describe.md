@@ -89,6 +89,36 @@ seen. `semantic.used` says whether the meaning was used, and why not.
 The search bar's `semantic:` token is not wired to it yet (step 3: the Videos interface); `describe.search` is available
 from the control channel, the CLI and MCP.
 
+## In the app
+
+**View ▸ Videos** (or the camera button of the bottom bar) opens the **Videos** view:
+
+- **The list**: each video with its picture, name and length, the people named in it (click one: their photos and
+  videos), how far its analysis went (*Pictures* cut · *Faces* looked for · *Described*) and how many moments are
+  described and confirmed. Filters: a person, described or not, confirmed or to confirm. Buttons: **Import videos…** (a
+  folder, with its videos), **Resume the Video Catcher import** (its videos the library lacks are imported in the
+  background like any import, then its pictures and descriptions are read; the database is looked for at
+  `~/Movies/VideoCatalog/libraries/…/video-catcher.sqlite3`, else a file dialog asks for it), **Cut pictures**, **Find
+  faces**. Long runs (cutting pictures, finding faces, proposing descriptions) show a progress panel with **Cancel**.
+- **A video's sheet** (click a video): its moments as a contact sheet — the picture with the faces outlined, the time,
+  **Play at m:ss** (the system's player at that time: VLC with `--start-time` when installed, else the default player
+  from the start; a double-click on the picture does the same), who is there (click a name), then **Scene**, **Action**
+  and **Description**. Type and press **Enter** (or leave the field) to save; Shift+Enter makes a new line in a
+  description. A proposal that differs from the value shows under its field (`+ …`): one click takes it. **Confirm**
+  says the description is right (the only way to *Confirmed*); **Clear mine** takes back what you wrote. **Propose
+  descriptions** proposes for this video only.
+- **A photo**: the same editor is in the right panel (**Description**, Library space; Info elsewhere), with **Propose
+  descriptions** for the selected photos.
+- **Search**: type in the search field and press **Enter**: `Madson conduit une voiture` opens the results of
+  `describe.search` in the Videos view — photos and moments of videos mixed, with their picture, time, people and
+  status; a click opens the moment. "Person present, action not detected" is a separate list, closed by default, with
+  the reminder that not detected is not absent. `semantic: …` searches photos by meaning (`search.semantic`) and shows
+  them in the grid. Names of people complete as you type.
+- **People ▸ Recognition**: a face seen in a video is cut out of its picture and marked *video · m:ss*; a click on the
+  mark opens that moment. Naming, merging, moving and ignoring work as for any face.
+
+There is no video player inside LightCraft yet: a moment opens in the system's player.
+
 ## Video Catcher
 
 `video.importVideoCatcher {db, createMissing?, dryRun?}` reads a Video Catcher database (never writes it, nor the videos):

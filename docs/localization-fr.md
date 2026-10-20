@@ -13,7 +13,7 @@ les masques, l'import et l'export, les réglages, les préréglages et profils i
 les dates, les messages d'avancement et les notes de version, **ainsi que les panneaux ajoutés dans
 ce fork** : espaces de travail (Bibliothèque · Retoucher · Créer), barre de contexte, accueil
 d'import, Tri rapide, Classer, Aide au tri, Personnes / Reconnaissance, Lieux, Propositions,
-Développement par tâche, palette de commandes. Comme dans les autres langues, les erreurs techniques
+Développement par tâche, palette de commandes, Vidéos (liste, moments, descriptions, recherche « qui + quoi »). Comme dans les autres langues, les erreurs techniques
 des couches basses restent en anglais, et un texte absent du catalogue s'affiche en anglais.
 
 Les noms de fichiers, les identifiants de commandes, les gabarits de renommage et les noms propres
@@ -44,6 +44,9 @@ Vocabulaire des photographes francophones (Lightroom en français, Capture One),
 | Culling / Sorting Help / Quick sort | Tri / Aide au tri / Tri rapide |
 | Soft / Closed eyes / Same file | Floue / Yeux fermés / Même fichier |
 | People / Faces / Recognition / Unknown person | Personnes / Visages / Reconnaissance / Personne inconnue |
+| Videos / Moment / Scene / Action / Description | Vidéos / Moment / Scène / Action / Description |
+| Proposed / Confirmed / Confirm / Propose descriptions | Proposé / Confirmé / Confirmer / Proposer des descriptions |
+| Cut pictures / Find faces / Play at | Extraire des images / Trouver les visages / Lire à |
 | Places / Geotag | Lieux / Géolocaliser |
 | Proposals / Propose / Natural skin / Light, Medium, Strong | Propositions / Proposer / Peau naturelle / Léger, Moyen, Fort |
 | Web Gallery / Slideshow / Kit / Contact sheet | Galerie web / Diaporama / Kit / Planche contact |
