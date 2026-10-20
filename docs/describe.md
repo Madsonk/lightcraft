@@ -117,7 +117,7 @@ from the control channel, the CLI and MCP.
 - **People ▸ Recognition**: a face seen in a video is cut out of its picture and marked *video · m:ss*; a click on the
   mark opens that moment. Naming, merging, moving and ignoring work as for any face.
 
-There is no video player inside LightCraft yet: a moment opens in the system's player.
+There is no video player inside LightCraft yet: a moment opens in the system's player. For a future player, `video.clip {id, ms, seconds?}` makes a short clip around a moment (8 s by default, 540 lines, H.264 + AAC, MP4 `+faststart`) once and keeps it in `<library>/video/<key>/clips/`; it returns its path.
 
 ## Video Catcher
 

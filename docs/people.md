@@ -71,7 +71,7 @@ alignment and ArcFace network as photos, into the **same index**:
    in `<library>/video/<16 hex digits of key_of(content key)>/t<ms>.jpg` with a `frames.json` that lists them — never
    next to the video, never in the catalog journal; all of them together stay under `maxBytes` (4 GiB by default). The
    list is written after every picture: an interrupted run resumes, and a picture already there is not cut again
-   (`force` cuts them again). The folder is a cache, deleting it loses nothing but work. `background: true` returns at
+   (`force` cuts LightCraft's own pictures again, each replaced in one rename; pictures brought in from Video Catcher are never removed nor replaced; a stopped run leaves a whole list). The folder is a cache, deleting it loses nothing but work. `background: true` returns at
    once: `video.status` → `job` shows the progress, `video.cancel` stops it (what was cut is kept).
 2. `people.index` (`videos: true` by default) also looks at the pictures of the videos in scope; videos without
    pictures are counted in `videosWithoutFrames`. The faces of a picture are stored under the key of its moment,
