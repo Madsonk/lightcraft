@@ -49,6 +49,18 @@ pub struct Frame {
     pub file: String,
     #[serde(default)]
     pub bytes: u64,
+    /// Who made it: `ffmpeg` (cut by LightCraft, may be cut again) or `videocatcher` (brought in,
+    /// never replaced nor removed). Empty in lists written before this was kept: the list's
+    /// `source` then says.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub origin: String,
+}
+
+impl Frame {
+    /// Brought in from elsewhere (Video Catcher): LightCraft never replaces nor removes it.
+    pub fn protected(&self, list_source: &str) -> bool {
+        self.origin == "videocatcher" || (self.origin.is_empty() && list_source.contains("videocatcher"))
+    }
 }
 
 /// `frames.json`: what was cut out of one video, and from what.
@@ -140,17 +152,13 @@ pub fn extract(
 ) -> Cut {
     use std::sync::atomic::Ordering;
     let mut cut = Cut { planned: times.len(), ..Default::default() };
+    // nothing is ever deleted here: `force` cuts LightCraft's own pictures again, each one replacing
+    // the old file in one rename, and the list is rewritten after each; pictures brought in from
+    // Video Catcher are kept as they are. A list of another video (a hash collision) is replaced,
+    // its files overwritten one by one.
     let mut m = match Manifest::load(dir) {
-        Some(m) if !force && m.content_key == content_key => m,
-        old => {
-            // another video's pictures under this name (a hash collision), or `force`: start over
-            if let Some(old) = old {
-                for f in &old.frames {
-                    let _ = std::fs::remove_file(dir.join(&f.file));
-                }
-            }
-            Manifest::new(content_key, &video.to_string_lossy(), duration_ms, "ffmpeg")
-        }
+        Some(m) if m.content_key == content_key => m,
+        _ => Manifest::new(content_key, &video.to_string_lossy(), duration_ms, "ffmpeg"),
     };
     m.path = video.to_string_lossy().into();
     m.duration_ms = duration_ms.or(m.duration_ms);
@@ -160,7 +168,8 @@ pub fn extract(
     }
     m.failed.retain(|(ms, _)| !times.contains(ms));
     for &ms in times {
-        if m.has(ms) {
+        let existing = m.frames.iter().find(|f| f.ms == ms);
+        if existing.is_some_and(|f| !force || f.protected(&m.source)) {
             cut.kept += 1;
             continue;
         }
@@ -180,7 +189,8 @@ pub fn extract(
                 }
                 cut.cut += 1;
                 cut.bytes += len;
-                m.frames.push(Frame { ms, file: name, bytes: len });
+                m.frames.retain(|f| f.ms != ms);
+                m.frames.push(Frame { ms, file: name, bytes: len, origin: "ffmpeg".into() });
                 m.frames.sort_by_key(|f| f.ms);
             }
             Err(e) => {
@@ -231,7 +241,7 @@ mod tests {
         std::fs::write(d.join(MANIFEST), b"{\"version\":1,\"conte").unwrap();
         assert!(Manifest::load(&d).is_none());
         let mut m = Manifest::new("k", "/v.mp4", Some(1000), "ffmpeg");
-        m.frames.push(Frame { ms: 5, file: file_name(5), bytes: 3 });
+        m.frames.push(Frame { ms: 5, file: file_name(5), bytes: 3, origin: "ffmpeg".into() });
         m.save(&d).unwrap();
         assert_eq!(Manifest::load(&d).unwrap(), m);
         let _ = std::fs::remove_dir_all(&d);

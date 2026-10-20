@@ -206,7 +206,7 @@ pub fn import(s: &mut crate::Session, db: &Path, dry: bool, max_bytes: u64, crea
                 let tmp = dir.join(format!("{name}.part"));
                 std::fs::copy(&src, &tmp).map_err(|e| format!("{}: {e}", src.display()))?;
                 std::fs::rename(&tmp, dir.join(&name)).map_err(|e| format!("{}: {e}", dir.display()))?;
-                m.frames.push(Frame { ms: at, file: name, bytes: len });
+                m.frames.push(Frame { ms: at, file: name, bytes: len, origin: "videocatcher".into() });
                 changed = true;
             }
             budget = budget.saturating_sub(len);

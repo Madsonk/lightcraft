@@ -150,6 +150,62 @@ fn pictures_of_a_video_are_cut_cached_keyed_and_resumed() {
     assert_eq!((st["videos"].as_u64(), st["withFrames"].as_u64(), st["frames"].as_u64()), (Some(1), Some(1), Some(3)), "{st}");
 }
 
+/// `force` cuts LightCraft's own pictures again and never removes nor replaces those brought in
+/// from Video Catcher; a forced run stopped midway leaves a whole list whose every picture is there.
+#[test]
+fn force_keeps_video_catchers_pictures_and_a_stopped_run_leaves_a_whole_list() {
+    if !have_ffmpeg() {
+        return;
+    }
+    let (mut s, dir) = library();
+    let v = dir.join("clip.mp4");
+    make_video(&v, 6, true);
+    let id = ids(&import(&mut s, &v))[0];
+    let ck = crate::media::content_key(s.catalog.photo(id).unwrap());
+    let vdir = crate::video::video_dir(&s.library.as_ref().unwrap().dir.join("video"), &ck);
+    std::fs::create_dir_all(&vdir).unwrap();
+    // Video Catcher's picture at 1 s (its own bytes), as its import lists it
+    let vc = vdir.join(crate::video::frames::file_name(1000));
+    assert!(crate::video::ffmpeg::extract_frame(&v, 4000, 160, &vc).is_ok());
+    let vc_bytes = std::fs::read(&vc).unwrap();
+    let mut m = crate::video::frames::Manifest::new(&ck, &v.to_string_lossy(), Some(6000), "videocatcher");
+    m.frames.push(crate::video::frames::Frame {
+        ms: 1000,
+        file: crate::video::frames::file_name(1000),
+        bytes: vc_bytes.len() as u64,
+        origin: "videocatcher".into(),
+    });
+    m.save(&vdir).unwrap();
+    s.video.rev += 1;
+    let r = s.execute("video.frames", &json!({"force": true})).unwrap();
+    assert_eq!((r["cut"].as_u64(), r["kept"].as_u64()), (Some(2), Some(1)), "{r}");
+    assert_eq!(std::fs::read(&vc).unwrap(), vc_bytes, "Video Catcher's picture is untouched");
+    let m = crate::video::frames::Manifest::load(&vdir).unwrap();
+    assert_eq!(
+        m.frames.iter().map(|f| (f.ms, f.origin.as_str())).collect::<Vec<_>>(),
+        vec![(1000, "videocatcher"), (3000, "ffmpeg"), (5000, "ffmpeg")]
+    );
+    // again with force: LightCraft's own two are cut again, Video Catcher's is still kept
+    let r = s.execute("video.frames", &json!({"force": true})).unwrap();
+    assert_eq!((r["cut"].as_u64(), r["kept"].as_u64()), (Some(2), Some(1)), "{r}");
+    assert_eq!(std::fs::read(&vc).unwrap(), vc_bytes);
+    // a forced run stopped at once (in the background), then again stopped later: the list is whole
+    for _ in 0..3 {
+        s.execute("video.frames", &json!({"force": true, "every": 0.5, "background": true})).unwrap();
+        s.execute("video.cancel", &json!({})).unwrap();
+        while s.execute("video.status", &json!({})).unwrap()["job"]["running"] == true {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let m = crate::video::frames::Manifest::load(&vdir).expect("the list is readable after a stop");
+        for f in &m.frames {
+            assert!(vdir.join(&f.file).is_file(), "{} listed but missing", f.file);
+        }
+        assert!(m.frames.iter().any(|f| f.ms == 1000 && f.origin == "videocatcher"));
+        assert_eq!(std::fs::read(&vc).unwrap(), vc_bytes);
+        assert!(std::fs::read_dir(&vdir).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().ends_with(".part")), "no half-written file left");
+    }
+}
+
 #[cfg(feature = "people")]
 pub(crate) mod people {
     use super::*;
