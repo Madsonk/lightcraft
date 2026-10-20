@@ -61,7 +61,34 @@ mod ops {
 
 use std::path::PathBuf;
 
+#[cfg(feature = "search")]
+pub(crate) use ops::{embed_pictures, vectors_of};
 pub(crate) use ops::{index, near, semantic, status, tag};
+
+/// A picture to embed for search: a photo, or a picture cut out of a video.
+#[cfg(feature = "search")]
+pub(crate) struct Picture {
+    pub id: lightcraft_catalog::PhotoId,
+    pub key: u64,
+    pub source: crate::media::SourceRef,
+}
+
+/// The search-index key of a photo (`ms: None`) or of the picture of a video at `ms`: the search
+/// index's own hash of the same strings the face index uses (`<content key>` / `<content key>@<ms>`).
+#[cfg(feature = "search")]
+pub(crate) fn search_key(content_key: &str, ms: Option<u64>) -> u64 {
+    match ms {
+        Some(ms) => lightcraft_search::key_of(&format!("{content_key}@{ms}")),
+        None => lightcraft_search::key_of(content_key),
+    }
+}
+#[cfg(not(feature = "search"))]
+pub(crate) fn search_key(content_key: &str, ms: Option<u64>) -> u64 {
+    match ms {
+        Some(ms) => crate::video::frame_key(content_key, ms),
+        None => crate::video::item_key(content_key),
+    }
+}
 
 /// The model shown to the user and downloaded.
 pub const MODEL_NAME: &str = "SigLIP 2 base, patch 16, 224 px (Google)";

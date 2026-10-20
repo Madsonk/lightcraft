@@ -12,6 +12,7 @@ pub(crate) mod convert;
 pub(crate) mod cull;
 pub mod curves;
 pub(crate) mod denoise;
+mod describe;
 mod develop;
 pub mod dust;
 mod edit;
@@ -153,6 +154,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(people::specs());
         v.extend(places::specs());
         v.extend(video::specs());
+        v.extend(describe::specs());
         v.extend(convert::specs());
         v.extend(convert::edit_specs());
         v.extend(merge::specs());

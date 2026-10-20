@@ -54,6 +54,15 @@ pub struct Report {
     pub annotations_added: usize,
     pub annotations_unchanged: usize,
     pub over_budget: bool,
+    /// Videos of the database brought into the catalog (`createMissing`).
+    pub created: usize,
+    /// Videos of the database whose file is not there (offline share, moved).
+    pub offline: usize,
+    pub import_failed: Vec<String>,
+    /// People Video Catcher linked to moments: kept as hints, never as identities.
+    pub person_hints: usize,
+    /// Videos of the database that are a copy of another one (same fingerprint), matched to it.
+    pub duplicates: usize,
 }
 
 impl Report {
@@ -65,19 +74,58 @@ impl Report {
             "moments": self.moments, "momentsEmpty": self.moments_empty,
             "annotationsAdded": self.annotations_added, "annotationsUnchanged": self.annotations_unchanged,
             "overBudget": self.over_budget,
+            "created": self.created, "offline": self.offline, "importFailed": self.import_failed.len(),
+            "importFailedExamples": self.import_failed.iter().take(10).collect::<Vec<_>>(),
+            "personHints": self.person_hints, "duplicates": self.duplicates,
         })
     }
 }
 
 /// Import from the Video Catcher database `db` into the session's library.
-pub fn import(s: &mut crate::Session, db: &Path, dry: bool, max_bytes: u64) -> Result<Report, String> {
+pub fn import(s: &mut crate::Session, db: &Path, dry: bool, max_bytes: u64, create_missing: bool) -> Result<Report, String> {
     let root = super::cache_root(s).ok_or("the library is not on disk")?;
     let lib = s.library.as_ref().map(|l| l.dir.clone()).ok_or("no library")?;
-    let mut t = crate::lightroom_catalog::read_sqlite_tables(db, &["videos", "frames", "moments"])?;
-    let (videos, frame_rows, moments) =
-        (t.remove("videos").unwrap_or_default(), t.remove("frames").unwrap_or_default(), t.remove("moments").unwrap_or_default());
+    let mut t = crate::lightroom_catalog::read_sqlite_tables(db, &["videos", "frames", "moments", "persons", "moment_people"])?;
+    let mut take = |n: &str| t.remove(n).unwrap_or_default();
+    let (videos, frame_rows, moments, persons, moment_people) =
+        (take("videos"), take("frames"), take("moments"), take("persons"), take("moment_people"));
     if videos.is_empty() {
         return Err(format!("{} has no Video Catcher videos (table `videos` empty or missing)", db.display()));
+    }
+    let mut r = Report { videos: videos.len(), ..Default::default() };
+    // the database's videos the catalog lacks: imported by file (read only: ffprobe and three
+    // samples of each file), a batch at a time; files already catalogued are skipped, so an
+    // interrupted run simply resumes
+    if create_missing {
+        let known: std::collections::HashSet<String> =
+            s.catalog.photos().filter(|p| p.in_library()).filter_map(|p| super::source_path(p).map(str::to_string)).collect();
+        let mut todo = Vec::new();
+        for v in &videos {
+            let path = text(v, "path");
+            if path.is_empty() || known.contains(path) {
+                continue;
+            }
+            if std::fs::metadata(path).is_ok_and(|m| m.is_file()) {
+                todo.push(path.to_string());
+            } else {
+                r.offline += 1;
+            }
+        }
+        if dry {
+            r.created = todo.len();
+        } else {
+            for batch in todo.chunks(25) {
+                match s.execute("library.import", &json!({"paths": batch})) {
+                    Ok(v) => {
+                        r.created += v["imported"].as_array().map_or(0, Vec::len);
+                        for f in v["failed"].as_array().into_iter().flatten() {
+                            r.import_failed.push(f.to_string());
+                        }
+                    }
+                    Err(e) => r.import_failed.push(e.to_string()),
+                }
+            }
+        }
     }
     // catalog videos by path
     let mut by_path: HashMap<String, (PhotoId, String)> = HashMap::new();
@@ -87,7 +135,6 @@ pub fn import(s: &mut crate::Session, db: &Path, dry: bool, max_bytes: u64) -> R
             by_path.entry(path.to_lowercase()).or_insert_with(|| (p.id, crate::media::content_key(p)));
         }
     }
-    let mut r = Report { videos: videos.len(), ..Default::default() };
     // Video Catcher id → content key
     let mut vc: HashMap<i64, String> = HashMap::new();
     for v in &videos {
@@ -98,6 +145,24 @@ pub fn import(s: &mut crate::Session, db: &Path, dry: bool, max_bytes: u64) -> R
                 vc.insert(id, ck.clone());
             }
             None => r.unmatched.push(path.to_string()),
+        }
+    }
+    // a file Video Catcher knows twice (same fingerprint, two paths) is catalogued once (the import
+    // skips a duplicate): its other copy's moments belong to the same video
+    let by_fp: HashMap<String, String> = videos
+        .iter()
+        .filter_map(|v| Some((text(v, "fingerprint").to_string(), vc.get(&int(v, "id")?)?.clone())))
+        .filter(|(f, _)| !f.is_empty())
+        .collect();
+    for v in &videos {
+        let Some(id) = int(v, "id") else { continue };
+        if vc.contains_key(&id) {
+            continue;
+        }
+        if let Some(ck) = by_fp.get(text(v, "fingerprint")) {
+            r.duplicates += 1;
+            r.unmatched.retain(|p| p != text(v, "path"));
+            vc.insert(id, ck.clone());
         }
     }
     // pictures
@@ -155,6 +220,16 @@ pub fn import(s: &mut crate::Session, db: &Path, dry: bool, max_bytes: u64) -> R
     if r.frames_copied > 0 && !dry {
         s.video.rev += 1;
     }
+    // people Video Catcher put on moments: hints only (its names, its matches), never identities;
+    // who is there comes from LightCraft's own face index
+    let names: HashMap<i64, String> = persons.iter().filter_map(|p| Some((int(p, "id")?, text(p, "name").to_string()))).collect();
+    let mut hints: HashMap<i64, Vec<String>> = HashMap::new();
+    for mp in &moment_people {
+        if let (Some(m), Some(name)) = (int(mp, "moment_id"), int(mp, "person_id").and_then(|p| names.get(&p))) {
+            hints.entry(m).or_default().push(format!("videocatcher:{name}"));
+            r.person_hints += 1;
+        }
+    }
     // moments → annotations
     let mut store = Store::open(Some(&lib));
     let now = (s.clock)();
@@ -180,6 +255,7 @@ pub fn import(s: &mut crate::Session, db: &Path, dry: bool, max_bytes: u64) -> R
         // a person confirmed it in Video Catcher; anything else stays a candidate
         a.status = if text(mo, "status") == "confirmed" { Status::Confirmed } else { Status::Candidate };
         a.origin = int(mo, "id").map(|id| format!("videocatcher:moment:{id}"));
+        a.hints = int(mo, "id").and_then(|id| hints.get(&id)).cloned().unwrap_or_default();
         if store.get(ck, Some(at), "videocatcher").is_some_and(|old| old.same_text(&a)) {
             r.annotations_unchanged += 1;
             continue;

@@ -12,6 +12,12 @@
 //! - **Status**: `candidate` (written by a program: Video Catcher, a model) or `confirmed` (a
 //!   person said yes). A program never writes `confirmed`.
 
+pub mod ops;
+pub mod search;
+pub mod suggest;
+
+pub use ops::Describe;
+
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -64,6 +70,75 @@ pub struct Annotation {
     /// When it was written (ISO 8601).
     #[serde(default)]
     pub at: String,
+    /// A program's confidence in its proposal (0 – 1), if it gives one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<f32>,
+    /// This line takes the slot's annotation back (`describe.delete`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deleted: bool,
+    /// What a source said about who is there (`videocatcher:<name>`): a hint, never an identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hints: Vec<String>,
+}
+
+/// Who writes what a person typed.
+pub const MANUAL: &str = "manual";
+
+/// What a photo or a moment shows, all sources together: what the person typed wins, field by
+/// field, over the programs' proposals (which stay apart, as in Video Catcher: value vs `machine_*`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Effective {
+    pub key: String,
+    pub item: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ms: Option<u64>,
+    pub scene: String,
+    pub action: String,
+    pub description: String,
+    /// `confirmed` only when a person confirmed it.
+    pub status: Status,
+    /// Where each field comes from (`manual`, `videocatcher`, `siglip`…).
+    pub from: Vec<String>,
+    /// The programs' proposals, as they wrote them.
+    pub proposals: Vec<Annotation>,
+}
+
+/// Lower case, without accents, every run of other characters one space (for matching typed words
+/// against annotations: « Conduit » finds « conduite », « Éclairage » finds « eclairage »).
+pub fn fold(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut space = true;
+    for c in s.chars().flat_map(char::to_lowercase) {
+        let c = match c {
+            'à' | 'á' | 'â' | 'ä' | 'ã' | 'å' => 'a',
+            'ç' => 'c',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'î' | 'ï' | 'í' | 'ì' => 'i',
+            'ô' | 'ö' | 'ó' | 'ò' | 'õ' => 'o',
+            'û' | 'ü' | 'ú' | 'ù' => 'u',
+            'ÿ' => 'y',
+            'ñ' => 'n',
+            'œ' => {
+                out.push_str("oe");
+                space = false;
+                continue;
+            }
+            'æ' => {
+                out.push_str("ae");
+                space = false;
+                continue;
+            }
+            c => c,
+        };
+        if c.is_alphanumeric() {
+            out.push(c);
+            space = false;
+        } else if !space {
+            out.push(' ');
+            space = true;
+        }
+    }
+    out.trim_end().to_string()
 }
 
 fn clip(s: &str) -> String {
@@ -92,6 +167,9 @@ impl Annotation {
             source: source.trim().into(),
             origin: None,
             at: at.into(),
+            score: None,
+            deleted: false,
+            hints: Vec::new(),
         }
     }
 
@@ -157,21 +235,64 @@ impl Store {
         }
     }
 
-    /// Every annotation (the latest of each `(item, ms, source)`).
-    pub fn all(&self) -> &[Annotation] {
-        &self.items
+    /// Every annotation (the latest of each `(item, ms, source)`, deleted ones left out).
+    pub fn all(&self) -> Vec<&Annotation> {
+        self.items.iter().filter(|a| !a.deleted).collect()
     }
 
     /// The annotations of a catalog item (a photo, or every moment of a video), in time order.
     pub fn of_item(&self, item: &str) -> Vec<&Annotation> {
-        let mut v: Vec<&Annotation> = self.items.iter().filter(|a| a.item == item).collect();
+        let mut v: Vec<&Annotation> = self.items.iter().filter(|a| a.item == item && !a.deleted).collect();
         v.sort_by_key(|a| a.ms);
         v
     }
 
     /// The annotation `source` wrote for this slot, if any.
     pub fn get(&self, item: &str, ms: Option<u64>, source: &str) -> Option<&Annotation> {
-        self.by_slot.get(&(item.to_string(), ms, source.to_string())).and_then(|i| self.items.get(*i))
+        self.by_slot.get(&(item.to_string(), ms, source.to_string())).and_then(|i| self.items.get(*i)).filter(|a| !a.deleted)
+    }
+
+    /// The moments (`(item, ms)`) that have an annotation.
+    pub fn moments(&self) -> Vec<(String, Option<u64>)> {
+        let mut seen = std::collections::HashSet::new();
+        self.items.iter().filter(|a| !a.deleted).map(|a| (a.item.clone(), a.ms)).filter(|m| seen.insert(m.clone())).collect()
+    }
+
+    /// What the moment shows, every source together ([`Effective`]); `None` when nothing is written.
+    pub fn effective(&self, item: &str, ms: Option<u64>) -> Option<Effective> {
+        let all: Vec<&Annotation> = self.items.iter().filter(|a| a.item == item && a.ms == ms && !a.deleted).collect();
+        let first = all.first()?;
+        let manual = all.iter().find(|a| a.source == MANUAL);
+        let mut proposals: Vec<&Annotation> = all.iter().copied().filter(|a| a.source != MANUAL).collect();
+        // confirmed ones first, then Video Catcher's descriptions (written from the whole moment)
+        // before a zero-shot label, then the latest
+        let rank = |a: &Annotation| (a.status != Status::Confirmed, a.source != "videocatcher");
+        proposals.sort_by(|a, b| rank(a).cmp(&rank(b)).then(b.at.cmp(&a.at)));
+        let mut e = Effective { key: first.key.clone(), item: item.into(), ms, ..Default::default() };
+        let pick = |f: fn(&Annotation) -> &str| -> (String, Option<String>) {
+            if let Some(m) = manual.filter(|m| !f(m).is_empty()) {
+                return (f(m).to_string(), Some(MANUAL.to_string()));
+            }
+            proposals.iter().find(|p| !f(p).is_empty()).map_or((String::new(), None), |p| (f(p).to_string(), Some(p.source.clone())))
+        };
+        let mut from = Vec::new();
+        for (slot, f) in [
+            (&mut e.scene, (|a: &Annotation| a.scene.as_str()) as fn(&Annotation) -> &str),
+            (&mut e.action, |a| a.action.as_str()),
+            (&mut e.description, |a| a.description.as_str()),
+        ] {
+            let (v, src) = pick(f);
+            *slot = v;
+            if let Some(src) = src
+                && !from.contains(&src)
+            {
+                from.push(src);
+            }
+        }
+        e.from = from;
+        e.status = if manual.is_some_and(|m| m.status == Status::Confirmed) { Status::Confirmed } else { Status::Candidate };
+        e.proposals = proposals.into_iter().cloned().collect();
+        Some(e)
     }
 
     /// Append annotations (kept in memory and written to the file, all together).

@@ -242,6 +242,8 @@ pub struct Session {
     pub places: places::Places,
     /// Videos: the pictures cut out of them (`<library>/video/`).
     pub video: video::Videos,
+    /// Annotations: undo steps and the proposal run (`<library>/describe/`).
+    pub describe: describe::Describe,
     /// Selected spot (Remove panel), by index into the active photo's spots.
     pub active_spot: Option<usize>,
     /// The persistent library this session writes to (`None` = in-memory only).
@@ -353,6 +355,7 @@ impl Session {
             people: people::People::default(),
             places: places::Places::default(),
             video: video::Videos::default(),
+            describe: describe::Describe::default(),
             active_spot: None,
             library: None,
             library_identity: Arc::new(()),
@@ -979,6 +982,8 @@ mod tests_autoseg;
 mod tests_color;
 #[cfg(test)]
 mod tests_denoise;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_describe;
 #[cfg(test)]
 mod tests_export;
 #[cfg(test)]

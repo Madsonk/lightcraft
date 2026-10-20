@@ -64,13 +64,63 @@ fn items_for(s: &mut Session, keyed: &[(PhotoId, u64)], dir: Option<std::path::P
     Ok((items, total))
 }
 
+/// Embed the pictures that have no vector yet, waiting for it; how many were embedded.
+pub(crate) fn embed_pictures(searcher: &Searcher, dir: Option<std::path::PathBuf>, pics: Vec<super::Picture>) -> std::result::Result<usize, String> {
+    let mut seen = HashSet::new();
+    let missing: Vec<super::Picture> =
+        searcher.with_store(dir.clone(), |st| pics.into_iter().filter(|p| !st.vectors.contains(p.key) && seen.insert(p.key)).collect())?;
+    let n = missing.len();
+    if n > 0 {
+        let items = missing.into_iter().map(|p| Item { id: p.id, key: p.key, source: p.source, want_vector: true, want_hash: false }).collect();
+        searcher.start_job(dir, items, false)?;
+    }
+    Ok(n)
+}
+
+/// The vectors the search index has for `keys`.
+pub(crate) fn vectors_of(searcher: &Searcher, dir: Option<std::path::PathBuf>, keys: &[u64]) -> std::result::Result<HashMap<u64, Vec<f32>>, String> {
+    searcher.with_store(dir, |st| keys.iter().filter_map(|k| st.vectors.get(*k).map(|v| (*k, v.to_vec()))).collect())
+}
+
+/// The pictures cut out of the videos among `ids` (default: the library's), for the search index.
+fn frame_items(s: &mut Session, p: &Value, dir: Option<std::path::PathBuf>, force: bool) -> Result<Vec<Item>> {
+    let ids: Vec<PhotoId> = if p.get("ids").is_some() { s.targets(p) } else { s.catalog.photos().filter(|q| q.in_library()).map(|q| q.id).collect() };
+    let loader = s.media.file_loader.clone();
+    let mut items = Vec::new();
+    let videos: Vec<PhotoId> = ids.into_iter().filter(|i| s.catalog.photo(*i).is_some_and(|q| q.kind == MediaKind::Video)).collect();
+    for id in videos {
+        let Some(ck) = s.catalog.photo(id).map(|q| crate::media::content_key(q)) else { continue };
+        for (_, f) in s.frames_of_video(id) {
+            let source = crate::media::SourceRef::File {
+                path: f.file.display().to_string(),
+                max_edge: SourceLevel::Thumb.max_edge(),
+                loader: loader.clone(),
+                fallback: None,
+                denoise: None,
+            };
+            items.push(Item { id, key: super::search_key(&ck, Some(f.ms)), source, want_vector: true, want_hash: false });
+        }
+    }
+    let have: HashSet<u64> =
+        s.searcher.with_store(dir, |st| items.iter().map(|i| i.key).filter(|k| st.vectors.contains(*k)).collect()).map_err(other)?;
+    Ok(items.into_iter().filter(|i| force || !have.contains(&i.key)).collect())
+}
+
 pub fn index(s: &mut Session, p: &Value) -> Result<Value> {
     s.searcher.model_dir().map_err(other)?;
     let (force, background) = (bool_or(p, "force", false), bool_or(p, "background", false));
     let ids = scope(s, p);
     let dir = super::Searcher::store_dir(s.library.as_ref());
     let kd = keyed(s, &ids);
-    let (items, distinct) = items_for(s, &kd, dir.clone(), true, force)?;
+    let (mut items, distinct) = items_for(s, &kd, dir.clone(), true, force)?;
+    // and the pictures cut out of videos (video.frames), each under its moment's key
+    let mut video_frames = 0;
+    let photos_queued = items.len();
+    if bool_or(p, "videos", true) {
+        let f = frame_items(s, p, dir.clone(), force)?;
+        video_frames = f.len();
+        items.extend(f);
+    }
     let queued = items.len();
     if queued > 0 {
         s.searcher.start_job(dir.clone(), items, background).map_err(other)?;
@@ -79,7 +129,7 @@ pub fn index(s: &mut Session, p: &Value) -> Result<Value> {
     let vectors = s.searcher.with_store(dir, |st| st.vectors.len()).map_err(other)?;
     Ok(json!({
         "queued": queued,
-        "alreadyIndexed": distinct - queued.min(distinct),
+        "alreadyIndexed": distinct - photos_queued.min(distinct),
         "background": background && queued > 0,
         "done": if background { Value::Null } else { json!(st.done) },
         "failed": st.failed,
@@ -89,6 +139,7 @@ pub fn index(s: &mut Session, p: &Value) -> Result<Value> {
         "secondsPerPhoto": if st.done > 0 && !background { json!(st.seconds / st.done as f64) } else { Value::Null },
         "error": st.error,
         "vectors": vectors,
+        "videoFrames": video_frames,
     }))
 }
 

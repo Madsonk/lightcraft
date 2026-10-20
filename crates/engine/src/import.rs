@@ -97,6 +97,10 @@ pub struct ImportOptions {
     pub metadata_preset: Option<String>,
     /// Copy: raws are copied as DNG (Copy as DNG).
     pub convert_dng: bool,
+    /// Folders: take the videos in them too ([`crate::video::EXTENSIONS`]). Off by default: a
+    /// photo library is not filled with videos unless asked. Videos named one by one are always
+    /// imported.
+    pub videos: bool,
 }
 
 /// How copies are filed in the destination. The date is the capture time, else the time of the
@@ -326,6 +330,12 @@ pub fn expand(paths: &[String], skip: Option<&Path>) -> Vec<String> {
 
 /// [`expand`] with the walk bounded by `limits` → (files, whether a walk stopped at a bound).
 pub fn expand_within(paths: &[String], skip: Option<&Path>, limits: crate::walk::Limits) -> (Vec<String>, bool) {
+    expand_kinds(paths, skip, limits, false)
+}
+
+/// [`expand_within`], taking the videos of folders too when `videos`.
+pub fn expand_kinds(paths: &[String], skip: Option<&Path>, limits: crate::walk::Limits, videos: bool) -> (Vec<String>, bool) {
+    let keep = |p: &Path| is_supported(p) || (videos && crate::video::is_video_path(&p.to_string_lossy()));
     let mut out = Vec::new();
     let mut truncated = false;
     for p in paths {
@@ -334,7 +344,7 @@ pub fn expand_within(paths: &[String], skip: Option<&Path>, limits: crate::walk:
             continue;
         }
         if p.is_dir() {
-            let w = crate::walk::files_in(p, skip, limits, is_supported);
+            let w = crate::walk::files_in(p, skip, limits, keep);
             if w.truncated {
                 log::warn!(
                     "import: stopped looking in {} after {} entries (limits: {} entries, {} folder levels)",
@@ -817,7 +827,7 @@ impl ImportJob {
     /// Expand `paths` (folders recursively, the library's own folder skipped) into the files an
     /// import would handle; counted in [`ImportJob::total`].
     pub fn expand(&self, paths: &[String]) -> Vec<String> {
-        let files = expand(paths, self.lib_dir.as_deref());
+        let files = expand_kinds(paths, self.lib_dir.as_deref(), crate::walk::Limits::default(), self.opts.videos).0;
         self.total.fetch_add(files.len(), std::sync::atomic::Ordering::Relaxed);
         files
     }

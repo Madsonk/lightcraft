@@ -1607,6 +1607,30 @@ pub fn people_at(s: &mut Session, key: u64) -> Vec<Value> {
     .unwrap_or_default()
 }
 
+/// The people the user named, and the keys (photos, moments of videos) of their confirmed faces:
+/// key → `(person id, name)`. For "who is there" in annotations and `describe.search`.
+pub fn named_by_key(s: &mut Session) -> (Vec<(u32, String)>, HashMap<u64, Vec<(u32, String)>>) {
+    with_slot(s, |sl| {
+        let mut people = Vec::new();
+        let mut by_key: HashMap<u64, Vec<(u32, String)>> = HashMap::new();
+        for p in &sl.state.persons {
+            let Some(name) = p.name.clone() else { continue };
+            people.push((p.id, name.clone()));
+            for f in &p.faces {
+                if sl.state.ignored.contains(f) || sl.store.slot(*f).is_none() {
+                    continue;
+                }
+                let v = by_key.entry(f.0).or_default();
+                if !v.iter().any(|(id, _)| *id == p.id) {
+                    v.push((p.id, name.clone()));
+                }
+            }
+        }
+        (people, by_key)
+    })
+    .unwrap_or_default()
+}
+
 /// [`inject`] under any key, e.g. a picture of a video ([`crate::video::frame_key`]).
 pub fn inject_keys(s: &mut Session, records: Vec<(u64, Vec<(Vec<f32>, [f32; 4])>)>) -> std::result::Result<(), String> {
     use lightcraft_people::store::FaceMeta;

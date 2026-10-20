@@ -85,6 +85,87 @@ pub struct Videos {
     cache: Option<(u64, Arc<HashMap<u64, FrameAt>>)>,
     /// Changes whenever pictures are added or removed.
     pub rev: u64,
+    /// The `video.frames` run in progress (or the last one).
+    pub job: Arc<FramesJob>,
+}
+
+/// A `video.frames` run: progress, what each video gave, and its stop button.
+#[derive(Default)]
+pub struct FramesJob {
+    pub running: std::sync::atomic::AtomicBool,
+    pub cancel: std::sync::atomic::AtomicBool,
+    pub total: std::sync::atomic::AtomicU64,
+    pub done: std::sync::atomic::AtomicU64,
+    /// Runs finished (the pictures of the library may have changed).
+    pub runs: std::sync::atomic::AtomicU64,
+    results: std::sync::Mutex<(Vec<(u64, frames::Cut)>, Option<String>)>,
+}
+
+impl FramesJob {
+    fn lock(&self) -> std::sync::MutexGuard<'_, (Vec<(u64, frames::Cut)>, Option<String>)> {
+        self.results.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Start a run of `total` videos; false when one is running.
+    pub fn begin(&self, total: usize) -> bool {
+        use std::sync::atomic::Ordering::SeqCst;
+        if self.running.swap(true, SeqCst) {
+            return false;
+        }
+        self.cancel.store(false, SeqCst);
+        self.total.store(total as u64, SeqCst);
+        self.done.store(0, SeqCst);
+        *self.lock() = (Vec::new(), None);
+        true
+    }
+
+    pub fn record(&self, id: u64, cut: frames::Cut) {
+        self.done.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.lock().0.push((id, cut));
+    }
+
+    pub fn finish(&self, error: Option<String>) {
+        use std::sync::atomic::Ordering::SeqCst;
+        self.lock().1 = error;
+        self.runs.fetch_add(1, SeqCst);
+        self.running.store(false, SeqCst);
+    }
+
+    /// Ask the run to stop; true when one was running.
+    pub fn cancel_run(&self) -> bool {
+        let running = self.running.load(std::sync::atomic::Ordering::SeqCst);
+        if running {
+            self.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        running
+    }
+
+    /// What the run did (each video's result with `results`).
+    pub fn report(&self, results: bool) -> serde_json::Value {
+        use std::sync::atomic::Ordering::SeqCst;
+        let g = self.lock();
+        let r = &g.0;
+        let sum = |f: fn(&frames::Cut) -> usize| r.iter().map(|(_, c)| f(c)).sum::<usize>();
+        let mut v = serde_json::json!({
+            "running": self.running.load(SeqCst), "cancelled": self.cancel.load(SeqCst),
+            "total": self.total.load(SeqCst), "done": self.done.load(SeqCst), "videos": r.len(),
+            "cut": sum(|c| c.cut), "kept": sum(|c| c.kept), "failed": sum(|c| c.failed),
+            "bytes": r.iter().map(|(_, c)| c.bytes).sum::<u64>(), "overBudget": r.iter().any(|(_, c)| c.over_budget),
+            "unreadable": r.iter().filter(|(_, c)| c.error.is_some() && c.cut + c.kept == 0).map(|(i, _)| *i).collect::<Vec<_>>(),
+            "error": g.1,
+        });
+        if results {
+            v["results"] = r
+                .iter()
+                .map(|(id, c)| {
+                    let mut x = serde_json::json!(c);
+                    x["id"] = serde_json::json!(id);
+                    x
+                })
+                .collect();
+        }
+        v
+    }
 }
 
 fn signature(s: &crate::Session, root: &Path, rev: u64) -> u64 {
@@ -92,6 +173,7 @@ fn signature(s: &crate::Session, root: &Path, rev: u64) -> u64 {
     let mut h = siphasher::sip::SipHasher13::new();
     h.write(root.as_os_str().as_encoded_bytes());
     h.write_u64(rev);
+    h.write_u64(s.video.job.runs.load(std::sync::atomic::Ordering::SeqCst));
     for p in s.catalog.photos().filter(|p| p.in_library() && p.kind == MediaKind::Video) {
         h.write_u64(p.id.0);
         h.write(crate::media::content_key(p).as_bytes());

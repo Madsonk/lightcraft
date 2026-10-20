@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use crate::Session;
 
-fn temp_dir(tag: &str) -> PathBuf {
+pub(crate) fn temp_dir(tag: &str) -> PathBuf {
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let d = std::env::temp_dir().join(format!("lc-video-{tag}-{}-{}", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
     let _ = std::fs::remove_dir_all(&d);
@@ -19,7 +19,7 @@ fn temp_dir(tag: &str) -> PathBuf {
     d
 }
 
-fn have_ffmpeg() -> bool {
+pub(crate) fn have_ffmpeg() -> bool {
     let ok = crate::video::ffmpeg::ffmpeg().is_some() && crate::video::ffmpeg::ffprobe().is_some();
     if !ok {
         eprintln!("skipped: FFmpeg is not installed");
@@ -28,7 +28,7 @@ fn have_ffmpeg() -> bool {
 }
 
 /// A synthetic video (FFmpeg's test pattern), `secs` long, with or without a video track.
-fn make_video(path: &Path, secs: u32, video: bool) {
+pub(crate) fn make_video(path: &Path, secs: u32, video: bool) {
     let ff = crate::video::ffmpeg::ffmpeg().unwrap();
     let mut c = Command::new(ff);
     c.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i"]);
@@ -41,7 +41,7 @@ fn make_video(path: &Path, secs: u32, video: bool) {
     assert!(st.success(), "ffmpeg could not make {}", path.display());
 }
 
-fn library() -> (Session, PathBuf) {
+pub(crate) fn library() -> (Session, PathBuf) {
     let dir = temp_dir("lib");
     let mut s = Session::new().with_fs();
     s.people.dir = Some(temp_dir("models"));
@@ -49,11 +49,11 @@ fn library() -> (Session, PathBuf) {
     (s, dir)
 }
 
-fn import(s: &mut Session, path: &Path) -> Value {
+pub(crate) fn import(s: &mut Session, path: &Path) -> Value {
     s.execute("library.import", &json!({"paths": [path.to_string_lossy()]})).unwrap()
 }
 
-fn ids(r: &Value) -> Vec<PhotoId> {
+pub(crate) fn ids(r: &Value) -> Vec<PhotoId> {
     r["imported"].as_array().unwrap().iter().filter_map(Value::as_u64).map(PhotoId).collect()
 }
 
@@ -151,18 +151,18 @@ fn pictures_of_a_video_are_cut_cached_keyed_and_resumed() {
 }
 
 #[cfg(feature = "people")]
-mod people {
+pub(crate) mod people {
     use super::*;
     use crate::people::ops::{inject, inject_keys};
 
     const DIM: usize = lightcraft_people::DIM;
 
-    fn unit(v: Vec<f32>) -> Vec<f32> {
+    pub(crate) fn unit(v: Vec<f32>) -> Vec<f32> {
         let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
         v.into_iter().map(|x| x / n).collect()
     }
 
-    fn rnd(seed: u64) -> Vec<f32> {
+    pub(crate) fn rnd(seed: u64) -> Vec<f32> {
         let mut s = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         unit(
             (0..DIM)
@@ -174,12 +174,12 @@ mod people {
         )
     }
 
-    fn face(who: u64, n: u64) -> Vec<f32> {
+    pub(crate) fn face(who: u64, n: u64) -> Vec<f32> {
         let (a, b) = (rnd(100 + who), rnd(9000 + who * 31 + n));
         unit(a.iter().zip(&b).map(|(x, y)| x + 0.5 * y).collect())
     }
 
-    fn write_png(path: &Path, seed: u8) {
+    pub(crate) fn write_png(path: &Path, seed: u8) {
         let data: Vec<[u8; 4]> = (0..64 * 48).map(|i| [(i % 64) as u8 * 3, (i / 64) as u8 * 4, seed, 255]).collect();
         let img = lightcraft_raster::Rgba8 { width: 64, height: 48, data };
         let bytes = lightcraft_codecs::encode_png(&lightcraft_codecs::EncodeImage::rgba8(&img), &lightcraft_codecs::EncodeMeta::default()).unwrap();
@@ -322,7 +322,7 @@ mod people {
         assert_eq!(d["total"], 1, "{d}");
         let a = &d["annotations"][0];
         assert_eq!(
-            (a["ms"].as_u64(), a["scene"].as_str(), a["status"].as_str(), a["source"].as_str()),
+            (a["ms"].as_u64(), a["scene"].as_str(), a["status"].as_str(), a["from"][0].as_str()),
             (Some(250), Some("Salle de danse"), Some("candidate"), Some("videocatcher")),
             "{a}"
         );
