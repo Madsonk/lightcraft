@@ -63,6 +63,8 @@ pub struct Report {
     pub person_hints: usize,
     /// Videos of the database that are a copy of another one (same fingerprint), matched to it.
     pub duplicates: usize,
+    /// A dry run with `createMissing`: the files that would be imported.
+    pub missing_paths: Vec<String>,
 }
 
 impl Report {
@@ -76,7 +78,7 @@ impl Report {
             "overBudget": self.over_budget,
             "created": self.created, "offline": self.offline, "importFailed": self.import_failed.len(),
             "importFailedExamples": self.import_failed.iter().take(10).collect::<Vec<_>>(),
-            "personHints": self.person_hints, "duplicates": self.duplicates,
+            "personHints": self.person_hints, "duplicates": self.duplicates, "missingPaths": self.missing_paths,
         })
     }
 }
@@ -113,6 +115,7 @@ pub fn import(s: &mut crate::Session, db: &Path, dry: bool, max_bytes: u64, crea
         }
         if dry {
             r.created = todo.len();
+            r.missing_paths = todo.clone();
         } else {
             for batch in todo.chunks(25) {
                 match s.execute("library.import", &json!({"paths": batch})) {

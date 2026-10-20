@@ -1600,11 +1600,16 @@ pub fn people_at(s: &mut Session, key: u64) -> Vec<Value> {
             .filter(|m| !sl.state.ignored.contains(&m.face()))
             .map(|m| {
                 let who = sl.state.person_of(m.face());
-                json!({"face": face_id(m.face()), "person": who.map(|x| format!("p:{}", x.id)), "name": who.and_then(|x| x.name.clone()), "unknown": sl.state.is_unknown(m.face())})
+                json!({"face": face_id(m.face()), "rect": m.rect, "person": who.map(|x| format!("p:{}", x.id)), "name": who.and_then(|x| x.name.clone()), "unknown": sl.state.is_unknown(m.face())})
             })
             .collect()
     })
     .unwrap_or_default()
+}
+
+/// How many of `keys` (photos, pictures of videos) the face index has looked at.
+pub fn analysed_count(s: &mut Session, keys: &[u64]) -> usize {
+    with_slot(s, |sl| keys.iter().filter(|k| sl.store.has_photo(**k)).count()).unwrap_or(0)
 }
 
 /// The people the user named, and the keys (photos, moments of videos) of their confirmed faces:

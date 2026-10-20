@@ -255,3 +255,66 @@ fn video_catchers_videos_missing_from_the_catalog_are_imported_when_asked() {
     let r = s.execute("video.importVideoCatcher", &json!({"db": db.to_string_lossy(), "createMissing": true})).unwrap();
     assert_eq!((r["created"].as_u64(), r["annotationsAdded"].as_u64()), (Some(0), Some(0)), "{r}");
 }
+
+/// What the Videos view draws: the list (people, analysis, filters), a video's moments, a photo's
+/// one moment, and the player's command line.
+#[cfg(feature = "people")]
+#[test]
+fn the_videos_view_data_lists_people_moments_and_the_player() {
+    use crate::people::ops::inject_keys;
+    if !have_ffmpeg() {
+        return;
+    }
+    let (mut s, dir) = library();
+    write_png(&dir.join("p.png"), 10);
+    let photo = ids(&import(&mut s, &dir.join("p.png")))[0];
+    let v = dir.join("clip.mp4");
+    make_video(&v, 6, true);
+    let vid = ids(&import(&mut s, &v))[0];
+    let l = s.execute("video.list", &json!({})).unwrap();
+    assert_eq!((l["total"].as_u64(), l["videos"][0]["frames"].as_u64(), l["videos"][0]["moments"].as_u64()), (Some(1), Some(0), Some(0)), "{l}");
+    s.execute("video.frames", &json!({})).unwrap();
+    let item = ck(&s, vid);
+    inject_keys(
+        &mut s,
+        vec![
+            (crate::video::frame_key(&item, 1000), vec![(face(1, 0), [0.2, 0.2, 0.4, 0.5])]),
+            (crate::video::frame_key(&item, 3000), vec![(face(1, 1), [0.2, 0.2, 0.4, 0.5])]),
+        ],
+    )
+    .unwrap();
+    let g = s.execute("people.list", &json!({})).unwrap()["groups"][0]["id"].as_str().unwrap().to_string();
+    s.execute("people.name", &json!({"group": g, "name": "Awa"})).unwrap();
+    s.execute("describe.set", &json!({"id": vid.0, "ms": 3000, "action": "danse"})).unwrap();
+    let l = s.execute("video.list", &json!({})).unwrap();
+    let r = &l["videos"][0];
+    assert_eq!(
+        (r["frames"].as_u64(), r["facesLooked"].as_u64(), r["moments"].as_u64(), r["toConfirm"].as_u64()),
+        (Some(3), Some(2), Some(1), Some(1)),
+        "{r}"
+    );
+    assert_eq!(r["people"], json!(["Awa"]));
+    assert!(Path::new(r["poster"].as_str().unwrap()).is_file());
+    assert_eq!(s.execute("video.list", &json!({"person": "awa"})).unwrap()["total"], 1);
+    assert_eq!(s.execute("video.list", &json!({"person": "Bao"})).unwrap()["total"], 0);
+    assert_eq!(s.execute("video.list", &json!({"described": false})).unwrap()["total"], 0);
+    assert_eq!(s.execute("video.list", &json!({"status": "confirmed"})).unwrap()["total"], 0);
+    s.execute("describe.confirm", &json!({"id": vid.0, "ms": 3000})).unwrap();
+    assert_eq!(s.execute("video.list", &json!({"status": "confirmed"})).unwrap()["total"], 1);
+    assert_eq!(s.execute("video.list", &json!({"status": "toConfirm"})).unwrap()["total"], 0);
+    let m = s.execute("video.moments", &json!({"id": vid.0})).unwrap();
+    let ms: Vec<u64> = m["moments"].as_array().unwrap().iter().filter_map(|x| x["ms"].as_u64()).collect();
+    assert_eq!(ms, vec![1000, 3000, 5000], "{m}");
+    assert_eq!(m["moments"][1]["people"], json!(["Awa"]));
+    assert_eq!(m["moments"][1]["annotation"]["status"], "confirmed");
+    assert!(m["moments"][0]["faces"][0]["rect"].is_array());
+    let p = s.execute("video.moments", &json!({"id": photo.0})).unwrap();
+    assert_eq!((p["video"].as_bool(), p["moments"].as_array().unwrap().len()), (Some(false), 1), "{p}");
+    assert!(s.execute("video.moments", &json!({"id": 999_999})).is_err());
+    let o = s.execute("video.open", &json!({"id": vid.0, "ms": 83_503, "dryRun": true})).unwrap();
+    assert_eq!(o["timecode"], "1:23");
+    if o["atTime"] == true {
+        assert!(o["args"].as_array().unwrap().iter().any(|a| a == "--start-time=83"), "{o}");
+    }
+    assert!(s.execute("video.open", &json!({"id": photo.0, "dryRun": true})).is_err(), "a photo is not played");
+}

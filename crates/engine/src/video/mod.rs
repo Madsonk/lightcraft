@@ -18,6 +18,7 @@ pub mod ffmpeg;
 pub mod frames;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod videocatcher;
+pub mod views;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -300,6 +301,21 @@ pub fn probe_for_import(_: &str) -> Result<crate::media::ProbeInfo, String> {
 #[cfg(target_arch = "wasm32")]
 pub fn poster_bytes(_: &str, _: usize) -> Result<Vec<u8>, String> {
     Err("videos are not supported in this build".into())
+}
+
+/// A picture of a moment (a JPEG of `<library>/video/`) as sRGB RGBA bytes, at most `max` pixels
+/// on its long side, for a frontend to show: `(width, height, pixels)`. `None` when it cannot be
+/// read (missing, damaged).
+pub fn picture_rgba(path: &Path, max: u32) -> Option<(usize, usize, Vec<u8>)> {
+    let len = std::fs::metadata(path).ok()?.len();
+    if len == 0 || len > 64 << 20 {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    let d = lightcraft_codecs::decode(&bytes, lightcraft_codecs::DecodeOptions { max_size: Some((max.max(1), max.max(1))), ..Default::default() })
+        .ok()?;
+    let img = d.to_srgb8();
+    Some((img.width, img.height, img.as_bytes()))
 }
 
 #[cfg(test)]

@@ -38,6 +38,33 @@ pub fn specs() -> Vec<CommandSpec> {
             frames
         ),
         cmd!(
+            query "video.list",
+            "Videos",
+            [],
+            None,
+            "{person?: name, described?: bool, status?: confirmed | toConfirm, text?} — the library's videos with who is in them (named people of their pictures), how far their analysis went (pictures cut, pictures looked at for faces, moments described, confirmed) → {videos: [{id, name, duration, captured, frames, facesLooked, people, moments, confirmed, toConfirm, poster}], people, total}",
+            always,
+            crate::video::views::list
+        ),
+        cmd!(
+            query "video.moments",
+            "Moments of a Video",
+            [],
+            None,
+            "{id} — a video's pictures and described moments in time order (a photo: its one moment), each with its picture, its faces and who they are, and its description (value, status, sources, proposals) → {id, video, name, duration, moments: [{ms, frame, faces, people, annotation}]}",
+            always,
+            crate::video::views::moments
+        ),
+        cmd!(
+            query "video.open",
+            "Play Video",
+            [],
+            None,
+            "{id, ms?, dryRun?} — open the video in the system's player at `ms` (VLC when installed, `--start-time`; otherwise the default player, from the start) → {program, args, atTime, timecode}",
+            always,
+            crate::video::views::open
+        ),
+        cmd!(
             query "video.cancel",
             "Stop Cutting Pictures",
             [],
