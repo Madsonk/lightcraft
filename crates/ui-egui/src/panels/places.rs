@@ -220,7 +220,7 @@ fn actions(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &mut PlacesUi, sum: &
     heading(ui, "Name a place");
     let sel = selected(app);
     ui.horizontal(|ui| {
-        let e = ui.add(egui::TextEdit::singleline(&mut st.name).hint_text("Country|Region|City").desired_width(220.0));
+        let e = ui.add(egui::TextEdit::singleline(&mut st.name).hint_text(crate::i18n::tr("Country|Region|City")).desired_width(220.0));
         register(ui.ctx(), "input:placesName", e.rect);
         let ok = !sel.is_empty() && !st.name.trim().is_empty();
         let b = ui.add_enabled(ok, egui::Button::new(format!("{} ({})", crate::i18n::tr("Set for selection"), sel.len())));

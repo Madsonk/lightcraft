@@ -49,19 +49,28 @@ impl Summary {
 /// The three spaces are buttons; a space of the user's own that is open shows as a fourth.
 pub fn selector(app: &mut LightcraftApp, ui: &mut egui::Ui, left: f32, cy: f32) -> f32 {
     let t = Tokens::get(ui.ctx());
-    let mut items: Vec<(String, String, &'static str, bool)> =
-        Space::ALL.iter().map(|s| (s.name().to_string(), format!("space-{}", s.name().to_lowercase()), s.tip(), true)).collect();
+    let mut items: Vec<(String, String, String, bool)> = Space::ALL
+        .iter()
+        .map(|s| {
+            (s.name().to_string(), format!("space-{}", s.name().to_lowercase()), format!("{} ({})", crate::i18n::tr(s.tip()), s.shortcut()), true)
+        })
+        .collect();
     if !Space::ALL.iter().any(|s| s.name() == app.workspaces.current) {
-        items.push((app.workspaces.current.clone(), "space-custom".into(), "A workspace of your own (Window ▸ Workspaces)", false));
+        items.push((
+            app.workspaces.current.clone(),
+            "space-custom".into(),
+            crate::i18n::tr("A workspace of your own (Window ▸ Workspaces)").to_string(),
+            false,
+        ));
     }
     let mut x = left;
     let mut clicked: Option<String> = None;
     for (name, id, tip, builtin) in items {
-        let label = if builtin { crate::i18n::tr(&name).to_string() } else { name.clone() };
+        let label = if builtin { crate::i18n::tr(if name == "Retouch" { "Develop" } else { &name }).to_string() } else { name.clone() };
         let galley = ui.painter().layout_no_wrap(label, t.semibold(12.5), t.text);
         let w = (galley.size().x + 26.0).max(70.0);
         let r = Rect::from_min_size(pos2(x, cy - 13.0), vec2(w, 26.0));
-        let resp = ui.interact(r, egui::Id::new(("space", &id)), Sense::click()).on_hover_text(crate::i18n::tr(tip));
+        let resp = ui.interact(r, egui::Id::new(("space", &id)), Sense::click()).on_hover_text(tip);
         register(ui.ctx(), format!("button:{id}"), r);
         let active = name == app.workspaces.current;
         let fill = if active {
@@ -97,7 +106,7 @@ pub fn selector_width(app: &LightcraftApp, ui: &egui::Ui) -> f32 {
 }
 
 /// A filled button for the step that comes next.
-fn primary_button(ui: &mut egui::Ui, id: &str, label: &str, enabled: bool) -> egui::Response {
+pub(crate) fn primary_button(ui: &mut egui::Ui, id: &str, label: &str, enabled: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let galley = ui.painter().layout_no_wrap(label.to_string(), t.semibold(12.0), egui::Color32::WHITE);
     let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x + 22.0, 24.0), if enabled { Sense::click() } else { Sense::hover() });
@@ -142,23 +151,33 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             match kind {
                 Space::Library => {
                     let n = sum.selected;
-                    let label = if n > 0 { format!("Retouch selection ({n}) →", n = n) } else { crate::i18n::tr("Retouch →").to_string() };
+                    let label = crate::i18n::tr("Develop active photo →").to_string();
                     let can = n > 0 || sum.active.is_some();
                     let tip = if can {
                         "Open the selected photos in the Retouch space (the selection and the filter stay)"
                     } else {
                         "Select the photos to retouch first"
                     };
-                    if primary_button(&mut right, "ctxRetouch", &label, can).on_hover_text(crate::i18n::tr(tip)).clicked() {
+                    if primary_button(&mut right, "ctxRetouch", &label, can).on_hover_text(format!("{} (Ctrl+2)", crate::i18n::tr(tip))).clicked() {
                         run = Some(("workspace.retouchSelection", json!({})));
                     }
                 }
                 Space::Retouch => {
                     if primary_button(&mut right, "ctxCreate", crate::i18n::tr("Create →"), true)
-                        .on_hover_text(crate::i18n::tr("Make a gallery, a slideshow or a kit from these photos"))
+                        .on_hover_text(crate::i18n::tr("Make a gallery, a slideshow or a kit from these photos (Ctrl+3)"))
                         .clicked()
                     {
                         run = Some(("workspace.create", json!({})));
+                    }
+                    // v14: Before / After in one gesture (the same as holding `\\`)
+                    let showing = app.ui.before_after == crate::state::BeforeAfter::Original;
+                    if text_button(&mut right, "ctxBeforeAfter", if showing { "Showing: before" } else { "Before/After" }, showing)
+                        .on_hover_text(crate::i18n::tr(
+                            "Show the photo before any edit; press again for the edited photo (hold \\ for a glance, Y for side by side)",
+                        ))
+                        .clicked()
+                    {
+                        run = Some(("view.beforeAfter", json!({})));
                     }
                 }
                 Space::Create => {}
@@ -209,7 +228,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 }
                 Space::Retouch | Space::Create => {
                     if text_button(&mut left, "ctxBack", "← Library", false)
-                        .on_hover_text(crate::i18n::tr("Back to the Library with the same selection and filter"))
+                        .on_hover_text(crate::i18n::tr("Back to the Library with the same selection and filter (Ctrl+1)"))
                         .clicked()
                     {
                         run = Some(("workspace.backToLibrary", json!({})));

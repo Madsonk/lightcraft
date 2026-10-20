@@ -328,16 +328,47 @@ fn commit_find(s: &mut Session, plan: FindPlan) -> Result<Value> {
 /// thread returned, as `{found, missing, ambiguous}`), only the relinking is done.
 fn find_missing(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "library.findMissing";
+    let dry_run = match p.get("dryRun") {
+        None => false,
+        Some(v) => v.as_bool().ok_or_else(|| bad(C, "`dryRun` must be a boolean"))?,
+    };
     if p.get("found").is_some_and(Value::is_array) {
-        return commit_find(s, FindPlan::from_json(p));
+        let plan = FindPlan::from_json(p);
+        return if dry_run { Ok(plan.to_json()) } else { commit_find(s, plan) };
     }
     let folder = str_param(p, "folder").ok_or_else(|| bad(C, "missing `folder`"))?;
     let plan = plan_find_missing(&find_candidates(&s.catalog), folder).map_err(|e| bad(C, e))?;
-    commit_find(s, plan)
+    if dry_run { Ok(plan.to_json()) } else { commit_find(s, plan) }
+}
+
+/// Read current filesystem state, preserving I/O failures rather than calling them deletions.
+fn diagnose(s: &mut Session, _: &Value) -> Result<Value> {
+    let mut rows = Vec::new();
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for ph in s.catalog.photos() {
+        let Some(path) = checked_path(ph) else { continue };
+        let file = Path::new(path);
+        let (status, error) = match std::fs::metadata(file) {
+            Ok(m) if m.is_file() => ("available", None),
+            Ok(_) => ("not_a_file", None),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let volume = file.strip_prefix("/Volumes").ok().and_then(|p| p.components().next()).map(|p| Path::new("/Volumes").join(p));
+                let offline = volume.is_some_and(|p| matches!(std::fs::metadata(p), Err(e) if e.kind() == std::io::ErrorKind::NotFound));
+                (if offline { "volume_offline" } else { "missing" }, Some(e.to_string()))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => ("access_denied", Some(e.to_string())),
+            Err(e) => ("io_error", Some(e.to_string())),
+        };
+        *counts.entry(status.to_string()).or_default() += 1;
+        rows.push(json!({"id": ph.id.0, "path": path, "status": status, "error": error}));
+    }
+    Ok(json!({"photos": rows, "counts": counts, "checked": rows.len()}))
 }
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
+        cmd!(query "library.diagnoseFiles", "Diagnose Original Files", [], None,
+            "{} — checks originals without changing the catalog → {photos: [{id, path, status: available|missing|volume_offline|access_denied|not_a_file|io_error, error}], counts, checked}; missing does not mean deleted", always, diagnose),
         cmd!(query "library.missing", "Missing Photos", [], None, "{} → [{id, path}] — photos whose original file isn't where the library expects it", always, |s, _| {
             Ok(Value::Array(missing(s).into_iter().map(|(id, path)| json!({"id": id.0, "path": path})).collect()))
         }),
@@ -355,7 +386,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Find Missing Photos",
             [],
             None,
-            "{folder} — relink every missing photo whose file is somewhere in the folder: same name and size (and content, when the library knows its hash), or — renamed — same size and content; or {found, missing, ambiguous} — relink what a search already found (the app searches on a worker thread; photos relinked meanwhile and files now in use are skipped) → {found: [{id, from, to, by: name|content}], missing, ambiguous: [{id, from, candidates}] (several same-name candidates and no hash to tell them apart: skipped)}",
+            "{folder, dryRun?: bool} — find matching originals; dryRun returns the plan without relinking. Otherwise relinks in one undo step. Matches name/size and known content hash; ambiguous matches are skipped. Or {found, missing, ambiguous, dryRun?} applies an existing plan → {found: [{id, from, to, by: name|content}], missing, ambiguous}",
             always,
             find_missing
         ),

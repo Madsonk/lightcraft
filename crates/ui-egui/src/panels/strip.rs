@@ -34,8 +34,8 @@ const RETOUCH: &[Tool] = &[
     Tool {
         id: "edit",
         icon: Icon::Sliders,
-        label: "Edit",
-        tip: "Edit: light, colour, effects, detail, optics (E)",
+        label: "Develop",
+        tip: "Develop: light, colour, effects, detail, optics (E)",
         command: "panel.edit",
         panel: Some(RightPanel::Edit),
         needs_photo: true,
@@ -77,6 +77,17 @@ const RETOUCH: &[Tool] = &[
         needs_photo: true,
     },
 ];
+
+/// The proposed retouch (v14): shown with workspaces on.
+const PROPOSALS: Tool = Tool {
+    id: "proposals",
+    icon: Icon::Pencil,
+    label: "Proposals",
+    tip: "Proposals: the proposed portrait retouch, Before / After, copies (Shift+N)",
+    command: "panel.proposals",
+    panel: Some(RightPanel::Proposals),
+    needs_photo: true,
+};
 
 const HISTORY: &[Tool] = &[
     Tool {
@@ -121,7 +132,7 @@ const ORGANIZE: &[Tool] = &[
 ];
 
 /// Height of a tool: the icon box and the label under it.
-const TOOL_H: f32 = 44.0;
+const TOOL_H: f32 = 48.0;
 
 fn tool(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, tool: &Tool, has_photo: bool) {
     let on = match tool.panel {
@@ -150,12 +161,13 @@ fn tool(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, tool: &Tool, has
         t.icon
     };
     crate::icons::paint(p, egui::Rect::from_center_size(sq.center(), vec2(20.0, 20.0)), tool.icon, color);
+    // v14: a label one can read (10 pt, label colour) under every tool
     p.text(
-        egui::pos2(r.center().x, r.bottom() - 6.0),
+        egui::pos2(r.center().x, r.bottom() - 7.0),
         egui::Align2::CENTER_CENTER,
         crate::i18n::tr(tool.label),
-        t.font(9.0),
-        if on { t.text } else { t.text_dim },
+        t.font(10.0),
+        if on { t.text } else { t.text_label },
     );
     if resp.on_hover_text(tip).clicked() {
         let _ = app.run(tool.command, json!({}));
@@ -164,8 +176,8 @@ fn tool(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, tool: &Tool, has
 
 /// A group's small title.
 fn caption(ui: &mut egui::Ui, t: &Tokens, text: &str) {
-    let (r, _) = ui.allocate_exact_size(vec2(t.strip_w, 14.0), egui::Sense::hover());
-    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, crate::i18n::tr(text), t.font(9.0), t.text_dim);
+    let (r, _) = ui.allocate_exact_size(vec2(t.strip_w, 16.0), egui::Sense::hover());
+    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, crate::i18n::tr(text), t.semibold(9.5), t.text_dim);
 }
 
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
@@ -188,6 +200,9 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 caption(ui, &t, "Retouch");
                 for x in RETOUCH {
                     tool(app, ui, &t, x, has_photo);
+                }
+                if crate::workspaces::enabled(app) {
+                    tool(app, ui, &t, &PROPOSALS, has_photo);
                 }
                 separator(ui, &t);
                 caption(ui, &t, "History");

@@ -16,6 +16,8 @@ lightcraft-raster = { workspace = true }
 lightcraft-develop = { workspace = true }
 lightcraft-pipeline = { workspace = true }
 lightcraft-catalog = { workspace = true }
+# the system language on the first run (v14, French locale): no dependency on macOS, Linux or Windows
+sys-locale = "0.3"
 web-time = { workspace = true }
 lightcraft-engine = { workspace = true }
 lightcraft-preview = { workspace = true }

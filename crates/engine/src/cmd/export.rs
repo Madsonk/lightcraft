@@ -17,6 +17,11 @@ impl Session {
     /// `app.export` params with a named `preset` expanded: the preset's params, overridden by the
     /// call's own (`preset` itself removed). Unknown preset names are an error.
     pub fn export_params(&self, p: &Value) -> std::result::Result<Value, String> {
+        let guarded = self.guarded_params("app.export", p).map_err(|e| e.to_string())?;
+        let p = &guarded;
+        if p.get("id").is_some() || p.get("ids").is_some() {
+            self.checked_targets("app.export", p).map_err(|e| e.to_string())?;
+        }
         let Some(name) = p.get("preset").and_then(Value::as_str) else { return Ok(p.clone()) };
         let (preset, _) = self
             .all_export_presets()
@@ -25,6 +30,11 @@ impl Session {
             .ok_or_else(|| format!("unknown export preset `{name}` (see export.presets)"))?;
         // a preset saved by another version may hold keys this one doesn't know: not the caller's typo
         let mut out = crate::export::ExportOptions::known_keys_only(&preset.params);
+        // Older presets could accidentally remember a single photo id. Targets belong to the
+        // current call, never to reusable settings, even when loaded from an older library.
+        if let Some(settings) = out.as_object_mut() {
+            settings.retain(|key, _| !NOT_SETTINGS.contains(&key.as_str()));
+        }
         if let (Some(o), Some(own)) = (out.as_object_mut(), p.as_object()) {
             for (k, v) in own.iter().filter(|(k, _)| *k != "preset") {
                 o.insert(k.clone(), v.clone());
@@ -39,7 +49,7 @@ fn list(s: &Session) -> Value {
 }
 
 /// Params that describe a destination or a selection, not the export settings.
-const NOT_SETTINGS: &[&str] = &["ids", "path", "dir", "preset"];
+const NOT_SETTINGS: &[&str] = crate::export::TARGET_PARAMS;
 
 fn save(s: &mut Session, p: &Value) -> Result<Value> {
     const ID: &str = "export.savePreset";
@@ -78,8 +88,49 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(list(s))
 }
 
+/// Verify a saved export against the encoder's receipt. Never writes or repairs a file.
+fn verify(_: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "export.verify";
+    let path = p.get("path").and_then(Value::as_str).filter(|p| !p.is_empty()).ok_or_else(|| bad(C, "missing path"))?;
+    let mut file = std::fs::File::open(path).map_err(|e| bad(C, format!("{path}: {e}")))?;
+    // Bounded allocation even if the file grows between metadata and read.
+    const MAX: u64 = 128 * 1024 * 1024;
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    file.by_ref().take(MAX + 1).read_to_end(&mut bytes).map_err(|e| bad(C, e.to_string()))?;
+    if bytes.len() as u64 > MAX {
+        return Err(bad(C, "verification supports files up to 128 MiB"));
+    }
+    let hash = lightcraft_preview::hash_bytes(&bytes).to_string();
+    if let Some(n) = p.get("bytes") {
+        if n.as_u64() != Some(bytes.len() as u64) {
+            return Err(bad(C, "output byte count differs from receipt"));
+        }
+    }
+    if let Some(expected) = p.get("contentHash") {
+        if expected.as_str() != Some(hash.as_str()) {
+            return Err(bad(C, "output content hash differs from receipt"));
+        }
+    }
+    let header = lightcraft_codecs::read_header(&bytes).map_err(|e| bad(C, format!("invalid exported image: {e}")))?;
+    for (key, actual) in [("width", header.width), ("height", header.height)] {
+        if let Some(expected) = p.get(key) {
+            if expected.as_u64() != Some(u64::from(actual)) {
+                return Err(bad(C, format!("output {key} differs from receipt")));
+            }
+        }
+    }
+    // Validate compressed pixels too, at a bounded preview size (not just a valid header).
+    lightcraft_codecs::decode(&bytes, lightcraft_codecs::DecodeOptions { max_size: Some((64, 64)), max_pixels: 100_000_000 })
+        .map_err(|e| bad(C, format!("export cannot be decoded: {e}")))?;
+    Ok(json!({"path": path, "verified": true, "bytes": bytes.len(), "contentHash": hash,
+        "width": header.width, "height": header.height, "format": format!("{:?}", header.format), "decodeChecked": true}))
+}
+
 pub fn specs() -> Vec<CommandSpec> {
     vec![
+        cmd!(query "export.verify", "Verify Exported Image", [], None,
+            "{path, bytes?, contentHash?, width?, height?} — read back a rendered image, check receipt and decode a bounded preview. No writes; max 128 MiB / 100 MP → {verified, path, bytes, contentHash, width, height, format, decodeChecked}; raw originals/DNG are not supported", always, verify),
         cmd!(
             "export.presets",
             "Export Presets",

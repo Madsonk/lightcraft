@@ -6,6 +6,8 @@
 //!   inside the file). A trailing `*` matches an id prefix. Row ids must be unique and statuses valid.
 //! - **Summary**: per section done / partial / missing / out of scope and the share of P0 and P1 rows done;
 //!   `--write` refreshes the table between the `parity:summary` markers in the document.
+//! Set LIGHTCRAFT_PARITY_CLI to a freshly built CLI to check that exact build without compiling
+//! a second copy in the debug profile.
 
 use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
@@ -269,10 +271,12 @@ pub fn with_summary(md: &str, table: &str) -> Option<String> {
 }
 
 fn registry(what: &str) -> Result<BTreeSet<String>, String> {
-    let out = crate::cargo()
-        .args(["run", "-q", "-p", "lightcraft-cli", "--", what, "--json"])
-        .output()
-        .map_err(|e| format!("lightcraft-cli {what}: {e}"))?;
+    let out = if let Some(path) = std::env::var_os("LIGHTCRAFT_PARITY_CLI") {
+        std::process::Command::new(path).args([what, "--json"]).output()
+    } else {
+        crate::cargo().args(["run", "-q", "-p", "lightcraft-cli", "--", what, "--json"]).output()
+    }
+    .map_err(|e| format!("lightcraft-cli {what}: {e}"))?;
     if !out.status.success() {
         return Err(format!("lightcraft-cli {what} --json failed:\n{}", String::from_utf8_lossy(&out.stderr)));
     }

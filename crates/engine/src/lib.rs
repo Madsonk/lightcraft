@@ -19,6 +19,7 @@ pub mod autoseg;
 pub mod availability;
 mod camera_preview;
 pub mod camera_profiles;
+pub mod classification;
 pub mod cmd;
 pub mod config;
 pub mod crs;
@@ -64,6 +65,7 @@ mod restore_torch;
 pub mod retouch;
 pub mod search;
 pub mod segment;
+pub mod series;
 pub mod sidecar;
 pub mod smart;
 mod view;
@@ -160,6 +162,7 @@ static VISIBLE_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 static LIBRARY_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 pub struct Session {
+    pub series: series::Workbench,
     library_generation: u64,
     /// Auto Sync: edits to the active photo also change the other selected photos (the settings
     /// that changed, nothing else).
@@ -258,6 +261,7 @@ pub struct Session {
     pub label_sets: Vec<cmd::manage::LabelSet>,
     /// Look-alike signatures by content key (Find Similar).
     pub signatures: std::collections::HashMap<String, [f32; 64]>,
+    pub(crate) culling_cache: std::collections::BTreeMap<String, cmd::cull::Measurement>,
     /// Imported `.cube` LUT profiles.
     pub lut_profiles: Vec<cmd::lut_profiles::LutProfile>,
     /// The target album B adds to (`None` = the Quick Collection).
@@ -301,6 +305,7 @@ impl Session {
 
     pub fn new() -> Session {
         Session {
+            series: Default::default(),
             library_generation: LIBRARY_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             auto_sync: false,
             catalog: Catalog::new(),
@@ -354,6 +359,7 @@ impl Session {
             curve_presets: Vec::new(),
             label_sets: Vec::new(),
             signatures: Default::default(),
+            culling_cache: Default::default(),
             lut_profiles: Vec::new(),
             target_album: None,
             auto_import_seen: Default::default(),
@@ -383,7 +389,66 @@ impl Session {
         (spec.enabled)(self).map_err(|why| EngineError::Disabled(id.to_string(), why))?;
         let empty = Value::Object(Default::default());
         let params = if params.is_null() { &empty } else { params };
+        let guarded = self.guarded_params(id, params)?;
+        let params = &guarded;
         self.run_command(id, spec.journal.then_some(params), |s| (spec.run)(s, params))
+    }
+
+    /// Optimistic selection guard for agents sharing a session with a human. Checked before any
+    /// command executes, then removed so strict command-specific parsers stay compatible.
+    pub fn guarded_params(&self, command: &str, params: &Value) -> Result<Value> {
+        let Some(expected) = params.get("expectedSelection") else { return Ok(params.clone()) };
+        let obj = expected.as_object().ok_or_else(|| cmd::bad(command, "expectedSelection must be {active, ids}"))?;
+        if obj.keys().any(|k| !matches!(k.as_str(), "active" | "ids")) || !obj.contains_key("active") || !obj.contains_key("ids") {
+            return Err(cmd::bad(command, "expectedSelection must contain only active and ids"));
+        }
+        let active = match obj.get("active") {
+            Some(Value::Null) => None,
+            Some(v) => Some(v.as_u64().map(PhotoId).ok_or_else(|| cmd::bad(command, "expectedSelection.active must be a photo id or null"))?),
+            None => None,
+        };
+        let ids = obj.get("ids").and_then(Value::as_array).ok_or_else(|| cmd::bad(command, "expectedSelection.ids must be an array"))?;
+        let mut ids: Vec<PhotoId> = ids
+            .iter()
+            .map(|v| v.as_u64().map(PhotoId).ok_or_else(|| cmd::bad(command, "expectedSelection.ids must contain photo ids")))
+            .collect::<Result<_>>()?;
+        let mut actual = self.selection.ids.clone();
+        ids.sort_unstable();
+        actual.sort_unstable();
+        if active != self.selection.active || ids != actual {
+            return Err(cmd::bad(command, "selection changed; inspect library.state before retrying"));
+        }
+        let mut out = params.clone();
+        if let Some(obj) = out.as_object_mut() {
+            obj.remove("expectedSelection");
+        }
+        Ok(out)
+    }
+
+    /// Explicit targets must be valid and nonempty, never silently fall back to another photo.
+    pub fn checked_targets(&self, command: &str, p: &Value) -> Result<Vec<PhotoId>> {
+        if p.get("id").is_some() && p.get("ids").is_some() {
+            return Err(cmd::bad(command, "give either id or ids, not both"));
+        }
+        let ids = if let Some(v) = p.get("ids") {
+            v.as_array()
+                .ok_or_else(|| cmd::bad(command, "ids must be an array"))?
+                .iter()
+                .map(|v| v.as_u64().map(PhotoId).ok_or_else(|| cmd::bad(command, "ids must contain photo ids")))
+                .collect::<Result<Vec<_>>>()?
+        } else if let Some(v) = p.get("id") {
+            vec![v.as_u64().map(PhotoId).ok_or_else(|| cmd::bad(command, "id must be a photo id"))?]
+        } else {
+            self.targets(p)
+        };
+        if ids.is_empty() {
+            return Err(cmd::bad(command, "no target photos"));
+        }
+        if let Some(id) = ids.iter().find(|id| self.catalog.photo(**id).is_none()) {
+            return Err(cmd::bad(command, format!("no such photo {}", id.0)));
+        }
+        let mut unique = std::collections::HashSet::new();
+        Ok(ids.into_iter().filter(|id| unique.insert(*id)).collect())
     }
 
     /// Run `f` as command `id` with what [`Session::execute`] does around every command: the
@@ -938,7 +1003,7 @@ mod tests_library;
 mod tests_merge;
 #[cfg(test)]
 mod tests_organize;
-#[cfg(test)]
+#[cfg(all(test, feature = "people"))]
 mod tests_people;
 #[cfg(test)]
 #[cfg(feature = "people")]
@@ -961,3 +1026,6 @@ mod tests_spots;
 mod tests_taste;
 #[cfg(test)]
 mod tests_xmp;
+
+#[cfg(test)]
+mod tests_workflow_reliability;

@@ -275,6 +275,16 @@ impl Renderer {
 }
 
 impl Renderer {
+    /// Consumers share one thumbnail slot. Keep the largest requested bucket for this
+    /// exact photo snapshot so the navigator, grid and filmstrip cannot downgrade
+    /// one another and alternate render keys every frame.
+    pub fn shared_thumb_bucket(&self, photo: &Arc<lightcraft_catalog::Photo>, requested: usize) -> usize {
+        self.thumb_inputs
+            .get(&photo.id)
+            .filter(|(old, _, _, _)| old.as_ptr() == Arc::as_ptr(photo))
+            .map_or(requested, |(_, size, _, _)| requested.max(*size))
+    }
+
     /// Would asking for this thumbnail again (at `priority`) change nothing?
     pub fn thumb_current(&self, photo: &Arc<lightcraft_catalog::Photo>, bucket: usize, priority: u32) -> bool {
         let Some(&(ref old, size, key, quick)) = self.thumb_inputs.get(&photo.id) else { return false };
@@ -782,6 +792,18 @@ mod thumbnail_tests {
     fn photo() -> Arc<Photo> {
         Arc::new(Photo::new(PhotoId(1), Source::File { path: "audit.jpg".into() }, "audit.jpg", "JPEG", 6000, 4000, "2026-01-01"))
     }
+    #[test]
+    fn workflow_grid_navigator_and_filmstrip_share_largest_current_thumbnail() {
+        let p = photo();
+        let mut r = Renderer::default();
+        assert_eq!(r.shared_thumb_bucket(&p, 128), 128);
+        r.remember_thumb(&p, 384, 77, false);
+        assert_eq!(r.shared_thumb_bucket(&p, 128), 384);
+        assert_eq!(r.shared_thumb_bucket(&p, 256), 384);
+        assert_eq!(r.shared_thumb_bucket(&p, 512), 512);
+        assert_eq!(r.shared_thumb_bucket(&photo(), 128), 128, "a changed photo snapshot must render again");
+    }
+
     #[test]
     fn snapshot_tracks_cow_edits_undo_reload_and_replacement() {
         let mut catalog = Catalog::default();

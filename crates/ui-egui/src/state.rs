@@ -39,6 +39,8 @@ pub enum RightPanel {
     Info,
     /// The profile browser (part of Edit).
     Profiles,
+    /// The proposed retouch (v14, workspaces on): Before / After, impact, copies.
+    Proposals,
 }
 
 impl RightPanel {
@@ -291,6 +293,15 @@ pub const RIGHT_WIDTH: PanelWidth = PanelWidth { min: 250.0, default: 270.0, max
 /// The photo area the side panels always leave free (as far as their minimum widths allow).
 pub const MIN_PHOTO_WIDTH: f32 = 360.0;
 
+/// The kind of a toast: its colour bar and glyph (v14).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ToastKind {
+    #[default]
+    Info,
+    Success,
+    Error,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
@@ -510,6 +521,14 @@ pub struct UiState {
     /// Transient toast text, expiry (seconds of app time), and optional colour-label styling.
     #[serde(skip)]
     pub toast: Option<(String, f64, Option<lightcraft_catalog::ColorLabel>)>,
+    /// What the toast says (v14): information, a success, or an error to read.
+    #[serde(skip)]
+    pub toast_kind: ToastKind,
+    /// Develop panel by task (Base, Light, Color, Detail, Optics, Local) instead of by type (v14, workspaces on).
+    pub edit_by_task: bool,
+    /// The Develop panel's search field ("Search a control…").
+    #[serde(skip)]
+    pub edit_search: String,
     /// The result of the last Find Missing Photos (it searches in the background).
     #[serde(skip)]
     pub last_find_missing: Option<serde_json::Value>,
@@ -816,6 +835,9 @@ impl Default for UiState {
             compare: None,
             reference: None,
             toast: None,
+            toast_kind: ToastKind::Info,
+            edit_by_task: false,
+            edit_search: String::new(),
             last_find_missing: None,
             status: String::new(),
             dialog: None,

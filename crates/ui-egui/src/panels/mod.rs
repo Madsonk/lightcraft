@@ -88,11 +88,19 @@ pub fn toast(app: &mut LightcraftApp, ctx: &egui::Context) {
     let wrap = (canvas.width() - 80.0).clamp(200.0, 720.0);
     let (background, foreground) = label.map(crate::theme::label_toast_colors).unwrap_or((egui::Color32::from_black_alpha(200), t.text));
     let foreground = foreground.gamma_multiply(fade);
-    let galley = painter.layout(text, t.font(14.0), foreground, wrap);
-    let size = vec2(galley.size().x + 40.0, (galley.size().y + 22.0).max(40.0));
+    // v14: the kind shows as a colour bar and a glyph on the left (information, success, error)
+    let (bar, glyph) = match app.ui.toast_kind {
+        crate::state::ToastKind::Info => (t.accent, "i"),
+        crate::state::ToastKind::Success => (egui::Color32::from_rgb(0x3f, 0xb9, 0x5f), "✓"),
+        crate::state::ToastKind::Error => (t.reject, "!"),
+    };
+    let galley = painter.layout(text, t.font(14.0), foreground, wrap - 30.0);
+    let size = vec2(galley.size().x + 70.0, (galley.size().y + 22.0).max(40.0));
     let r = Rect::from_center_size(pos2(canvas.center().x, canvas.bottom() - 60.0), size);
     painter.rect_filled(r, 6.0, background.gamma_multiply(fade));
-    painter.galley(r.center() - galley.size() / 2.0, galley, foreground);
+    painter.rect_filled(Rect::from_min_size(r.min, vec2(4.0, r.height())), 2.0, bar.gamma_multiply(fade));
+    painter.text(pos2(r.left() + 22.0, r.center().y), egui::Align2::CENTER_CENTER, glyph, t.semibold(14.0), bar.gamma_multiply(fade));
+    painter.galley(pos2(r.left() + 40.0, r.center().y - galley.size().y / 2.0), galley, foreground);
     ctx.request_repaint_after(std::time::Duration::from_millis(30));
 }
 

@@ -355,19 +355,39 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         }),
-        cmd!("develop.profile", "Set Profile", [], None, "{id: profile id (see profiles.list), amount?: 0..200}", has_active, |s, p| {
-            let id = str_param(p, "id").ok_or_else(|| bad("develop.profile", "missing id"))?.to_string();
-            if !crate::presets::PROFILES.iter().any(|x| x.id == id) && !s.lut_profiles.iter().any(|x| x.id == id) {
-                return Err(bad("develop.profile", format!("unknown profile `{id}`")));
+        cmd!(
+            "develop.profile",
+            "Set Profile",
+            [],
+            None,
+            "{id: profile id (see profiles.list), amount?: 0..200, ids?: [photo]}",
+            has_active,
+            |s, p| {
+                let id = str_param(p, "id").ok_or_else(|| bad("develop.profile", "missing id"))?.to_string();
+                if !crate::presets::PROFILES.iter().any(|x| x.id == id) && !s.lut_profiles.iter().any(|x| x.id == id) {
+                    return Err(bad("develop.profile", format!("unknown profile `{id}`")));
+                }
+                let ids = if p.get("ids").is_some() {
+                    s.checked_targets("develop.profile", &json!({"ids": p["ids"]}))?
+                } else {
+                    vec![active(s, "develop.profile")?]
+                };
+                let mut ops = Vec::new();
+                for photo in ids {
+                    if let Some(current) = s.develop_of(photo) {
+                        let mut d = (*current).clone();
+                        d.profile.id = id.clone();
+                        d.profile.amount = f64_or(p, "amount", d.profile.amount).clamp(0.0, 200.0);
+                        ops.extend(s.develop_op(photo, d, "Profile"));
+                    }
+                }
+                if !ops.is_empty() {
+                    s.commit("Profile", Op::Batch { ops })?;
+                }
+                s.note_profile_used(&id);
+                ok()
             }
-            edit(s, "develop.profile", "Profile", |d| {
-                d.profile.id = id.clone();
-                d.profile.amount = f64_or(p, "amount", d.profile.amount).clamp(0.0, 200.0);
-                Ok(())
-            })?;
-            s.note_profile_used(&id);
-            ok()
-        }),
+        ),
         cmd!("profile.favorite", "Favorite Profile", [], None, "{id, favorite?: bool} (toggles when omitted)", always, |s, p| {
             let id = str_param(p, "id").ok_or_else(|| bad("profile.favorite", "missing id"))?.to_string();
             if crate::presets::profile(&id).is_none() && !s.lut_profiles.iter().any(|x| x.id == id) {

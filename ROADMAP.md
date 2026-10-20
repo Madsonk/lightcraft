@@ -4,6 +4,26 @@ Milestones toward full Adobe Lightroom parity (cloud Lightroom first, then every
 estimates for continuous (24/7) agent-driven development with 4–6 parallel agents. Estimates are calibrated on the sibling
 projects (DrawCraft reached its first four milestones in ≈ 4½ h) and are revised as milestones land.
 
+## Madson workflow corrections — 2026-10-12
+
+Target scope: [workspaces product contract](docs/workspaces.md#product-scope-agreed-with-madson--2026-10-12). These are pending tasks; documenting them does not mark the features delivered.
+
+- [ ] Library: make batch classification and face/person recognition accessible for an explicit photo selection, with progress and cancellation.
+- [ ] Library: batch colour development and common preset/LUT application; harmonise a series from the same place/moment with per-photo exposure and white-balance compensation, preview and undo.
+- [x] Development v15: consolidate existing active-photo tools for detection/region handles, crop, colour, portrait skin retouch, colour harmonisation and location metadata. Existing optional models are still required.
+- [x] Development v15: presets/reset/paste/metadata/detection/retouch default to the active photo; explicit sync shows the number of other selected photos. See workspace docs for exact scope.
+- [x] French QA: localise the recognition-panel explanatory sentence flagged by the French coverage check.
+- [ ] **Deferred — Detectron2:** evaluate one mask per person on portraits/group photographs. Compare boundary quality, runtime and memory on Apple M4 against existing segmentation. Assess dependency/runtime and model licences before choosing an integration. Do not install or integrate now; resume when Madson requests it.
+
+## Private v16 series workbench — 2026-10-12
+
+- Background per-photo exposure/WB proposals, shared profile/LUT/colour look, numeric and image before/after review.
+- Metadata series suggestions, in-session pause/resume, unchanged reference, stale-plan validation, one undo for application.
+- Selective upstream capture-time overflow fix; full v0.6 rebase remains pending.
+- Private DeepWB rendered-RGB experiment outside the product; assessment does not imply integration.
+- Persisting analysis jobs across restart, lighting-aware group boundaries, calibrated WB and better person/skin masks remain pending.
+- Contract and limitations: [series workbench](docs/series.md).
+
 ## Where we stand
 
 *Honest assessment, 2026-10-08. Agents: read this before picking work. The checklist in

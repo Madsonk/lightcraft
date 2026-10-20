@@ -907,7 +907,7 @@ fn places_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
                 register(ui.ctx(), "button:classifyPlacesApply", b.rect);
                 if b.clicked() {
                     match app.run("workspace.classify.places", json!({"action": "apply"})) {
-                        Ok(r) => app.toast(ui.ctx(), format!("{} photos got a place", r["written"].as_u64().unwrap_or(0))),
+                        Ok(r) => app.toast(ui.ctx(), crate::i18n::tr_format!("{} photos got a place", r["written"].as_u64().unwrap_or(0))),
                         Err(e) => app.ui.status = e,
                     }
                 }
@@ -937,7 +937,7 @@ fn places_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
                 register(ui.ctx(), "button:classifyPlacesConfirm", b.rect);
                 if b.clicked() {
                     match app.run("workspace.classify.places", json!({"action": "confirm"})) {
-                        Ok(r) => app.toast(ui.ctx(), format!("{} places confirmed", r["changed"].as_u64().unwrap_or(0))),
+                        Ok(r) => app.toast(ui.ctx(), crate::i18n::tr_format!("{} places confirmed", r["changed"].as_u64().unwrap_or(0))),
                         Err(e) => app.ui.status = e,
                     }
                 }

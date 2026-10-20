@@ -195,7 +195,24 @@ fn culling(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, reject_below:
     );
     // sliced and cancellable (the Quick sort analysis): a big view must not freeze the window
     let running = app.workspaces.quick.job.is_some();
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
+        let preview = ui.add_enabled(!running, egui::Button::new(crate::i18n::tr("Preview Without Applying")));
+        register(ui.ctx(), "button:sortingCullPreview", preview.rect);
+        if preview.clicked() {
+            let mut p = json!({"pickBest": *pick_best, "dryRun": true});
+            if *reject_below > 0.0 {
+                p["rejectBelow"] = json!(*reject_below);
+            }
+            let ids = if app.session.selection.ids.len() > 1 {
+                app.session.selection.ids.iter().map(|i| i.0).collect()
+            } else {
+                app.session.visible_cloned().iter().map(|i| i.0).collect()
+            };
+            app.sorting.culling = match crate::quick_sort::analyze_with(app, ids, p) {
+                Ok(()) => String::new(),
+                Err(e) => e,
+            };
+        }
         let b = ui.add_enabled(!running, egui::Button::new(crate::i18n::tr("Analyze Photos")));
         register(ui.ctx(), "button:sortingCull", b.rect);
         if b.clicked() {
@@ -221,21 +238,73 @@ fn culling(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, reject_below:
             }
             ui.ctx().request_repaint();
         } else if let Some(l) = app.workspaces.quick.last.clone().filter(|_| app.sorting.culling.is_empty()) {
-            ui.label(
-                RichText::new(format!(
-                    "{} photos scored · {} rejected · {} picked{}",
-                    l["photos"],
-                    l["rejected"],
-                    l["picked"],
-                    if l["cancelled"] == true { " · stopped" } else { "" }
-                ))
-                .size(12.0)
-                .color(t.text_label),
-            );
+            if l["dryRun"] == true {
+                ui.label(
+                    RichText::new(crate::i18n::tr_format!(
+                        "Preview: {reject} proposed rejects · {pick} proposed picks · no changes",
+                        reject = l["wouldReject"],
+                        pick = l["wouldPick"]
+                    ))
+                    .size(12.0)
+                    .color(t.text_label),
+                );
+                if let Some(error) = l["error"].as_str() {
+                    ui.label(RichText::new(error).size(12.0).color(t.caution));
+                }
+                if l["cancelled"] == true {
+                    ui.label(crate::i18n::tr("Preview stopped: results are partial."));
+                }
+            } else {
+                ui.label(
+                    RichText::new(format!(
+                        "{} photos scored · {} rejected · {} picked{}",
+                        l["photos"],
+                        l["rejected"],
+                        l["picked"],
+                        if l["cancelled"] == true { " · stopped" } else { "" }
+                    ))
+                    .size(12.0)
+                    .color(t.text_label),
+                );
+            }
         } else if !app.sorting.culling.is_empty() {
             ui.label(RichText::new(&app.sorting.culling).size(12.0).color(t.text_label));
         }
     });
+    if let Some(last) = &app.workspaces.quick.last
+        && last["dryRun"] == true
+        && let Some(rows) = last["proposals"].as_array()
+    {
+        ui.collapsing(crate::i18n::tr("Review suggestions (up to 200 photos)"), |ui| {
+            egui::ScrollArea::vertical().id_salt("culling-proposals").max_height(180.0).show(ui, |ui| {
+                for row in rows {
+                    let id = row["id"].as_u64().unwrap_or(0);
+                    let name = app.session.catalog.photo(lightcraft_catalog::PhotoId(id)).map(|p| p.file_name.as_str()).unwrap_or("?");
+                    let reasons: Vec<&str> = row["reasons"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .map(|reason| {
+                            crate::i18n::tr(match reason {
+                                "focus_below_threshold" => "Focus below threshold",
+                                "closed_eyes" => "Closed eyes",
+                                "best_in_burst" => "Best in burst",
+                                "eyes_not_evaluated" => "Eyes not evaluated",
+                                _ => "Review",
+                            })
+                        })
+                        .collect();
+                    let flag = crate::i18n::tr(match row["suggestedFlag"].as_str() {
+                        Some("reject") => "Reject",
+                        Some("pick") => "Pick",
+                        _ => "Review",
+                    });
+                    ui.label(format!("{name} · {flag} · {}", reasons.join(" · ")));
+                }
+            });
+        });
+    }
 }
 
 fn picks(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, goto: &mut Option<Section>) -> bool {
@@ -316,7 +385,7 @@ fn keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, goto: &mut O
         if running {
             ui.spinner();
             if text_button(ui, "sortingKwCancel", "Cancel", false)
-                .on_hover_text("The model cannot be interrupted while it loads: Cancel drops the answer when it comes.")
+                .on_hover_text(crate::i18n::tr("The model cannot be interrupted while it loads: Cancel drops the answer when it comes."))
                 .clicked()
             {
                 app.tasks.cancel(crate::heavy::SUGGEST);

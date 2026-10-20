@@ -203,10 +203,12 @@ fn the_steps_change_the_centre_and_never_touch_the_session() {
     h.step();
     let (filter, source, sel) = (h.app.session.filter.clone(), h.app.session.source, h.app.session.selection.clone());
     assert_eq!(h.app.workspaces.step, Step::Sort, "a library with photos opens on Sort");
-    assert!(has(&h, "region:quickSort"), "Quick sort is beside the grid");
-    for (chip, step, region) in
-        [("ctxImport", Step::Import, "region:home"), ("ctxClassify", Step::Classify, "region:classify"), ("ctxSort", Step::Sort, "region:quickSort")]
-    {
+    assert!(has(&h, "region:libraryBatchTools"), "Batch tools share the library sidebar");
+    for (chip, step, region) in [
+        ("ctxImport", Step::Import, "region:home"),
+        ("ctxClassify", Step::Classify, "region:classify"),
+        ("ctxSort", Step::Sort, "region:libraryBatchTools"),
+    ] {
         click(&mut h, &format!("button:{chip}"));
         assert_eq!(h.app.workspaces.step, step);
         assert!(has(&h, region), "{chip}: {region} on screen");
@@ -216,7 +218,7 @@ fn the_steps_change_the_centre_and_never_touch_the_session() {
     }
     // Import and Classify own the window: no Quick sort, no source column
     run(&mut h, "workspace.step", json!({"step": "import"})).unwrap();
-    assert!(!has(&h, "region:quickSort") && has(&h, "region:home"));
+    assert!(!has(&h, "region:libraryBatchTools") && has(&h, "region:home"));
     // a view changed by anything else leaves the step (the centre would not show it)
     run(&mut h, "view.detail", json!({})).unwrap();
     assert_eq!(h.app.workspaces.step, Step::Sort);
@@ -230,7 +232,7 @@ fn the_steps_change_the_centre_and_never_touch_the_session() {
     h.app.ui.settings.workspaces = false;
     h.step();
     h.step();
-    assert!(!has(&h, "region:quickSort") && !has(&h, "region:home") && !has(&h, "region:contextBar"));
+    assert!(!has(&h, "region:libraryBatchTools") && !has(&h, "region:home") && !has(&h, "region:contextBar"));
     assert!(h.app.run("workspace.step", json!({"step": "import"})).is_err());
 }
 
@@ -683,7 +685,7 @@ fn the_pages_fit_the_window_at_three_widths() {
         app.ui.view = ViewMode::PhotoGrid;
         let mut h = Headless::new(app, [w, hh], 1.0);
         h.settle(SETTLE);
-        for (step, region) in [("import", "region:home"), ("classify", "region:classify"), ("sort", "region:quickSort")] {
+        for (step, region) in [("import", "region:home"), ("classify", "region:classify"), ("sort", "region:libraryBatchTools")] {
             run(&mut h, "workspace.step", json!({"step": step})).unwrap();
             h.settle(SETTLE);
             let r = rect(&h, region);

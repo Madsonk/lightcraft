@@ -72,6 +72,10 @@ pub struct Job {
     extra: Value,
     rejected: usize,
     picked: usize,
+    would_reject: usize,
+    would_pick: usize,
+    /// A bounded review list, distinct from stored analysis and flags.
+    proposals: Vec<Value>,
     total: usize,
     done: usize,
     undo0: usize,
@@ -276,6 +280,9 @@ pub fn analyze_with(app: &mut LightcraftApp, mut ids: Vec<u64>, extra: Value) ->
         extra,
         rejected: 0,
         picked: 0,
+        would_reject: 0,
+        would_pick: 0,
+        proposals: Vec::new(),
         slices,
         total,
         done: 0,
@@ -324,6 +331,13 @@ pub fn tick(app: &mut LightcraftApp, _now: f64) {
                     job.done += n;
                     job.rejected += v["rejected"].as_u64().unwrap_or(0) as usize;
                     job.picked += v["picked"].as_u64().unwrap_or(0) as usize;
+                    job.would_reject += v["wouldReject"].as_u64().unwrap_or(0) as usize;
+                    job.would_pick += v["wouldPick"].as_u64().unwrap_or(0) as usize;
+                    if job.extra["dryRun"] == true
+                        && let Some(rows) = v["photos"].as_array()
+                    {
+                        job.proposals.extend(rows.iter().take(200usize.saturating_sub(job.proposals.len())).cloned());
+                    }
                 }
                 Err(e) => job.error = Some(e.to_string()),
             }
@@ -335,11 +349,16 @@ pub fn tick(app: &mut LightcraftApp, _now: f64) {
 
 /// The analysis ended (or was stopped): its slices become one undo step.
 fn finish(app: &mut LightcraftApp, job: Job) {
+    let dry_run = job.extra["dryRun"] == true;
     let steps = app.session.undo.len().saturating_sub(job.undo0);
-    app.session.merge_undo(steps, "Find Bursts and Soft Photos");
+    if !dry_run {
+        app.session.merge_undo(steps, "Find Bursts and Soft Photos");
+    }
     let s = current_fresh(app);
     app.workspaces.quick.last = Some(json!({
         "photos": job.done, "of": job.total, "slices": job.slice_count, "rejected": job.rejected, "picked": job.picked, "cancelled": job.cancelled, "error": job.error,
+        "dryRun": dry_run, "wouldReject": job.would_reject, "wouldPick": job.would_pick,
+        "proposals": job.proposals,
         "seconds": (crate::now_ms() - job.started_ms) / 1000.0,
         "soft": s.soft.len(), "bursts": s.bursts.len(), "burstExtras": s.burst_extras.len(),
     }));
@@ -503,128 +522,113 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     }
     let t = Tokens::get(ui.ctx());
     let s = current(app);
-    let faces_installed = app.session.execute("faces.status", &json!({})).ok().is_some_and(|v| v["installed"].as_bool() == Some(true));
+    let faces_installed = app.session.execute("facemesh.status", &json!({})).ok().is_some_and(|v| v["installed"].as_bool() == Some(true));
     let mut run: Option<(&'static str, Value)> = None;
     let mut other: Option<(&'static str, Value)> = None;
-    egui::Panel::right("quick_sort")
-        .exact_size(PANEL_W)
-        .resizable(false)
-        .frame(egui::Frame::NONE.fill(t.chrome).stroke(Stroke::new(1.0, t.divider)).inner_margin(egui::Margin::symmetric(14, 12)))
-        .show(ui, |ui| {
-            register(ui.ctx(), "region:quickSort", ui.max_rect());
-            crate::home::heading(ui, &t, "Quick sort");
-            // how far along the sorting is
-            let frac = if s.total > 0 { s.sorted as f32 / s.total as f32 } else { 0.0 };
-            ui.label(egui::RichText::new(format!("Rated or flagged: {} of {}", s.sorted, s.total)).color(t.text_label).size(12.0));
-            ui.add(egui::ProgressBar::new(frac).desired_height(6.0));
-            ui.horizontal(|ui| {
-                if text_button(ui, "quickNext", crate::i18n::tr("Next unsorted"), false)
-                    .on_hover_text(crate::i18n::tr("Select the next photo with no rating and no flag"))
+    register(ui.ctx(), "region:quickSort", ui.max_rect());
+    crate::home::heading(ui, &t, "Quick sort");
+    // how far along the sorting is
+    let frac = if s.total > 0 { s.sorted as f32 / s.total as f32 } else { 0.0 };
+    ui.label(egui::RichText::new(format!("Rated or flagged: {} of {}", s.sorted, s.total)).color(t.text_label).size(12.0));
+    ui.add(egui::ProgressBar::new(frac).desired_height(6.0));
+    ui.horizontal(|ui| {
+        if text_button(ui, "quickNext", crate::i18n::tr("Next unsorted"), false)
+            .on_hover_text(crate::i18n::tr("Select the next photo with no rating and no flag"))
+            .clicked()
+        {
+            run = Some(("workspace.sort.next", json!({})));
+        }
+        if text_button(ui, "quickUnsorted", crate::i18n::tr("Select unsorted"), false).clicked() {
+            run = Some(("workspace.sort.select", json!({"what": "unsorted"})));
+        }
+    });
+    ui.add_space(10.0);
+    crate::home::heading(ui, &t, "Suggestions");
+    let running = app.workspaces.quick.job.is_some();
+    if s.scored < s.total || running {
+        let label = if running { "Analyzing…" } else { "Analyze this view" };
+        let b = ui.add_enabled(!running && s.total > 0, egui::Button::new(crate::i18n::tr(label)));
+        register(ui.ctx(), "button:quickAnalyze", b.rect);
+        if b.clicked() {
+            run = Some(("workspace.sort.analyze", json!({})));
+        }
+        let note = match &app.workspaces.quick.job {
+            Some(j) => format!("{} of {} photos scored", j.done, j.total),
+            None => format!("{} of {} photos scored: bursts and soft photos need it. It runs in the background.", s.scored, s.total),
+        };
+        ui.label(egui::RichText::new(note).color(t.text_dim).size(11.5));
+    } else if text_button(ui, "quickReanalyze", crate::i18n::tr("Analyze again"), false).clicked() {
+        run = Some(("workspace.sort.analyze", json!({})));
+    }
+    ui.add_space(4.0);
+    if s.scored > 0 {
+        if line(ui, &t, "quickSoft", "Soft photos", s.soft.len(), "Select the photos softer than the threshold below", "Select") {
+            other = Some(("workspace.sort.select", json!({"what": "soft"})));
+        }
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(format!("threshold {:.1}", s.soft_below)).color(t.text_dim).size(11.0));
+            for (sens, label) in [(Sensitivity::Low, "Low"), (Sensitivity::Medium, "Medium"), (Sensitivity::High, "High")] {
+                if text_button(ui, &format!("quickSens-{}", sens.name()), crate::i18n::tr(label), app.workspaces.quick.sensitivity == sens)
+                    .on_hover_text(crate::i18n::tr("How soft counts as soft: a share of the median focus score"))
                     .clicked()
                 {
-                    run = Some(("workspace.sort.next", json!({})));
-                }
-                if text_button(ui, "quickUnsorted", crate::i18n::tr("Select unsorted"), false).clicked() {
-                    run = Some(("workspace.sort.select", json!({"what": "unsorted"})));
-                }
-            });
-            ui.add_space(10.0);
-            crate::home::heading(ui, &t, "Suggestions");
-            let running = app.workspaces.quick.job.is_some();
-            if s.scored < s.total || running {
-                let label = if running { "Analyzing…" } else { "Analyze this view" };
-                let b = ui.add_enabled(
-                    !running && s.total > 0,
-                    egui::Button::new(egui::RichText::new(crate::i18n::tr(label)).color(egui::Color32::WHITE)).fill(t.accent),
-                );
-                register(ui.ctx(), "button:quickAnalyze", b.rect);
-                if b.clicked() {
-                    run = Some(("workspace.sort.analyze", json!({})));
-                }
-                let note = match &app.workspaces.quick.job {
-                    Some(j) => format!("{} of {} photos scored", j.done, j.total),
-                    None => format!("{} of {} photos scored: bursts and soft photos need it. It runs in the background.", s.scored, s.total),
-                };
-                ui.label(egui::RichText::new(note).color(t.text_dim).size(11.5));
-            } else if text_button(ui, "quickReanalyze", crate::i18n::tr("Analyze again"), false).clicked() {
-                run = Some(("workspace.sort.analyze", json!({})));
-            }
-            ui.add_space(4.0);
-            if s.scored > 0 {
-                if line(ui, &t, "quickSoft", "Soft photos", s.soft.len(), "Select the photos softer than the threshold below", "Select") {
-                    other = Some(("workspace.sort.select", json!({"what": "soft"})));
-                }
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(format!("threshold {:.1}", s.soft_below)).color(t.text_dim).size(11.0));
-                    for (sens, label) in [(Sensitivity::Low, "Low"), (Sensitivity::Medium, "Medium"), (Sensitivity::High, "High")] {
-                        if text_button(ui, &format!("quickSens-{}", sens.name()), crate::i18n::tr(label), app.workspaces.quick.sensitivity == sens)
-                            .on_hover_text(crate::i18n::tr("How soft counts as soft: a share of the median focus score"))
-                            .clicked()
-                        {
-                            run = Some(("workspace.sort.sensitivity", json!({"value": sens.name()})));
-                        }
-                    }
-                });
-                if line(
-                    ui,
-                    &t,
-                    "quickBursts",
-                    &format!("Bursts ({} groups) · extras", s.bursts.len()),
-                    s.burst_extras.len(),
-                    "Select the shots of each burst that are not the best",
-                    "Select",
-                ) {
-                    other = Some(("workspace.sort.select", json!({"what": "burstExtras"})));
-                }
-                if !s.bursts.is_empty()
-                    && text_button(ui, "quickStack", &format!("Stack the {} bursts", s.bursts.len()), false)
-                        .on_hover_text(crate::i18n::tr("Group each burst into a stack with its best shot on top (one undo step)"))
-                        .clicked()
-                {
-                    other = Some(("workspace.sort.stackBursts", json!({})));
+                    run = Some(("workspace.sort.sensitivity", json!({"value": sens.name()})));
                 }
             }
-            if s.faces_done > 0 {
-                if line(ui, &t, "quickEyes", "Closed eyes", s.closed_eyes.len(), "Select the photos where a face has a closed eye", "Select") {
-                    other = Some(("workspace.sort.select", json!({"what": "closedEyes"})));
-                }
-            } else if faces_installed {
-                if text_button(ui, "quickFaces", crate::i18n::tr("Analyze faces (closed eyes)"), false).clicked() {
-                    other = Some((
-                        "photo.analyzeFaces",
-                        json!({"ids": app.session.visible_cloned().iter().map(|i| i.0).collect::<Vec<_>>(), "background": true}),
-                    ));
-                }
-            } else {
-                ui.label(
-                    egui::RichText::new(crate::i18n::tr("Closed eyes need the face model (Photo ▸ Analyze Faces).")).color(t.text_dim).size(11.5),
-                );
-            }
-            if line(ui, &t, "quickDup", "Same file", s.duplicates.len(), "Select the photos whose file is identical to another's", "Select") {
-                other = Some(("workspace.sort.select", json!({"what": "duplicates"})));
-            }
-            ui.add_space(6.0);
-            ui.label(
-                egui::RichText::new(crate::i18n::tr("These only select. Nothing is rated, rejected or deleted until you press a key or a button."))
-                    .color(t.text_dim)
-                    .size(11.5),
-            );
-            ui.add_space(10.0);
-            let n = app.session.selection.ids.len();
-            crate::home::heading(ui, &t, &format!("This selection ({n})"));
-            ui.horizontal(|ui| {
-                for (id, label, flag) in
-                    [("quickPick", "Pick (P)", "pick"), ("quickReject", "Reject (X)", "reject"), ("quickUnflag", "Unflag (U)", "none")]
-                {
-                    if ui.add_enabled_ui(n > 0, |ui| text_button(ui, id, crate::i18n::tr(label), false)).inner.clicked() {
-                        other = Some(("photo.flag", json!({"flag": flag})));
-                    }
-                }
-            });
-            ui.label(
-                egui::RichText::new(crate::i18n::tr("Keys: 1-5 stars · P pick · X reject · U unflag · ← → next photo")).color(t.text_dim).size(11.5),
-            );
         });
+        if line(
+            ui,
+            &t,
+            "quickBursts",
+            &format!("Bursts ({} groups) · extras", s.bursts.len()),
+            s.burst_extras.len(),
+            "Select the shots of each burst that are not the best",
+            "Select",
+        ) {
+            other = Some(("workspace.sort.select", json!({"what": "burstExtras"})));
+        }
+        if !s.bursts.is_empty()
+            && text_button(ui, "quickStack", &format!("Stack the {} bursts", s.bursts.len()), false)
+                .on_hover_text(crate::i18n::tr("Group each burst into a stack with its best shot on top (one undo step)"))
+                .clicked()
+        {
+            other = Some(("workspace.sort.stackBursts", json!({})));
+        }
+    }
+    if s.faces_done > 0 {
+        if line(ui, &t, "quickEyes", "Closed eyes", s.closed_eyes.len(), "Select the photos where a face has a closed eye", "Select") {
+            other = Some(("workspace.sort.select", json!({"what": "closedEyes"})));
+        }
+    } else if faces_installed {
+        if text_button(ui, "quickFaces", crate::i18n::tr("Analyze faces (closed eyes)"), false).clicked() {
+            other = Some((
+                "photo.analyzeFaces",
+                json!({"ids": app.session.visible_cloned().iter().map(|i| i.0).collect::<Vec<_>>(), "background": true}),
+            ));
+        }
+    } else {
+        ui.label(egui::RichText::new(crate::i18n::tr("Closed eyes need the face model (Photo ▸ Analyze Faces).")).color(t.text_dim).size(11.5));
+    }
+    if line(ui, &t, "quickDup", "Same file", s.duplicates.len(), "Select the photos whose file is identical to another's", "Select") {
+        other = Some(("workspace.sort.select", json!({"what": "duplicates"})));
+    }
+    ui.add_space(6.0);
+    ui.label(
+        egui::RichText::new(crate::i18n::tr("These only select. Nothing is rated, rejected or deleted until you press a key or a button."))
+            .color(t.text_dim)
+            .size(11.5),
+    );
+    ui.add_space(10.0);
+    let n = app.session.selection.ids.len();
+    crate::home::heading(ui, &t, &format!("This selection ({n})"));
+    ui.horizontal(|ui| {
+        for (id, label, flag) in [("quickPick", "Pick (P)", "pick"), ("quickReject", "Reject (X)", "reject"), ("quickUnflag", "Unflag (U)", "none")] {
+            if ui.add_enabled_ui(n > 0, |ui| text_button(ui, id, crate::i18n::tr(label), false)).inner.clicked() {
+                other = Some(("photo.flag", json!({"flag": flag})));
+            }
+        }
+    });
+    ui.label(egui::RichText::new(crate::i18n::tr("Keys: 1-5 stars · P pick · X reject · U unflag · ← → next photo")).color(t.text_dim).size(11.5));
     for (id, params) in run.into_iter().chain(other) {
         if let Err(e) = app.run(id, params) {
             app.ui.status = e;

@@ -333,7 +333,7 @@ fn setup(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &Value) {
     let fdl = &st["faceModel"]["download"];
     egui::Frame::new().fill(t.inset).corner_radius(6.0).inner_margin(12.0).show(ui, |ui| {
         ui.set_max_width(640.0);
-        ui.label(egui::RichText::new("Recognition needs two models").font(t.semibold(14.0)).color(t.text));
+        ui.label(egui::RichText::new(crate::i18n::tr("Recognition needs two models")).font(t.semibold(14.0)).color(t.text));
         ui.label(
             egui::RichText::new(format!(
                 "{} ({:.0} MB) by {}. Terms: {}. It is not part of LightCraft; it is downloaded to your Mac only if you agree, and everything else works without it. Photos never leave your computer.",
@@ -350,14 +350,14 @@ fn setup(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &Value) {
         if busy {
             let (done, total) = (dl["done"].as_f64().unwrap_or(0.0), dl["total"].as_f64().unwrap_or(1.0).max(1.0));
             ui.add(egui::ProgressBar::new((done / total) as f32).text(format!("{:.0} / {:.0} MB", done / 1e6, total / 1e6)));
-            if ui.button("Cancel").clicked() {
+            if ui.button(crate::i18n::tr("Cancel")).clicked() {
                 act(app, "people.model.cancel", json!({}));
             }
         } else {
             let agreed = &mut app.caches.people_rec.agreed;
             ui.checkbox(agreed, "I have read the terms and I agree to download the model");
             let go = *agreed;
-            if ui.add_enabled(go, egui::Button::new("Download")).clicked() {
+            if ui.add_enabled(go, egui::Button::new(crate::i18n::tr("Download"))).clicked() {
                 act(app, "people.model.download", json!({"acknowledged": true}));
             }
             if let Some(e) = dl["error"].as_str().or(fdl["error"].as_str()) {
@@ -375,7 +375,7 @@ fn controls(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &Value) {
     let running = job["running"].as_bool() == Some(true);
     let idx = &st["index"];
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("People").font(t.semibold(15.0)).color(t.text));
+        ui.label(egui::RichText::new(crate::i18n::tr("People")).font(t.semibold(15.0)).color(t.text));
         if let Some(o) = &app.caches.people_rec.ov {
             ui.label(
                 egui::RichText::new(format!("{} photos looked at · {} faces", o.indexed_photos, o.indexed_faces))
@@ -392,27 +392,31 @@ fn controls(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &Value) {
                     .desired_width(320.0)
                     .text(format!("{done:.0} / {total:.0} photos · {} faces", job["faces"].as_u64().unwrap_or(0))),
             );
-            if ui.button("Stop").clicked() {
+            if ui.button(crate::i18n::tr("Stop")).clicked() {
                 act(app, "people.cancel", json!({}));
             }
         } else {
             if ui
-                .add_enabled(installed, egui::Button::new("Find people in the library"))
-                .on_hover_text("Looks at each photo's preview (never the RAW), once. Interrupted runs resume.")
+                .add_enabled(installed, egui::Button::new(crate::i18n::tr("Find people in the library")))
+                .on_hover_text(crate::i18n::tr("Looks at each photo's preview (never the RAW), once. Interrupted runs resume."))
                 .clicked()
             {
                 act(app, "people.index", json!({"background": true}));
             }
-            if ui.add_enabled(installed, egui::Button::new("Group again")).clicked() {
+            if ui.add_enabled(installed, egui::Button::new(crate::i18n::tr("Group again"))).clicked() {
                 act(app, "people.refresh", json!({"background": true}));
             }
-            if ui.add_enabled(app.session.can_undo_people(), egui::Button::new("Undo")).on_hover_text("Undo the last People decision").clicked() {
+            if ui
+                .add_enabled(app.session.can_undo_people(), egui::Button::new(crate::i18n::tr("Undo")))
+                .on_hover_text(crate::i18n::tr("Undo the last People decision"))
+                .clicked()
+            {
                 act(app, "people.undo", json!({}));
             }
         }
         if st["computing"].as_bool() == Some(true) {
             ui.spinner();
-            ui.label(egui::RichText::new("grouping faces…").font(t.font(12.0)).color(t.text_dim));
+            ui.label(egui::RichText::new(crate::i18n::tr("grouping faces…")).font(t.font(12.0)).color(t.text_dim));
         }
     });
     if let Some(e) = job["error"].as_str() {
@@ -426,7 +430,7 @@ fn controls(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &Value) {
             let before = (auto, v);
             ui.checkbox(&mut auto, "Tag automatically above");
             ui.add_enabled(auto, egui::Slider::new(&mut v, 0.5..=0.95).fixed_decimals(2));
-            ui.label(egui::RichText::new("(off: LightCraft only suggests)").font(t.font(11.0)).color(t.text_dim));
+            ui.label(egui::RichText::new(crate::i18n::tr("(off: LightCraft only suggests)")).font(t.font(11.0)).color(t.text_dim));
             if (auto, v) != before {
                 act(app, "people.settings", json!({"autoTag": if auto { json!(v) } else { Value::Null }}));
             }
@@ -565,7 +569,7 @@ fn tile(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Thumb, size: f32, label:
                 });
             }
         });
-        ui.label(egui::RichText::new("Click to pick · drag to move this face").size(10.5).weak());
+        ui.label(egui::RichText::new(crate::i18n::tr("Click to pick · drag to move this face")).size(10.5).weak());
     })
 }
 
@@ -607,7 +611,7 @@ fn drop_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.add_space(PAD);
-        ui.label(egui::RichText::new("Drag faces onto a person or a group, or here:").font(t.font(12.0)).color(t.text_dim));
+        ui.label(egui::RichText::new(crate::i18n::tr("Drag faces onto a person or a group, or here:")).font(t.font(12.0)).color(t.text_dim));
         for (label, to, tip, id) in [
             ("Unknown person", "unknown", "You looked and don't know them. The faces leave the list to name (no keyword) and wait in “Unknown people”, where you can name them later.", "recDrop:unknown"),
             ("Not a real face", "ignored", "A statue, a poster, a wrong detection: these faces are left out for good.", "recDrop:ignored"),
@@ -624,7 +628,7 @@ fn drop_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let n = app.caches.people_rec.selected.len();
         if n > 0 {
             ui.label(egui::RichText::new(format!("{n} picked")).font(t.font(12.0)).color(t.text));
-            if ui.small_button("Clear").clicked() {
+            if ui.small_button(crate::i18n::tr("Clear")).clicked() {
                 app.caches.people_rec.selected.clear();
             }
         }
@@ -665,7 +669,7 @@ fn person_card(app: &mut LightcraftApp, ui: &mut egui::Ui, g: &GroupView) {
                 if resp.hovered() {
                     ui.painter().rect_stroke(r, 3.0, Stroke::new(1.0, t.text_dim), StrokeKind::Outside);
                 }
-                if resp.on_hover_text("Show their photos").clicked() {
+                if resp.on_hover_text(crate::i18n::tr("Show their photos")).clicked() {
                     act(app, "people.photos", json!({"person": g.id, "filter": true}));
                     let _ = app.run("view.photoGrid", json!({}));
                 }
@@ -676,8 +680,8 @@ fn person_card(app: &mut LightcraftApp, ui: &mut egui::Ui, g: &GroupView) {
             ui.label(egui::RichText::new(format!("{} photos", g.photos)).font(t.font(11.0)).color(t.text_dim));
             let open = app.caches.people_rec.open_person.as_deref() == Some(g.id.as_str());
             let b = ui
-                .small_button(if open { "Hide faces" } else { "Faces" })
-                .on_hover_text("List every face of this person: drag one to move it to someone else");
+                .small_button(crate::i18n::tr(if open { "Hide faces" } else { "Faces" }))
+                .on_hover_text(crate::i18n::tr("List every face of this person: drag one to move it to someone else"));
             register(ui.ctx(), format!("recPersonFaces:{}", g.id), b.rect);
             if b.clicked() {
                 app.caches.people_rec.open_person = if open { None } else { Some(g.id.clone()) };
@@ -739,7 +743,7 @@ fn person_faces(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let v = app.caches.people_rec.members.as_ref().map(|(_, v)| v.clone()).unwrap_or(Value::Null);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(format!("Faces of {name} ({})", v["total"].as_u64().unwrap_or(0))).font(t.semibold(14.0)).color(t.text));
-        if ui.small_button("Close").clicked() {
+        if ui.small_button(crate::i18n::tr("Close")).clicked() {
             app.caches.people_rec.open_person = None;
             app.caches.people_rec.members_shown = 0;
         }
@@ -747,9 +751,9 @@ fn person_faces(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     // pick faces (click), then say what they are: several at once
     bulk_bar(app, ui);
     ui.label(
-        egui::RichText::new(
+        egui::RichText::new(crate::i18n::tr(
             "A photo can hold several people: each face is shown with its name. Click faces to pick them, or drag one onto another person.",
-        )
+        ))
         .font(t.font(11.0))
         .color(t.text_dim),
     );
@@ -804,7 +808,7 @@ fn bulk_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 }
             });
         });
-        if on && ui.small_button("Clear").clicked() {
+        if on && ui.small_button(crate::i18n::tr("Clear")).clicked() {
             app.caches.people_rec.selected.clear();
         }
     });
@@ -813,10 +817,10 @@ fn bulk_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 /// The field to name a group, and its “Name” button; Enter names too.
 fn name_row(app: &mut LightcraftApp, ui: &mut egui::Ui, gid: &str) {
     let text = app.caches.people_rec.names.entry(gid.to_string()).or_default();
-    let r = ui.add(egui::TextEdit::singleline(text).hint_text("Name this person").desired_width(180.0));
+    let r = ui.add(egui::TextEdit::singleline(text).hint_text(crate::i18n::tr("Name this person")).desired_width(180.0));
     let name = text.trim().to_string();
-    let go =
-        (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) || ui.add_enabled(!name.is_empty(), egui::Button::new("Name")).clicked();
+    let go = (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+        || ui.add_enabled(!name.is_empty(), egui::Button::new(crate::i18n::tr("Name"))).clicked();
     if go && !name.is_empty() {
         app.caches.people_rec.names.remove(gid);
         if let Some(v) = act(app, "people.name", json!({"group": gid, "name": name})) {
@@ -839,20 +843,20 @@ fn groups(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     if !ov.grouped {
         if ov.indexed_faces > 0 {
-            ui.label(egui::RichText::new("Grouping the faces…").font(t.font(12.0)).color(t.text_dim));
+            ui.label(egui::RichText::new(crate::i18n::tr("Grouping the faces…")).font(t.font(12.0)).color(t.text_dim));
         } else {
-            ui.label(egui::RichText::new("No faces yet: choose “Find people in the library”.").font(t.font(12.0)).color(t.text_dim));
+            ui.label(egui::RichText::new(crate::i18n::tr("No faces yet: choose “Find people in the library”.")).font(t.font(12.0)).color(t.text_dim));
         }
         return;
     }
     ui.label(egui::RichText::new(format!("Groups to name ({})", ov.groups_total)).font(t.semibold(14.0)).color(t.text));
     if ov.stale {
-        ui.label(egui::RichText::new("New faces were found: choose “Group again”.").font(t.font(12.0)).color(t.caution));
+        ui.label(egui::RichText::new(crate::i18n::tr("New faces were found: choose “Group again”.")).font(t.font(12.0)).color(t.caution));
     }
     if ov.skipped_groups > 0 {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(format!("{} group(s) skipped for now.", ov.skipped_groups)).font(t.font(12.0)).color(t.text_dim));
-            let b = ui.small_button("Show them");
+            let b = ui.small_button(crate::i18n::tr("Show them"));
             register(ui.ctx(), "recBtn:unskip", b.rect);
             if b.clicked() {
                 act(app, "people.skip", json!({"clear": true}));
@@ -883,7 +887,7 @@ fn group_card(app: &mut LightcraftApp, ui: &mut egui::Ui, g: &GroupView, unknown
                 // the whole group can be dragged by its caption
                 let cap = ui
                     .add(egui::Label::new(egui::RichText::new(format!("{} faces · {} photos · drag", g.faces, g.photos)).font(t.font(12.0)).color(t.text_label)).sense(Sense::drag()))
-                    .on_hover_text("Drag the whole group onto a person (or onto Unknown person / Not a real face)");
+                    .on_hover_text(crate::i18n::tr("Drag the whole group onto a person (or onto Unknown person / Not a real face)"));
                 register(ui.ctx(), format!("recGroupGrip:{}", g.id), cap.rect);
                 if cap.drag_started()
                     && let Some(th) = g.thumbs.first()
@@ -893,7 +897,7 @@ fn group_card(app: &mut LightcraftApp, ui: &mut egui::Ui, g: &GroupView, unknown
                 ui.horizontal(|ui| {
                     name_row(app, ui, &g.id);
                     let open = app.caches.people_rec.open_person.as_deref() == Some(g.id.as_str());
-                    let b = ui.small_button(if open { "Hide faces" } else { "All faces" }).on_hover_text("List every face of this group, to pick several and say what they are");
+                    let b = ui.small_button(crate::i18n::tr(if open { "Hide faces" } else { "All faces" })).on_hover_text(crate::i18n::tr("List every face of this group, to pick several and say what they are"));
                     register(ui.ctx(), format!("recGroupFaces:{}", g.id), b.rect);
                     if b.clicked() {
                         app.caches.people_rec.open_person = if open { None } else { Some(g.id.clone()) };
@@ -923,10 +927,10 @@ fn group_card(app: &mut LightcraftApp, ui: &mut egui::Ui, g: &GroupView, unknown
                     if let Some(n) = &l.name {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new(format!("Looks like {n} ({:.0} %)", l.score * 100.0)).font(t.font(12.0)).color(t.text_dim));
-                            if ui.small_button("Yes, same").clicked() {
+                            if ui.small_button(crate::i18n::tr("Yes, same")).clicked() {
                                 act(app, "people.confirm", json!({"face": g.id, "person": format!("p:{}", l.person), "answer": "yes"}));
                             }
-                            if ui.small_button("No").clicked() {
+                            if ui.small_button(crate::i18n::tr("No")).clicked() {
                                 act(app, "people.confirm", json!({"face": g.id, "person": format!("p:{}", l.person), "answer": "no"}));
                             }
                         });
@@ -953,7 +957,7 @@ fn unknown_people(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &Value) {
     );
     ui.horizontal(|ui| {
         ui.label(
-            egui::RichText::new("Seen and not known: no keyword unless you choose below. Name one when you find out who it is.")
+            egui::RichText::new(crate::i18n::tr("Seen and not known: no keyword unless you choose below. Name one when you find out who it is."))
                 .font(t.font(11.0))
                 .color(t.text_dim),
         );
@@ -979,7 +983,7 @@ fn suggestions(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     }
     let t = Tokens::get(ui.ctx());
     ui.label(egui::RichText::new(format!("Looks like someone you named ({})", ov.suggestions_total)).font(t.semibold(14.0)).color(t.text));
-    ui.label(egui::RichText::new("Nothing is tagged until you say yes.").font(t.font(11.0)).color(t.text_dim));
+    ui.label(egui::RichText::new(crate::i18n::tr("Nothing is tagged until you say yes.")).font(t.font(11.0)).color(t.text_dim));
     ui.horizontal_wrapped(|ui| {
         for sg in &ov.suggestions {
             egui::Frame::new().fill(t.inset).corner_radius(6.0).inner_margin(6.0).show(ui, |ui| {
@@ -989,10 +993,10 @@ fn suggestions(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     let name = sg.name.clone().unwrap_or_else(|| "this person".into());
                     ui.label(egui::RichText::new(format!("{name}? {:.0} %", sg.score * 100.0)).font(t.font(11.0)).color(t.text_label));
                     ui.horizontal(|ui| {
-                        if ui.small_button("Yes").clicked() {
+                        if ui.small_button(crate::i18n::tr("Yes")).clicked() {
                             act(app, "people.confirm", json!({"face": sg.face, "person": format!("p:{}", sg.person), "answer": "yes"}));
                         }
-                        if ui.small_button("No").clicked() {
+                        if ui.small_button(crate::i18n::tr("No")).clicked() {
                             act(app, "people.confirm", json!({"face": sg.face, "person": format!("p:{}", sg.person), "answer": "no"}));
                         }
                     });

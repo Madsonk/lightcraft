@@ -346,7 +346,7 @@ fn finish(app: &mut LightcraftApp, job: KitJob, files: &[Value]) -> Result<(), S
     let ok = images.len();
     app.workspaces.create.last_kit = Some(json!({"dir": job.dir, "count": ok, "failed": failed.len()}));
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
-    app.toast(&ctx, format!("Kit ready: {n} image(s) and manifest.json in {dir}", n = ok, dir = job.dir));
+    app.toast(&ctx, crate::i18n::tr_format!("Kit ready: {n} image(s) and manifest.json in {dir}", n = ok, dir = job.dir));
     Ok(())
 }
 

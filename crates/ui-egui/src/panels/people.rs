@@ -82,10 +82,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let mut recognition = app.caches.people_rec.recognition;
     ui.horizontal(|ui| {
         ui.add_space(PAD);
-        if ui.selectable_label(!recognition, "Named in XMP").clicked() {
+        if ui.selectable_label(!recognition, crate::i18n::tr("Named in XMP")).clicked() {
             recognition = false;
         }
-        if ui.selectable_label(recognition, "Recognition").clicked() {
+        if ui.selectable_label(recognition, crate::i18n::tr("Recognition")).clicked() {
             recognition = true;
         }
     });
@@ -157,7 +157,7 @@ fn named(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             ui.painter().text(
                 pos2(area.left() + PAD, area.top() + 24.0),
                 Align2::LEFT_CENTER,
-                "No named people yet. Name the faces below to start.",
+                crate::i18n::tr("No named people yet: start with Recognition, or name the faces below."),
                 t.font(13.0),
                 t.text_dim,
             );

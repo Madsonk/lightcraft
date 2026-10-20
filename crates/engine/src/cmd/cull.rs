@@ -20,6 +20,43 @@ const FACE_WEIGHT: f32 = 0.6;
 /// Subtracted from a shot with a closed eye, so it only wins a burst when every shot has one.
 const CLOSED_PENALTY: f32 = 1000.0;
 
+const MEASUREMENT_VERSION: &str = "lightcraft-focus-clipping-thumb-v1";
+
+/// Bounded, disposable measurements in prefs.json; group membership is always recomputed.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Measurement {
+    sharpness: f32,
+    clipped: f32,
+    signature: Vec<f32>,
+}
+
+impl Measurement {
+    pub(crate) fn valid(&self) -> bool {
+        self.sharpness.is_finite()
+            && (0.0..=100.0).contains(&self.sharpness)
+            && self.clipped.is_finite()
+            && (0.0..=1.0).contains(&self.clipped)
+            && self.signature.len() == 64
+            && self.signature.iter().all(|v| v.is_finite())
+    }
+}
+
+fn measurement_key(s: &Session, id: PhotoId) -> Option<String> {
+    let ph = s.catalog.photo(id)?;
+    let stamp = match &ph.source {
+        lightcraft_catalog::Source::Demo { .. } => "demo".to_string(),
+        lightcraft_catalog::Source::File { path } => {
+            let m = std::fs::metadata(path).ok()?;
+            if !m.is_file() {
+                return None;
+            }
+            let time = m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos();
+            format!("{path}:{}:{time}", m.len())
+        }
+    };
+    Some(format!("{MEASUREMENT_VERSION}:{}:{stamp}", crate::media::content_key(ph)))
+}
+
 /// What a photo's faces say about it as a shot.
 #[derive(Clone, Copy, Default)]
 struct FaceSummary {
@@ -43,7 +80,20 @@ fn secs(iso: &str) -> Option<i64> {
 }
 
 fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() || s.selection.ids.len() > 1 { s.targets(p) } else { s.visible_cloned() };
+    const C: &str = "photo.analyze";
+    let ids: Vec<PhotoId> =
+        if p.get("ids").is_some() || p.get("id").is_some() || s.selection.ids.len() > 1 { s.checked_targets(C, p)? } else { s.visible_cloned() };
+    for key in ["dryRun", "force", "pickBest", "rejectClosedEyes", "faces"] {
+        if p.get(key).is_some_and(|v| !v.is_boolean()) {
+            return Err(super::bad(C, format!("{key} must be a boolean")));
+        }
+    }
+    if p.get("rejectBelow").is_some_and(|v| !v.as_f64().is_some_and(|n| n.is_finite() && (0.0..=100.0).contains(&n))) {
+        return Err(super::bad(C, "rejectBelow must be a number 0..100"));
+    }
+    let dry_run = p.get("dryRun").and_then(Value::as_bool).unwrap_or(false);
+    let force = p.get("force").and_then(Value::as_bool).unwrap_or(false);
+    let requested: Vec<u64> = ids.iter().map(|id| id.0).collect();
     let reject_below = p.get("rejectBelow").and_then(Value::as_f64).map(|v| v as f32);
     let pick_best = p.get("pickBest").and_then(Value::as_bool).unwrap_or(false);
     let reject_closed = p.get("rejectClosedEyes").and_then(Value::as_bool).unwrap_or(false);
@@ -51,7 +101,7 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
     // have none yet, which needs the model
     let want_faces = p.get("faces").and_then(Value::as_bool).unwrap_or(reject_closed);
     let mut faces_pending = 0;
-    if want_faces {
+    if want_faces && !dry_run {
         let (queued, _) = s
             .facemesh_enqueue(&ids, false)
             .map_err(|e| super::bad("photo.analyze", format!("{e} (faces / rejectClosedEyes need it: faces.model.download)")))?;
@@ -64,12 +114,41 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
     // measure (thumbnail-level sources: fast, and enough for focus at 512 px)
     let mut rows: Vec<(PhotoId, Option<i64>, f32, f32, [f32; 64])> = Vec::new();
     let mut failed = Vec::new();
+    let mut cached = 0;
+    let mut measured = 0;
     for id in ids {
-        match s.source_now(id, crate::media::SourceLevel::Thumb) {
+        let key = measurement_key(s, id);
+        let reused = key.as_ref().filter(|_| !force).and_then(|key| s.culling_cache.get(key)).filter(|m| m.valid()).cloned();
+        if let Some(m) = reused {
+            if let Ok(signature) = <[f32; 64]>::try_from(m.signature) {
+                let t = s.catalog.photo(id).and_then(|p| p.captured.as_deref().and_then(secs));
+                rows.push((id, t, m.sharpness, m.clipped, signature));
+                cached += 1;
+                continue;
+            }
+        }
+        // Measure the original independently of the edited/denoised preview and decoded caches.
+        let source = s.catalog.photo(id).map(|p| p.source.clone());
+        let loaded = match source {
+            Some(source) => s.media.origin_ref(&source, crate::media::SourceLevel::Thumb.max_edge()).load(),
+            None => Err("no such photo".into()),
+        };
+        match loaded {
             Ok(src) => {
                 let t = s.catalog.photo(id).and_then(|p| p.captured.as_deref().and_then(secs));
                 use lightcraft_pipeline::cull;
-                rows.push((id, t, cull::sharpness(&src), cull::clipped(&src), cull::signature(&src)));
+                let (sharp, clip, signature) = (cull::sharpness(&src), cull::clipped(&src), cull::signature(&src));
+                rows.push((id, t, sharp, clip, signature));
+                measured += 1;
+                if !dry_run
+                    && key == measurement_key(s, id)
+                    && let Some(key) = key
+                {
+                    if s.culling_cache.len() >= 1024 {
+                        s.culling_cache.pop_first();
+                    }
+                    s.culling_cache.insert(key, Measurement { sharpness: sharp, clipped: clip, signature: signature.to_vec() });
+                }
             }
             Err(e) => failed.push(json!([id.0, e])),
         }
@@ -139,14 +218,37 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
         let fs = summaries[i];
         let closed = fs.is_some_and(|f| f.closed);
         closed_eyes += closed as usize;
-        if (reject_below.is_some_and(|t| *sharp < t) || (reject_closed && closed)) && flag != Flag::Reject {
+        let low_focus = reject_below.is_some_and(|t| *sharp < t);
+        let reject = low_focus || (reject_closed && closed);
+        if reject && flag != Flag::Reject {
             ops.push(Op::SetFlag { id: *id, flag: Flag::Reject });
             rejected += 1;
         } else if pick_best && is_best && flag == Flag::None {
             ops.push(Op::SetFlag { id: *id, flag: Flag::Pick });
             picked += 1;
         }
-        let mut row = json!({"id": id.0, "sharpness": (sharp * 10.0).round() / 10.0, "clipped": clip, "group": g, "best": is_best});
+        let mut reasons = Vec::new();
+        if low_focus {
+            reasons.push("focus_below_threshold");
+        }
+        if reject_closed && closed {
+            reasons.push("closed_eyes");
+        }
+        if is_best {
+            reasons.push("best_in_burst");
+        }
+        if fs.is_none_or(|f| f.judged == 0) {
+            reasons.push("eyes_not_evaluated");
+        }
+        let suggested = if reject {
+            "reject"
+        } else if is_best {
+            "pick"
+        } else {
+            "review"
+        };
+        let mut row = json!({"id": id.0, "sharpness": (sharp * 10.0).round() / 10.0, "clipped": clip, "group": g, "best": is_best,
+            "suggestedFlag": suggested, "reasons": reasons, "measurementBasis": "original_thumbnail", "analysisVersion": MEASUREMENT_VERSION});
         if let (Some(f), Some(o)) = (fs, row.as_object_mut()) {
             o.insert("faces".into(), json!(f.judged));
             o.insert("eyesClosed".into(), json!(f.closed));
@@ -154,12 +256,15 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
         }
         out.push(row);
     }
-    if !ops.is_empty() {
+    if !ops.is_empty() && !dry_run {
         s.commit("Assisted Culling", Op::Batch { ops })?;
+        if measured > 0 {
+            s.save_prefs()?;
+        }
     }
-    Ok(
-        json!({"photos": out, "groups": best.len(), "rejected": rejected, "picked": picked, "closedEyes": closed_eyes, "facesPending": faces_pending, "failed": failed}),
-    )
+    Ok(json!({"photos": out, "groups": best.len(), "rejected": if dry_run {0} else {rejected}, "picked": if dry_run {0} else {picked},
+            "wouldReject": rejected, "wouldPick": picked, "dryRun": dry_run, "cached": cached, "measured": measured, "targetIds": requested,
+            "closedEyes": closed_eyes, "facesPending": faces_pending, "failed": failed}))
 }
 
 /// Find Similar: photos that look like `id` (signatures from thumbnail-level sources, cached by
@@ -212,7 +317,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Assisted Culling",
             [],
             None,
-            "{ids?, rejectBelow?: sharpness 0..100, pickBest?: bool, rejectClosedEyes?: bool, faces?: bool} — score the selected photos (else all in view) for focus (0..100) and clipping, group look-alike shots taken within 10 s and mark the best of each (the sharpest; when the shots have faces, the one with open, sharp eyes: see photo.analyzeFaces); optionally reject blurry photos, reject photos with a closed eye (`rejectClosedEyes`, which analyzes faces first: needs the face model) and pick each group's best; one undo step → {photos: [{id, sharpness, clipped, group, best, faces?, eyesClosed?, faceQuality?}], groups, rejected, picked, closedEyes, facesPending}",
+            "{id?|ids?, dryRun?: bool, force?: bool, rejectBelow?: 0..100, pickBest?: bool, rejectClosedEyes?: bool, faces?: bool} — focus/clipping on original thumbnails, burst suggestions with reasons. dryRun changes no analysis/flags and uses existing faces only. Bounded versioned measurements persist with library prefs and invalidate on file size/mtime; force recomputes. Suggestions are separate from flags; applying is one undo step → {photos, targetIds, groups, rejected, picked, wouldReject, wouldPick, dryRun, cached, measured, closedEyes, facesPending, failed}",
             always,
             analyze
         ),

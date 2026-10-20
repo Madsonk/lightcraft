@@ -24,9 +24,28 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             return;
         };
         egui::ScrollArea::vertical().id_salt("right-scroll").auto_shrink([false, false]).show(ui, |ui| {
+            // the scroll bar takes its own room instead of floating over the buttons (v14)
+            ui.spacing_mut().scroll.floating = false;
             ui.spacing_mut().item_spacing.y = 0.0;
+            if crate::workspaces::enabled(app) && app.workspaces.kind == crate::workspaces::Space::Library {
+                if app.ui.histogram {
+                    super::edit::histogram(app, ui, id);
+                }
+                library_batch_tools(app, ui);
+                egui::CollapsingHeader::new(crate::i18n::tr("Keywords")).default_open(true).show(ui, |ui| keywords(app, ui, id));
+                egui::CollapsingHeader::new(crate::i18n::tr("Metadata")).show(ui, |ui| info(app, ui, id));
+                return;
+            }
+            if crate::retouch_left::wants(app) {
+                if app.ui.histogram {
+                    super::edit::histogram(app, ui, id);
+                }
+                development_tools(app, ui, id);
+            }
             match app.ui.right {
+                RightPanel::Edit if crate::edit_tasks::wants(app) => crate::edit_tasks::show(app, ui, id),
                 RightPanel::Edit => super::edit::show(app, ui, id),
+                RightPanel::Proposals => super::proposals::show(app, ui),
                 RightPanel::Profiles => super::profiles::show(app, ui, id),
                 RightPanel::Crop => crop(app, ui, id),
                 RightPanel::Remove => remove(app, ui, id),
@@ -1055,7 +1074,10 @@ fn versions(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     header(ui, "Versions");
     let t = Tokens::get(ui.ctx());
     padded(ui, |ui| {
-        super::proposals::section(app, ui);
+        // the classic window keeps the proposals here; with workspaces on they have their own panel
+        if !crate::workspaces::enabled(app) {
+            super::proposals::section(app, ui);
+        }
         if text_button(ui, "versionCreate", crate::i18n::tr("Create Version"), false).clicked() {
             let _ = app.run("version.create", json!({}));
         }
@@ -1225,4 +1247,250 @@ mod tests {
         assert_eq!(super::short_time("2026-09-30T12:00:05"), "Sep 30, 2026, 12:00 PM");
         assert_eq!(super::short_time("2026-01-02"), "Jan 2, 2026");
     }
+}
+
+/// Library keeps batch actions, keywords and metadata together in one sidebar.
+fn library_batch_tools(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    let ids: Vec<u64> = app.session.selection.ids.iter().map(|id| id.0).collect();
+    let guard = json!({"active": app.session.active().map(|id| id.0), "ids": ids});
+    register(ui.ctx(), "region:libraryBatchTools", ui.max_rect());
+    header(ui, "Batch processing");
+    ui.label(format!("{}: {}", crate::i18n::tr("Selected photos"), ids.len()));
+    series_tools(app, ui, &ids, &guard);
+    classification_tools(app, ui);
+    egui::CollapsingHeader::new(crate::i18n::tr("Sorting Help")).show(ui, |ui| crate::quick_sort::show(app, ui));
+    egui::CollapsingHeader::new(crate::i18n::tr("Quick Develop")).default_open(true).show(ui, |ui| {
+        ui.add_enabled_ui(!ids.is_empty(), |ui| {
+            for (control, label, step) in [("light.exposure", "Exposure", 0.33), ("wb.temp", "Temperature", 250.0), ("wb.tint", "Tint", 5.0)] {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr(label));
+                    for (suffix, delta) in [("−", -step), ("+", step)] {
+                        if text_button(ui, &format!("batchAdjust:{control}:{suffix}"), suffix, false).clicked() {
+                            let _ = app.run("develop.quickAdjust", json!({"ids": ids, "control": control, "delta": delta, "expectedSelection": guard}));
+                        }
+                    }
+                });
+            }
+            egui::ComboBox::from_id_salt("batchPreset").selected_text(crate::i18n::tr("Apply preset to selection")).show_ui(ui, |ui| {
+                let presets: Vec<_> = app.session.presets.iter().map(|p| (p.id.clone(), p.name.clone())).collect();
+                for (id, name) in presets {
+                    if ui.button(name).clicked() {
+                        let _ = app.run("preset.apply", json!({"id": id, "ids": ids, "expectedSelection": guard}));
+                        ui.close();
+                    }
+                }
+            });
+            egui::ComboBox::from_id_salt("batchLut").selected_text(crate::i18n::tr("Apply LUT to selection")).show_ui(ui, |ui| {
+                let profiles: Vec<_> = app.session.lut_profiles.iter().map(|p| (p.id.clone(), p.name.clone())).collect();
+                for (id, name) in profiles {
+                    if ui.button(name).clicked() {
+                        let _ = app.run("develop.profile", json!({"id": id, "ids": ids, "expectedSelection": guard}));
+                        ui.close();
+                    }
+                }
+            });
+            if text_button(ui, "batchImportLooks", "Import Presets…", false).clicked() { let _ = app.run("file.importPresets", json!({})); }
+            if text_button(ui, "batchSyncColor", "Sync colour from active photo", false).clicked() {
+                let _ = app.run("develop.sync", json!({"groups": ["profile", "whiteBalance", "light", "toneCurve", "color", "colorMixer", "colorGrading"], "expectedSelection": guard}));
+            }
+            if text_button(ui, "batchExposure", "Match Total Exposures", false).clicked() {
+                let _ = app.run("develop.matchExposure", json!({"ids": ids, "expectedSelection": guard}));
+            }
+
+        });
+    });
+    egui::CollapsingHeader::new(crate::i18n::tr("People recognition")).show(ui, |ui| {
+        if ui.add_enabled_ui(!ids.is_empty(), |ui| text_button(ui, "batchDetectPeople", "Detect people in selection", false)).inner.clicked() {
+            let _ = app.run("faces.detect", json!({"ids": ids, "expectedSelection": guard}));
+        }
+        if ui.add_enabled_ui(!ids.is_empty(), |ui| text_button(ui, "batchFaces", "Analyze selected faces", false)).inner.clicked() {
+            let _ = app.run("photo.analyzeFaces", json!({"ids": ids, "expectedSelection": guard}));
+        }
+        if text_button(ui, "batchPeople", "People", false).clicked() {
+            let _ = app.run("workspace.step", json!({"step": "classify"}));
+        }
+    });
+}
+
+/// Library-wide consistency check. The preview is read-only and intentionally leaves ambiguous
+/// names and descriptive keywords alone.
+fn classification_tools(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    egui::CollapsingHeader::new(crate::i18n::tr("Classification consistency")).show(ui, |ui| {
+        ui.label(crate::i18n::tr("People and places use structured keywords; descriptive keywords stay unchanged."));
+        if text_button(ui, "classificationAudit", "Audit keywords, people and places", false).clicked()
+            && let Ok(report) = app.run("classification.audit", json!({}))
+        {
+            ui.data_mut(|d| d.insert_temp(egui::Id::new("classificationAuditReport"), report));
+        }
+        let report: Option<serde_json::Value> = ui.data(|d| d.get_temp(egui::Id::new("classificationAuditReport")));
+        let Some(report) = report else { return };
+        ui.label(format!(
+            "{} · {} · {}",
+            format!("{}: {}", crate::i18n::tr("Safe changes"), report["safeChanges"]),
+            format!("{}: {}", crate::i18n::tr("Ambiguous"), report["ambiguous"].as_array().map_or(0, Vec::len)),
+            format!("{}: {}", crate::i18n::tr("Descriptive keywords preserved"), report["genericKeywords"].as_array().map_or(0, Vec::len)),
+        ));
+        if let Some(rows) = report["candidates"].as_array() {
+            egui::ScrollArea::vertical().max_height(130.0).show(ui, |ui| {
+                for row in rows.iter().take(100) {
+                    ui.label(format!("{} → {}", row["from"].as_str().unwrap_or(""), row["to"].as_str().unwrap_or("")));
+                }
+            });
+        }
+        let safe = report["safeChanges"].as_u64().unwrap_or(0);
+        if ui.add_enabled_ui(safe > 0, |ui| text_button(ui, "classificationApply", "Apply safe harmonization", false)).inner.clicked() {
+            let revision = report["revision"].clone();
+            if app.run("classification.harmonize", json!({"expectedRevision": revision})).is_ok()
+                && let Ok(fresh) = app.run("classification.audit", json!({}))
+            {
+                ui.data_mut(|d| d.insert_temp(egui::Id::new("classificationAuditReport"), fresh));
+            }
+        }
+        if report["ambiguous"].as_array().is_some_and(|x| !x.is_empty()) {
+            ui.label(crate::i18n::tr("Ambiguous names require a manual choice."));
+        }
+    });
+}
+
+/// All active-photo tools stay reachable above the current editing panel.
+fn development_tools(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
+    ui.label(crate::i18n::tr("Active photo only"));
+    ui.horizontal_wrapped(|ui| {
+        for (widget, label, command) in [
+            ("developColors", "Develop", "panel.edit"),
+            ("developCrop", "Crop", "panel.crop"),
+            ("developMasks", "Masking", "panel.masking"),
+            ("developLocation", "Location", "panel.info"),
+            ("developProposal", "Proposals", "panel.proposals"),
+        ] {
+            if text_button(ui, widget, label, false).clicked() {
+                let _ = app.run(command, json!({}));
+            }
+        }
+    });
+    egui::CollapsingHeader::new(crate::i18n::tr("People and AI retouch")).show(ui, |ui| {
+        if text_button(ui, "developDetect", "Detect Faces", false).clicked() {
+            let _ = app.run("faces.detect", json!({"ids": [id.0]}));
+            app.ui.face_boxes = true;
+        }
+        if text_button(ui, "developFaceBoxes", "Adjust detected regions", app.ui.face_boxes).clicked() {
+            app.ui.face_boxes = !app.ui.face_boxes;
+        }
+        ui.label(crate::i18n::tr("Resize the face boxes on the photo using their handles."));
+        if text_button(ui, "developSkin", "Portrait Retouch", false).clicked() {
+            let _ = app.run("portrait.retouch", json!({"ids": [id.0], "skin": 40, "eyes": 0, "teeth": 0}));
+        }
+        if text_button(ui, "developSkinColor", "Harmonize Skin Colour", false).clicked() {
+            let _ = app.run("skin.harmonize", json!({"ids": [id.0], "series": 0}));
+        }
+    });
+    egui::CollapsingHeader::new(crate::i18n::tr("Colour harmony")).show(ui, |ui| {
+        let key = egui::Id::new("develop-colour-scheme");
+        let mut scheme: String = ui.data(|d| d.get_temp(key)).unwrap_or_else(|| "analogous".into());
+        egui::ComboBox::from_id_salt("develop-colour-schemes").selected_text(crate::i18n::tr(&scheme)).show_ui(ui, |ui| {
+            for value in ["analogous", "complementary", "triadic", "split"] {
+                ui.selectable_value(&mut scheme, value.into(), crate::i18n::tr(value));
+            }
+        });
+        ui.data_mut(|d| d.insert_temp(key, scheme.clone()));
+        if text_button(ui, "developColourPreview", "Preview colour harmony", false).clicked() {
+            let guard = json!({"active": id.0, "ids": app.session.selection.ids.iter().map(|id| id.0).collect::<Vec<_>>()});
+            if let Ok(report) = app.run("palette.harmonize", json!({"ids": [id.0], "target": {"scheme": scheme}, "apply": false})) {
+                ui.data_mut(|d| d.insert_temp(egui::Id::new("develop-colour-plan"), (id.0, scheme.clone(), guard, report)));
+            }
+        }
+        let plan: Option<(u64, String, serde_json::Value, serde_json::Value)> = ui.data(|d| d.get_temp(egui::Id::new("develop-colour-plan")));
+        if let Some((photo, scheme, guard, report)) = plan.filter(|(photo, _, _, _)| *photo == id.0) {
+            if let Some(row) = report["photos"].as_array().and_then(|rows| rows.first()) {
+                ui.label(format!("ΔE: {:.1} → {:.1}", row["distanceBefore"].as_f64().unwrap_or(0.0), row["distanceAfter"].as_f64().unwrap_or(0.0)));
+            }
+            if text_button(ui, "developColourApply", "Apply previewed colour harmony", false).clicked() {
+                let _ = app.run("palette.harmonize", json!({"ids": [photo], "target": {"scheme": scheme}, "expectedSelection": guard}));
+                ui.data_mut(|d| d.remove::<(u64, String, serde_json::Value, serde_json::Value)>(egui::Id::new("develop-colour-plan")));
+            }
+        }
+    });
+    let n = app.session.selection.ids.len();
+    if n > 1 && text_button(ui, "developSync", &format!("{} ({})", crate::i18n::tr("Sync Settings"), n - 1), false).clicked() {
+        let _ = app.run("develop.sync", json!({"expectedSelection": {"active": app.session.active().map(|id| id.0), "ids": app.session.selection.ids.iter().map(|id| id.0).collect::<Vec<_>>()}}));
+    }
+    divider(ui);
+}
+
+/// A private read-only plan; changing a target after preview prevents applying stale settings.
+fn series_tools(app: &mut LightcraftApp, ui: &mut egui::Ui, ids: &[u64], guard: &serde_json::Value) {
+    egui::CollapsingHeader::new(crate::i18n::tr("Photo series")).default_open(true).show(ui, |ui| {
+        ui.label(crate::i18n::tr("Select a series and its reference photo"));
+        let mut options: (bool, bool, bool) = ui.data(|d| d.get_temp(egui::Id::new("seriesOptions"))).unwrap_or((true, true, true));
+        ui.checkbox(&mut options.0, crate::i18n::tr("Match exposure per photo"));
+        ui.checkbox(&mut options.1, crate::i18n::tr("Estimate white balance per photo"));
+        ui.checkbox(&mut options.2, crate::i18n::tr("Share reference colour look"));
+        ui.data_mut(|d| d.insert_temp(egui::Id::new("seriesOptions"), options));
+        if ui.add_enabled_ui(ids.len() >= 2 && ids.len() <= 1000, |ui| text_button(ui, "seriesPreview", "Preview series corrections", false)).inner.clicked() {
+            if app.run("series.plan", json!({"ids": ids, "reference": app.session.active().map(|p|p.0), "exposure":options.0,"whiteBalance":options.1,"look":options.2,"expectedSelection":guard})).is_ok() {
+                ui.data_mut(|d| d.insert_temp(egui::Id::new("seriesGuard"), guard.clone()));
+            }
+        }
+        if ui.add_enabled_ui(ids.len() >= 2 && ids.len() <= 1000, |ui| text_button(ui, "seriesGroups", "Find time and place groups", false)).inner.clicked() {
+            if let Ok(groups) = app.run("series.groups", json!({"ids":ids,"expectedSelection":guard})) {
+                ui.data_mut(|d|d.insert_temp(egui::Id::new("seriesGroupsReport"), groups));
+            }
+        }
+        let groups: Option<serde_json::Value> = ui.data(|d|d.get_temp(egui::Id::new("seriesGroupsReport")));
+        if let Some(groups) = groups {
+            if let Some(groups) = groups["groups"].as_array() {
+                egui::CollapsingHeader::new(crate::i18n::tr("Suggested series")).show(ui, |ui| {
+                    for (i,g) in groups.iter().take(50).enumerate() {
+                        let n=g.as_array().map_or(0,Vec::len);
+                        if ui.button(format!("{} {} · {} {}",crate::i18n::tr("Series"),i+1,n,crate::i18n::tr("photos"))).clicked() {
+                            let first=g.as_array().and_then(|g|g.first()).cloned().unwrap_or(serde_json::Value::Null);
+                            let _=app.run("library.select",json!({"ids":g,"active":first}));
+                        }
+                    }
+                    ui.label(crate::i18n::tr("Review lighting changes; missing capture times stay separate"));
+                });
+            }
+        }
+        let report=app.session.series.status();
+        let state=report["state"].as_str().unwrap_or("idle");
+        if state=="idle" {return;}
+        ui.label(format!("{} / {}",report["done"],report["total"]));
+        if state=="running" {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+            if text_button(ui,"seriesPause","Pause series analysis",false).clicked(){let _=app.run("series.pause",json!({}));}
+        } else if state=="paused" {
+            if text_button(ui,"seriesResume","Resume series analysis",false).clicked(){let _=app.run("series.resume",json!({}));}
+        }
+        if let Some(error)=report["error"].as_str(){ui.label(error);}
+        if let Some(rows)=report["photos"].as_array(){
+            egui::CollapsingHeader::new(crate::i18n::tr("Review proposed corrections")).show(ui,|ui|{
+                egui::ScrollArea::vertical().max_height(160.0).show(ui,|ui|{
+                    for row in rows {
+                        let name=row["name"].as_str().unwrap_or("");
+                        if row["reference"].as_bool()==Some(true){ui.label(format!("{name} · {}",crate::i18n::tr("Reference")));}
+                        else if let Some(e)=row["error"].as_str(){ui.label(format!("{name} · {e}"));}
+                        else {
+                            if ui.selectable_label(false,format!("{name} · EV {:.2} · {:.0} K · {:.0}",row["exposure"].as_f64().unwrap_or(0.0),row["temperature"].as_f64().unwrap_or(0.0),row["tint"].as_f64().unwrap_or(0.0))).clicked() {
+                                if let Some(id)=row["id"].as_u64(){ui.data_mut(|d|d.insert_temp(egui::Id::new("seriesReviewPhoto"),id));}
+                            }
+                            if row["review"].as_bool()==Some(true){ui.label(crate::i18n::tr("Check this photo; white balance may be unchanged"));}
+                        }
+                    }
+                });
+            });
+        }
+        let review: Option<u64> = ui.data(|d|d.get_temp(egui::Id::new("seriesReviewPhoto")));
+        let review = review.filter(|id|app.session.series.proposal(PhotoId(*id)).is_some()).or_else(||report["photos"].as_array()?.iter().find(|row|row["exposure"].is_number())?["id"].as_u64());
+        if let Some(id)=review {
+            let after=app.session.series.proposal(PhotoId(id));
+            super::proposals::pair(app,ui,id,after);
+        }
+        ui.label(crate::i18n::tr("Statistical proposal: preserve atmosphere and review before applying"));
+        if state=="ready" && report["error"].is_null() {
+            if text_button(ui,"seriesApply","Apply reviewed series",false).clicked(){
+                let old: Option<serde_json::Value>=ui.data(|d|d.get_temp(egui::Id::new("seriesGuard")));
+                if let Some(old)=old {let _=app.run("series.apply",json!({"expectedSelection":old}));}
+            }
+        }
+    });
 }

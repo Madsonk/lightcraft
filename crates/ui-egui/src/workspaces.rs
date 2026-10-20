@@ -148,9 +148,9 @@ pub fn factory(space: Space) -> Layout {
     };
     match space {
         // decide fast: the sources on the left, the filter bar over the grid, keywords on the right
-        Space::Library => Layout { filter_bar: true, right: RightPanel::Keywords, ..base },
+        Space::Library => Layout { filter_bar: true, filmstrip: true, right: RightPanel::Keywords, ..base },
         // the photo and its tools: no sources column, Edit on the right, the strip of photos below
-        Space::Retouch => Layout { view: ViewMode::Detail, left_panel: false, right: RightPanel::Edit, filmstrip: true, ..base },
+        Space::Retouch => Layout { view: ViewMode::Detail, left_panel: true, right: RightPanel::Edit, filmstrip: true, ..base },
         // the photos that will go out on the grid, the sources (albums) on the left; the Create panel
         // takes the right-hand side of the centre
         Space::Create => base,
@@ -172,6 +172,8 @@ pub struct Saved {
 #[serde(default, rename_all = "camelCase")]
 pub struct Prefs {
     pub version: u32,
+    /// One-time migration of built-in layouts; custom spaces are preserved.
+    pub module_layout_revision: u32,
     pub current: String,
     pub saved: Vec<Saved>,
     /// The import settings the home screen remembers for the next import (v12).
@@ -551,7 +553,8 @@ pub fn command(app: &mut LightcraftApp, id: &str, p: &Value) -> Result<Value, St
 /// layout it had (the first run opens the Library space's factory arrangement).
 pub fn attach(app: &mut LightcraftApp, path: Option<PathBuf>) {
     app.workspaces.path = path.clone();
-    let Some(prefs) = path.as_deref().and_then(Prefs::load) else {
+    let Some(mut prefs) = path.as_deref().and_then(Prefs::load) else {
+        app.workspaces.prefs.module_layout_revision = 15;
         // first run (no workspaces.json yet): the window opens as the Library space is meant to look, not as
         // `ui.json` left it, or the arrangement of the last session would become the "Library" the user finds later
         if enabled(app) {
@@ -561,6 +564,11 @@ pub fn attach(app: &mut LightcraftApp, path: Option<PathBuf>) {
         }
         return;
     };
+    if prefs.module_layout_revision < 15 {
+        prefs.saved.retain(|s| Space::from_name(&s.name).is_none());
+        prefs.module_layout_revision = 15;
+        app.workspaces.dirty = true;
+    }
     let current = prefs.current.clone();
     app.workspaces.prefs = prefs;
     if !enabled(app) {
@@ -680,4 +688,14 @@ pub fn inspect(app: &LightcraftApp) -> Value {
         "quick": crate::quick_sort::inspect(app),
         "classify": crate::classify::inspect(app),
     })
+}
+
+/// Shared module filmstrip, drawn across the window below both sidebars.
+pub(crate) fn module_filmstrip(app: &LightcraftApp) -> bool {
+    enabled(app)
+        && matches!(app.workspaces.kind, Space::Library | Space::Retouch)
+        && app.ui.filmstrip
+        && !app.ui.fullscreen
+        && !owns_window(app)
+        && matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid | ViewMode::Detail)
 }

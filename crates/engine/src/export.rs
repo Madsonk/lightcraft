@@ -1539,7 +1539,28 @@ fn write_with(path: &str, bytes: &[u8], durable: bool) -> Result<(), String> {
     if let Some(dir) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    if durable { write_atomic(p, bytes) } else { write_atomic_nosync(p, bytes) }.map_err(|e| format!("{path}: {e}"))
+    if durable { write_atomic(p, bytes) } else { write_atomic_nosync(p, bytes) }.map_err(|e| format!("{path}: {e}"))?;
+    // Read back through a fixed-size buffer: don't report a successful native write until the
+    // destination contains exactly the encoded bytes. This isn't an fsync/durability claim.
+    use std::io::Read;
+    let mut file = std::fs::File::open(p).map_err(|e| format!("{path}: verification: {e}"))?;
+    let mut buffer = [0u8; 65536];
+    let mut offset = 0usize;
+    loop {
+        let n = file.read(&mut buffer).map_err(|e| format!("{path}: verification: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        let end = offset.checked_add(n).ok_or_else(|| format!("{path}: verification size overflow"))?;
+        if bytes.get(offset..end) != buffer.get(..n) {
+            return Err(format!("{path}: verification: output differs from encoded bytes"));
+        }
+        offset = end;
+    }
+    if offset != bytes.len() {
+        return Err(format!("{path}: verification: output is truncated"));
+    }
+    Ok(())
 }
 
 /// The path of the sidecar with extension `ext` of the exported file `main`.
@@ -1625,7 +1646,8 @@ pub fn run_batch(
         match written {
             Ok((path, files, sidecars)) => {
                 taken.extend(files);
-                out.push(json!({"path": path, "width": e.width, "height": e.height, "bytes": e.bytes.len(), "sidecars": sidecars}));
+                out.push(json!({"photo": photo.0, "path": path, "width": e.width, "height": e.height, "bytes": e.bytes.len(),
+                    "contentHash": lightcraft_preview::hash_bytes(&e.bytes).to_string(), "sidecars": sidecars}));
             }
             Err(err) if stop_on_error => return Err(err),
             Err(err) => out.push(json!({"photo": photo.0, "file": file, "error": err})),

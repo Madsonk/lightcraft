@@ -129,6 +129,7 @@ impl Library {
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct PrefsFile {
+    culling_cache: std::collections::BTreeMap<String, crate::cmd::cull::Measurement>,
     xmp: crate::sidecar::XmpPrefs,
     /// Parameters of the last export (for Export with Previous).
     #[serde(alias = "last_export")]
@@ -327,6 +328,7 @@ impl Session {
         // preferences
         let prefs = settings.read::<PrefsFile>(files.as_mut(), "prefs.json").unwrap_or_default();
         self.xmp = prefs.xmp;
+        self.culling_cache = prefs.culling_cache.into_iter().filter(|(_, m)| m.valid()).take(1024).collect();
         self.last_export = prefs.last_export;
         self.export_presets = prefs.export_presets;
         self.metadata_presets = prefs.metadata_presets;
@@ -556,6 +558,7 @@ impl Session {
     /// Save the library preferences (no-op for in-memory sessions).
     pub fn save_prefs(&mut self) -> Result<()> {
         let v = serde_json::to_vec_pretty(&PrefsFile {
+            culling_cache: self.culling_cache.clone(),
             xmp: self.xmp,
             last_export: self.last_export.clone(),
             export_presets: self.export_presets.clone(),

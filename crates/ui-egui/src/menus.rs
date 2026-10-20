@@ -20,6 +20,7 @@ pub const LANGUAGE_COMMANDS: &[UiCommand] = &[
     ("app.language.japanese", crate::i18n::Locale::Ja.name(), None, "Edit>Language"),
     ("app.language.portuguese", crate::i18n::Locale::PtBr.name(), None, "Edit>Language"),
     ("app.language.spanish", crate::i18n::Locale::Es.name(), None, "Edit>Language"),
+    ("app.language.french", crate::i18n::Locale::Fr.name(), None, "Edit>Language"),
     ("app.language.german", crate::i18n::Locale::De.name(), None, "Edit>Language"),
     ("app.language.russian", crate::i18n::Locale::Ru.name(), None, "Edit>Language"),
 ];
@@ -40,6 +41,7 @@ pub fn language_from_command(id: &str) -> Option<crate::i18n::Locale> {
         "app.language.japanese" => Some(crate::i18n::Locale::Ja),
         "app.language.portuguese" => Some(crate::i18n::Locale::PtBr),
         "app.language.spanish" => Some(crate::i18n::Locale::Es),
+        "app.language.french" => Some(crate::i18n::Locale::Fr),
         "app.language.german" => Some(crate::i18n::Locale::De),
         "app.language.russian" => Some(crate::i18n::Locale::Ru),
         _ => None,
@@ -137,6 +139,14 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.photoCounts", "Show Photo Counts", None, "View"),
     ("view.slideshow", "Slideshow", Some("Cmd+Alt+Enter"), "View"),
     ("view.secondWindow", "Second Window", Some("Cmd+F11"), "Window"),
+    // v14: the proposed retouch as a panel of its own, the command palette, and Window ▸ Panels
+    ("panel.proposals", "Proposals", Some("Shift+N"), "Window"),
+    ("app.commandPalette", "Command Palette…", Some("Cmd+K"), "Window"),
+    ("window.panel.left", "Left Panel", None, "Window>Panels"),
+    ("window.panel.right", "Right Panel", None, "Window>Panels"),
+    ("window.panel.filmstrip", "Filmstrip", None, "Window>Panels"),
+    ("window.panel.filterBar", "Filter Bar", None, "Window>Panels"),
+    ("window.panel.histogram", "Histogram", None, "Window>Panels"),
     ("tool.keywordPainter", "Keyword Painter", None, ""),
     ("view.gridInfo", "Grid Info", None, ""),
     ("dialog.allMetadata", "All Metadata…", None, "Photo"),
@@ -818,6 +828,35 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         "panel.versions" => {
             panel(app, &ctx, RightPanel::Versions, "Versions");
             Ok(Value::Null)
+        }
+        "panel.proposals" => {
+            panel(app, &ctx, RightPanel::Proposals, "Proposals");
+            Ok(Value::Null)
+        }
+        "app.commandPalette" => Ok(json!({"open": crate::palette::toggle(app)})),
+        "window.panel.left" => {
+            app.ui.left_panel = !app.ui.left_panel;
+            Ok(json!({"open": app.ui.left_panel}))
+        }
+        "window.panel.right" => {
+            if app.ui.right == RightPanel::None {
+                app.ui.right = RightPanel::Edit;
+            } else {
+                app.ui.right = RightPanel::None;
+            }
+            Ok(json!({"open": app.ui.right != RightPanel::None}))
+        }
+        "window.panel.filmstrip" => {
+            app.ui.filmstrip = !app.ui.filmstrip;
+            Ok(json!({"open": app.ui.filmstrip}))
+        }
+        "window.panel.filterBar" => {
+            app.ui.filter_bar = !app.ui.filter_bar;
+            Ok(json!({"open": app.ui.filter_bar}))
+        }
+        "window.panel.histogram" => {
+            app.ui.histogram = !app.ui.histogram;
+            Ok(json!({"open": app.ui.histogram}))
         }
         "panel.activity" => {
             panel(app, &ctx, RightPanel::Activity, "History");
@@ -1519,6 +1558,9 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         "workspace.delete" => crate::workspaces::enabled(app) && !crate::workspaces::Workspaces::is_builtin(&app.workspaces.current),
         s if s.starts_with("workspace.") => crate::workspaces::enabled(app),
         "create.kit" => app.session.active().is_some() && app.services.pick_folder.is_some(),
+        "app.commandPalette" => true,
+        s if s.starts_with("window.panel.") => true,
+        "panel.proposals" => crate::workspaces::enabled(app) && app.session.active().is_some(),
         s if s.starts_with("panel.") || s.starts_with("tool.") || s.starts_with("section.") => app.session.active().is_some() || s == "panel.close",
         "app.export" | "dialog.export" | "dialog.createPreset" | "dialog.rename" | "dialog.captureTime" | "dialog.copySettings" => {
             app.session.active().is_some()

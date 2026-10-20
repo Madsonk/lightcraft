@@ -7,13 +7,14 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 /// The version shown to people (About, System Info, `--version`): the upstream release plus the local build tag.
-pub const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-local-ia-v12");
+pub const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-local-ia-v16");
 
 pub mod classify;
 pub mod context_bar;
 pub mod control;
 pub mod create_space;
 pub mod credits;
+pub mod edit_tasks;
 pub mod export_task;
 pub mod headless;
 pub mod heavy;
@@ -28,11 +29,13 @@ pub mod menubar;
 pub mod menus;
 pub mod merge;
 mod model_setup;
+pub mod palette;
 pub mod panels;
 pub mod pick;
 pub mod quick_sort;
 pub mod region;
 pub mod render;
+pub mod retouch_left;
 pub mod shortcuts;
 pub mod softpaint;
 pub mod state;
@@ -88,6 +91,8 @@ mod tests_v10;
 mod tests_v11;
 #[cfg(test)]
 mod tests_v12;
+#[cfg(test)]
+mod tests_v14;
 #[cfg(test)]
 mod tests_v9;
 #[cfg(test)]
@@ -288,6 +293,8 @@ pub struct LightcraftApp {
     /// The look the loupe shows while the pointer rests on a preset or profile (set by the
     /// panels each frame; nothing is committed, no history entry).
     pub hover_preview: Option<HoverPreview>,
+    /// The command palette (⌘K, v14).
+    pub palette: palette::State,
     /// The window is in full screen (as last reported by the host, or as last requested).
     pub window_is_fullscreen: bool,
     /// The GPU preference last applied (`app.gpu`), to apply Settings changes once.
@@ -361,6 +368,7 @@ impl LightcraftApp {
             resume: Default::default(),
             workspaces: Default::default(),
             hover_preview: None,
+            palette: Default::default(),
             window_is_fullscreen: false,
             gpu_applied: None,
             memory_applied: None,
@@ -386,6 +394,29 @@ impl LightcraftApp {
 
     /// Run a UI or engine command by id. The single entry point for every frontend path.
     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        let mut params = self.session.guarded_params(id, &params).map_err(|e| e.to_string())?;
+        if workspaces::enabled(self)
+            && self.workspaces.kind == workspaces::Space::Retouch
+            && matches!(
+                id,
+                "preset.apply"
+                    | "develop.reset"
+                    | "develop.paste"
+                    | "portrait.retouch"
+                    | "portrait.clear"
+                    | "skin.harmonize"
+                    | "palette.harmonize"
+                    | "photo.setMeta"
+                    | "faces.detect"
+                    | "photo.analyzeFaces"
+            )
+            && params.get("ids").is_none()
+            && (id == "preset.apply" || params.get("id").is_none())
+            && let Some(active) = self.session.active()
+            && let Some(object) = params.as_object_mut()
+        {
+            object.insert("ids".into(), serde_json::json!([active.0]));
+        }
         if let Some(result) = model_setup::intercept(self, id, &params) {
             return result;
         }
@@ -406,6 +437,7 @@ impl LightcraftApp {
             // Native menu clicks can arrive before logic() updates last_time after an idle gap.
             let now = self.tasks.repaint.as_ref().map(|ctx| ctx.input(|i| i.time)).unwrap_or(self.last_time);
             self.ui.toast = Some((text, now + TOAST_SECONDS, label));
+            self.ui.toast_kind = state::ToastKind::Info;
         }
         match &r {
             Err(e) => {
@@ -522,6 +554,14 @@ impl LightcraftApp {
     pub fn toast_for(&mut self, ctx: &egui::Context, text: impl Into<String>, secs: f64) {
         let t = ctx.input(|i| i.time);
         self.ui.toast = Some((text.into(), t + secs, None));
+        self.ui.toast_kind = state::ToastKind::Info;
+    }
+
+    /// A toast for something that worked (v14: green bar, check mark; 2 s).
+    pub fn toast_success(&mut self, ctx: &egui::Context, text: impl Into<String>) {
+        let t = ctx.input(|i| i.time);
+        self.ui.toast = Some((text.into(), t + 2.0, None));
+        self.ui.toast_kind = state::ToastKind::Success;
     }
 
     /// AI masks: apply finished background requests (clicks, descriptions, detail passes) and
@@ -646,6 +686,7 @@ impl LightcraftApp {
     pub fn toast_error(&mut self, ctx: &egui::Context, text: impl Into<String>) {
         let t = ctx.input(|i| i.time);
         self.ui.toast = Some((text.into(), t + 6.0, None));
+        self.ui.toast_kind = state::ToastKind::Error;
     }
 
     fn drain_control(&mut self, ctx: &egui::Context) {
@@ -1019,12 +1060,21 @@ impl LightcraftApp {
         panels::topbar::show(self, ui);
         context_bar::show(self, ui);
         panels::library_problem::banner(self, ui);
+        if workspaces::module_filmstrip(self) {
+            egui::Panel::bottom("module_filmstrip").exact_size(theme::Tokens::get(&ctx).film_h).resizable(false).frame(egui::Frame::NONE).show(
+                ui,
+                |ui| {
+                    widgets::register(ui.ctx(), "region:moduleFilmstrip", ui.max_rect());
+                    panels::detail::filmstrip(self, ui, ui.max_rect());
+                },
+            );
+        }
         if !workspaces::hides_strip(self) {
             panels::strip::show(self, ui);
         }
         // Import and Classify (Library steps) bring their own columns: the usual side panels give way
         let owns_window = workspaces::owns_window(self);
-        quick_sort::show(self, ui);
+        // Library tools share the right sidebar; leave the grid its full width.
         if self.ui.right != state::RightPanel::None && !owns_window {
             panels::right::show(self, ui);
         }
@@ -1032,7 +1082,11 @@ impl LightcraftApp {
             panels::presets::show(self, ui);
         }
         if self.ui.left_panel && !owns_window {
-            panels::left::show(self, ui);
+            if retouch_left::wants(self) {
+                retouch_left::show(self, ui);
+            } else {
+                panels::left::show(self, ui);
+            }
         }
         panels::bottombar::show(self, ui);
         let t = theme::Tokens::get(&ctx);
@@ -1063,6 +1117,7 @@ impl LightcraftApp {
         panels::notices::show(self, &ctx);
         panels::dialogs::show(self, &ctx);
         panels::library_problem::show(self, &ctx);
+        palette::show(self, &ctx);
         import::progress(self, &ctx);
         import::scan_progress(self, &ctx);
         lightroom_import::progress(self, &ctx);

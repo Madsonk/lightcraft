@@ -122,6 +122,7 @@ language_table! {
     Ja, "ja", "日本語", "Jpan", include_str!("../locales/ja.json");
     PtBr, "pt-br", "Português (Brasil)", "Latn", include_str!("../locales/pt-br.json");
     Es, "es", "Español", "Latn", include_str!("../locales/es.json");
+    Fr, "fr", "Français", "Latn", include_str!("../locales/fr.json");
     De, "de", "Deutsch", "Latn", include_str!("../locales/de.json");
     Ru, "ru", "Русский", "Cyrl", include_str!("../locales/ru.json");
 }
@@ -145,9 +146,23 @@ thread_local! {
     static LOCALE: std::cell::Cell<Locale> = const { std::cell::Cell::new(Locale::En) };
 }
 
-/// The UI language from the environment (`LIGHTCRAFT_LANGUAGE=zh-hans`), for headless runs.
+/// The UI language before the user chose one: `LIGHTCRAFT_LANGUAGE=zh-hans` (headless runs and
+/// tests), else the system language when the table ships it (a French Mac opens LightCraft in
+/// French the first time; `ui.json` keeps the choice afterwards), else English. The crate's own
+/// tests always start in English, whatever the machine speaks.
 pub fn default_language() -> Locale {
-    std::env::var("LIGHTCRAFT_LANGUAGE").ok().and_then(|value| Locale::parse_tag(&value)).unwrap_or(Locale::En)
+    if let Some(language) = std::env::var("LIGHTCRAFT_LANGUAGE").ok().and_then(|value| Locale::parse_tag(&value)) {
+        return language;
+    }
+    if cfg!(test) {
+        return Locale::En;
+    }
+    system_language().unwrap_or(Locale::En)
+}
+
+/// The language the operating system is set to, when the table ships it.
+pub fn system_language() -> Option<Locale> {
+    sys_locale::get_locale().and_then(|tag| Locale::parse_tag(&tag))
 }
 
 pub fn set_language(language: Locale) {

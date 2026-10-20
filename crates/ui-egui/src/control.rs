@@ -419,6 +419,7 @@ pub fn export_active(app: &mut LightcraftApp, p: &Value) -> Result<Value, String
     }
     let ids: Vec<_> = match p.get("ids").and_then(Value::as_array) {
         Some(a) => a.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect(),
+        None if p.get("id").is_some() => app.session.checked_targets("app.export", p).map_err(|e| e.to_string())?,
         None if !app.session.selection.ids.is_empty() => {
             // Batch order (and `{seq}`) follows the grid order.
             let sel: std::collections::HashSet<_> = app.session.selection.ids.iter().copied().collect();
@@ -460,6 +461,7 @@ pub fn export_active(app: &mut LightcraftApp, p: &Value) -> Result<Value, String
     // remember for Export with Previous (and to prefill the dialog)
     let mut last = p.clone();
     if let Some(o) = last.as_object_mut() {
+        o.remove("id");
         o.remove("ids");
         o.remove("path");
         o.insert("dir".into(), json!(dir));
@@ -467,6 +469,42 @@ pub fn export_active(app: &mut LightcraftApp, p: &Value) -> Result<Value, String
     app.session.last_export = Some(last);
     let _ = app.session.save_prefs();
     Ok(out)
+}
+
+#[cfg(test)]
+mod workflow_tests {
+    use super::*;
+
+    #[test]
+    fn workflow_export_explicit_id_wins_over_selection() {
+        let mut session = lightcraft_engine::Session::with_demo().with_fs();
+        let ids = session.visible_cloned();
+        session.execute("library.select", &json!({"ids": [ids[0].0, ids[1].0], "active": ids[0].0})).unwrap();
+        let mut app = LightcraftApp::new(session, crate::Services { write: Some(Box::new(|_, _| Ok(()))), ..Default::default() });
+        let out = export_active(&mut app, &json!({"id": ids[2].0, "dir": "workflow-export-test", "format": "png", "longEdge": 32})).unwrap();
+        assert_eq!(out["files"].as_array().unwrap().len(), 1);
+        assert_eq!(out["files"][0]["photo"], ids[2].0);
+        assert!(app.session.last_export.as_ref().unwrap().get("id").is_none());
+        assert_eq!(app.session.selection.active, Some(ids[0]));
+    }
+
+    #[test]
+    fn workflow_sliced_culling_preview_has_no_catalog_changes() {
+        let session = lightcraft_engine::Session::with_demo();
+        let mut app = LightcraftApp::new(session, crate::Services::default());
+        let ids: Vec<_> = app.session.visible_cloned().iter().take(2).map(|id| id.0).collect();
+        let before = app.session.catalog.to_snapshot();
+        let undo = app.session.undo.len();
+        crate::quick_sort::analyze_with(&mut app, ids, json!({"dryRun": true, "rejectBelow": 100})).unwrap();
+        for _ in 0..8 {
+            crate::quick_sort::tick(&mut app, 0.0);
+        }
+        assert!(app.workspaces.quick.job.is_none());
+        assert_eq!(app.workspaces.quick.last.as_ref().unwrap()["dryRun"], true);
+        assert_eq!(app.workspaces.quick.last.as_ref().unwrap()["proposals"].as_array().unwrap().len(), 2);
+        assert_eq!(app.session.catalog.to_snapshot(), before);
+        assert_eq!(app.session.undo.len(), undo);
+    }
 }
 
 pub fn save_screenshot(app: &mut LightcraftApp, image: &egui::ColorImage, path: Option<&str>) -> Value {

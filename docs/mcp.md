@@ -236,3 +236,7 @@ are untouched. A failed export is an `isError` tool result. Transport mutexes re
 
 Connect mode and exports inside `command_batch` remain synchronous and do not report MCP
 progress or cancellation. Use a direct headless export call for this behavior.
+
+## Local workflow reliability
+
+Commands accept an optional `expectedSelection: {active, ids}` guard. Use explicit targets for export/culling, `library.diagnoseFiles`, `library.findMissing {dryRun: true}`, `photo.analyze {dryRun: true}` and `export.verify`. See [workflow reliability](workflow-reliability.md) for scope and limits.
