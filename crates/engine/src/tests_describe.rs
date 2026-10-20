@@ -317,4 +317,14 @@ fn the_videos_view_data_lists_people_moments_and_the_player() {
         assert!(o["args"].as_array().unwrap().iter().any(|a| a == "--start-time=83"), "{o}");
     }
     assert!(s.execute("video.open", &json!({"id": photo.0, "dryRun": true})).is_err(), "a photo is not played");
+    // a short clip around a moment, made once
+    let c = s.execute("video.clip", &json!({"id": vid.0, "ms": 3000, "seconds": 2})).unwrap();
+    assert_eq!((c["startMs"].as_u64(), c["lengthMs"].as_u64(), c["cached"].as_bool()), (Some(2000), Some(2000), Some(false)), "{c}");
+    let info = crate::video::ffmpeg::probe(Path::new(c["path"].as_str().unwrap())).unwrap();
+    assert!(info.duration.is_some_and(|d| (1.5..=2.6).contains(&d)) && info.height <= 540, "{info:?}");
+    assert_eq!(s.execute("video.clip", &json!({"id": vid.0, "ms": 3000, "seconds": 2})).unwrap()["cached"], true);
+    // at the end of the video the clip starts earlier; hostile values are clamped
+    let c = s.execute("video.clip", &json!({"id": vid.0, "ms": 1e300, "seconds": -4})).unwrap();
+    assert_eq!((c["startMs"].as_u64(), c["lengthMs"].as_u64()), (Some(5000), Some(1000)), "{c}");
+    assert!(s.execute("video.clip", &json!({"id": photo.0, "ms": 0})).is_err());
 }

@@ -239,6 +239,44 @@ pub fn extract_frame(video: &Path, at_ms: u64, edge: u32, out: &Path) -> Result<
     }
 }
 
+/// Longest a short clip may take to make.
+pub const CLIP_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// A short clip of `video` from `start_ms`, `len_ms` long, 540 lines high, H.264 + AAC in MP4
+/// (`+faststart`, so a player starts at once), at `out`, written to a temporary file first.
+pub fn extract_clip(video: &Path, start_ms: u64, len_ms: u64, out: &Path) -> Result<u64, String> {
+    let bin = ffmpeg().ok_or_else(|| missing("ffmpeg", FFMPEG_ENV))?;
+    let tmp = out.with_extension("part");
+    let _ = std::fs::remove_file(&tmp);
+    let mut last = String::new();
+    // the software encoder first; macOS's own encoder when that one is not in this FFmpeg
+    for codec in [["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"], ["-c:v", "h264_videotoolbox", "-b:v", "3M", "-realtime", "1"]] {
+        let mut cmd = Command::new(&bin);
+        cmd.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-ss"])
+            .arg(format!("{:.3}", start_ms as f64 / 1000.0))
+            .arg("-i")
+            .arg(file_arg(video))
+            .arg("-t")
+            .arg(format!("{:.3}", len_ms as f64 / 1000.0))
+            .args(["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-vf", "scale=-2:'min(540,ih)'", "-pix_fmt", "yuv420p"])
+            .args(codec)
+            .args(["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-f", "mp4", "-y"])
+            .arg(file_arg(&tmp));
+        let r = run(cmd, CLIP_TIMEOUT);
+        let len = std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0);
+        match r {
+            Ok(o) if o.ok && len > 0 => {
+                std::fs::rename(&tmp, out).map_err(|e| format!("{}: {e}", out.display()))?;
+                return Ok(len);
+            }
+            Ok(o) => last = first_line(&o.stderr).to_string(),
+            Err(e) => last = e,
+        }
+        let _ = std::fs::remove_file(&tmp);
+    }
+    Err(if last.is_empty() { "the clip could not be made".into() } else { format!("the clip could not be made: {last}") })
+}
+
 /// The JPEG bytes of the picture at `at_ms` (for a poster), without touching the disk.
 pub fn frame_bytes(video: &Path, at_ms: u64, edge: u32) -> Result<Vec<u8>, String> {
     let bin = ffmpeg().ok_or_else(|| missing("ffmpeg", FFMPEG_ENV))?;

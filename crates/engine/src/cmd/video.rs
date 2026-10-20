@@ -65,6 +65,15 @@ pub fn specs() -> Vec<CommandSpec> {
             crate::video::views::open
         ),
         cmd!(
+            query "video.clip",
+            "Clip of a Moment",
+            [],
+            None,
+            "{id, ms, seconds?: 1..30 (8)} — a short clip around the moment (half before, half after; 540 lines, H.264 + AAC, MP4), made once by FFmpeg and kept in `<library>/video/<key>/clips/`, for a player → {path, startMs, lengthMs, ms, cached, bytes, timecode}",
+            always,
+            clip
+        ),
+        cmd!(
             query "video.cancel",
             "Stop Cutting Pictures",
             [],
@@ -202,6 +211,15 @@ fn frames(s: &mut Session, p: &Value) -> Result<Value> {
     let _ = handle.join();
     s.video.rev += 1;
     Ok(job.report(true))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn clip(s: &mut Session, p: &Value) -> Result<Value> {
+    crate::video::views::clip(s, p)
+}
+#[cfg(target_arch = "wasm32")]
+fn clip(_: &mut Session, _: &Value) -> Result<Value> {
+    Err(other("videos are not available in this build"))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

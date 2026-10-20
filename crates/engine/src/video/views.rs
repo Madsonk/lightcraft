@@ -198,6 +198,44 @@ pub fn open(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"program": program, "args": args, "atTime": at_time, "timecode": timecode(ms)}))
 }
 
+/// Seconds a clip lasts by default, and at most.
+pub const CLIP_SECONDS: f64 = 8.0;
+const CLIP_MAX_SECONDS: f64 = 30.0;
+
+/// `video.clip {id, ms, seconds?}`: a short clip around the moment (half before, half after), 540
+/// lines, H.264 + AAC, kept in `<library>/video/<key>/clips/` (made once, then reused) — for a
+/// player to show the moment without reading the whole video.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn clip(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "video.clip";
+    let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or(s.active()).ok_or_else(|| bad(C, "no video: pass `id`"))?;
+    let ph = s.catalog.photo(id).ok_or_else(|| bad(C, "no such video"))?;
+    let path = super::source_path(ph).ok_or_else(|| bad(C, "this is not a video of the library"))?.to_string();
+    let ck = crate::media::content_key(ph);
+    let duration_ms = super::ffmpeg::sane_duration(ph.duration).map(|d| (d * 1000.0) as u64);
+    let root = super::cache_root(s).ok_or_else(|| bad(C, "the library is not on disk"))?;
+    let ms = p.get("ms").and_then(Value::as_f64).filter(|x| x.is_finite() && *x >= 0.0).map_or(0, |x| x.min(864_000_000.0) as u64);
+    let len = (crate::cmd::f64_or(p, "seconds", CLIP_SECONDS).clamp(1.0, CLIP_MAX_SECONDS) * 1000.0) as u64;
+    let mut start = ms.saturating_sub(len / 2);
+    if let Some(d) = duration_ms {
+        start = start.min(d.saturating_sub(len));
+    }
+    let dir = super::video_dir(&root, &ck).join("clips");
+    let out = dir.join(format!("c{start:010}-{len}.mp4"));
+    let cached = std::fs::metadata(&out).is_ok_and(|m| m.is_file() && m.len() > 0);
+    if !cached {
+        if !std::path::Path::new(&path).exists() {
+            return Err(bad(C, format!("the video is not there (offline drive?): {path}")));
+        }
+        std::fs::create_dir_all(&dir).map_err(|e| bad(C, format!("{}: {e}", dir.display())))?;
+        super::ffmpeg::extract_clip(std::path::Path::new(&path), start, len, &out).map_err(|e| bad(C, e))?;
+    }
+    Ok(json!({
+        "path": out.display().to_string(), "startMs": start, "lengthMs": len, "ms": ms, "cached": cached,
+        "bytes": std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0), "timecode": timecode(ms),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
