@@ -71,7 +71,8 @@ alignment and ArcFace network as photos, into the **same index**:
    in `<library>/video/<16 hex digits of key_of(content key)>/t<ms>.jpg` with a `frames.json` that lists them — never
    next to the video, never in the catalog journal; all of them together stay under `maxBytes` (4 GiB by default). The
    list is written after every picture: an interrupted run resumes, and a picture already there is not cut again
-   (`force` cuts them again). The folder is a cache, deleting it loses nothing but work.
+   (`force` cuts them again). The folder is a cache, deleting it loses nothing but work. `background: true` returns at
+   once: `video.status` → `job` shows the progress, `video.cancel` stops it (what was cut is kept).
 2. `people.index` (`videos: true` by default) also looks at the pictures of the videos in scope; videos without
    pictures are counted in `videosWithoutFrames`. The faces of a picture are stored under the key of its moment,
    **`key_of("<content key of the video>@<ms>")`**, where a photo's are under `key_of("<content key>")`.
@@ -84,10 +85,14 @@ alignment and ArcFace network as photos, into the **same index**:
    video, path of the picture; the face's `rect` is a fraction of that picture, not of the video's poster);
    `people.photos` adds `videos` (how many of `ids` are videos) and `moments: [{video, ms, frame}]`.
 
-`video.importVideoCatcher {db, dryRun?}` takes the pictures Video Catcher already cut (and its described moments, see
-[`describe.md`](describe.md)) for the catalog's videos it knows by path, instead of cutting them again.
+`video.importVideoCatcher {db, createMissing?, dryRun?}` takes the pictures Video Catcher already cut (and its described
+moments, see [`describe.md`](describe.md)) for the catalog's videos it knows by path, instead of cutting them again;
+`createMissing: true` first imports its videos the catalog lacks. Its people are only hints, never faces of People.
+Who is where and doing what: `describe.search` ([`describe.md`](describe.md)).
 
-Importing a video: `library.import {paths: [file]}` with the file named (folder imports do not pick videos up yet).
+Importing a video: `library.import {paths: [file]}` with the file named, or a folder with `videos: true` (by default a
+folder brings its photos only, so a photo library is not filled with videos unless asked; files already catalogued are
+skipped, so an interrupted import of a big folder resumes).
 Its size and duration come from `ffprobe`; its content key is a hash of its size and three 1 MiB samples (`vs1-…`; a
 video is not read whole); the grid shows a picture FFmpeg cuts at 1 s.
 

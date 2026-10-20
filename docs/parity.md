@@ -436,7 +436,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs`, `crates/engine/src/video/mod.rs`, `cmd:video.frames`, `cmd:video.status` | a video named in `library.import` is catalogued (kind, size and duration from `ffprobe`, sampled content key) and shows a poster cut by FFmpeg; `video.frames` cuts pictures into `<library>/video/<key>/` so People recognizes the faces of videos (`docs/people.md` → Faces in videos), `video.importVideoCatcher` + `describe.list` bring Video Catcher's pictures and moments (`docs/describe.md`). No player, no timeline; folder imports skip videos |
+| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs`, `crates/engine/src/video/mod.rs`, `cmd:video.frames`, `cmd:video.status` | a video named in `library.import` is catalogued (kind, size and duration from `ffprobe`, sampled content key) and shows a poster cut by FFmpeg; `video.frames` cuts pictures into `<library>/video/<key>/` so People recognizes the faces of videos (`docs/people.md` → Faces in videos), `video.importVideoCatcher` (`createMissing`) + `describe.*` bring Video Catcher's pictures and moments and let them be written, confirmed, proposed (`describe.suggest`, SigLIP) and searched with the people present (`cmd:describe.search`; `docs/describe.md`); folders bring videos with `library.import {videos: true}`. No player, no timeline |
 | LR-VID-TRIM | Trim | P1 | ⬜ | | |
 | LR-VID-EDIT | Edits on video | P2 | ⬜ | | |
 | LR-VID-COVER | Cover frame | P2 | ⬜ | | |

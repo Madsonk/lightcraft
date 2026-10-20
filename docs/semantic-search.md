@@ -15,7 +15,7 @@ near-duplicates work from perceptual hashes alone.
 | Command | What it does |
 |---|---|
 | `search.model.status` / `.download {acknowledged: true}` / `.cancel` | the model, its licence, the download (resumable, each file checked by size and SHA-256) |
-| `search.index {ids?, background?, force?}` | embeds the photos that have no vector yet (thumbnails, batches of 32) and hashes them; interrupted runs resume; `background: true` returns at once |
+| `search.index {ids?, background?, force?, videos?}` | embeds the photos that have no vector yet (thumbnails, batches of 32) and hashes them, and (`videos: true`, the default) the pictures cut out of videos (`video.frames`), each under `key_of("<content key>@<ms>")`; interrupted runs resume; `background: true` returns at once |
 | `search.status` / `search.cancel` | photos indexed / hashed / waiting, the run's progress and where its time went |
 | `search.semantic {query, limit?, minScore?, ids?, filter?}` | photos ranked by similarity to a sentence → `{id, score (cosine), probability}` |
 | `search.tag {labels, threshold?, template?, ids?, dryRun?}` | zero-shot: photos whose probability for a label reaches the threshold (default **0.02**) get it as a keyword |
@@ -61,6 +61,6 @@ external HDD):
 
 ## Limits
 
-Photos only (no video); thumbnails decode at ≤ 512 px; no UI yet (no panel, no `semantic:` token, no download dialog:
+`search.semantic` ranks photos only; the pictures of videos are indexed for `describe.search` ([`describe.md`](describe.md)), which searches photos and moments of videos with the people present; thumbnails decode at ≤ 512 px; no UI yet (no panel, no `semantic:` token, no download dialog:
 the licence is shown by `search.model.status` and the refusal of `search.model.download` without consent); the model
 stays in memory (about 1.5 GB) until `Searcher::unload`; no German/Spanish/etc. evaluation.
