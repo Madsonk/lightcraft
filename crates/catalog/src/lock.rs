@@ -102,13 +102,25 @@ impl LibraryLock {
             Ok(f) => f,
             Err(e) => return Ok(unlocked(e)),
         };
-        match file.try_lock() {
-            Ok(()) => {}
-            Err(TryLockError::WouldBlock) => {
-                let owner = std::fs::read(dir.join(OWNER)).ok().and_then(|b| serde_json::from_slice::<LockOwner>(&b).ok());
-                return Err(LockError::InUse(owner));
+        // A program another thread of this process is starting (FFmpeg, a file dialog…) holds a
+        // copy of every open descriptor, this lock's included, from its creation until its own
+        // program starts: a library closed a moment ago can look locked for a few milliseconds.
+        // So a refused lock is asked again for a short while before it counts as held elsewhere.
+        let deadline = web_time::Instant::now() + std::time::Duration::from_millis(1500);
+        let mut pause = std::time::Duration::from_millis(5);
+        loop {
+            match file.try_lock() {
+                Ok(()) => break,
+                Err(TryLockError::WouldBlock) if web_time::Instant::now() < deadline => {
+                    std::thread::sleep(pause);
+                    pause = (pause * 2).min(std::time::Duration::from_millis(100));
+                }
+                Err(TryLockError::WouldBlock) => {
+                    let owner = std::fs::read(dir.join(OWNER)).ok().and_then(|b| serde_json::from_slice::<LockOwner>(&b).ok());
+                    return Err(LockError::InUse(owner));
+                }
+                Err(TryLockError::Error(e)) => return Ok(unlocked(e)),
             }
-            Err(TryLockError::Error(e)) => return Ok(unlocked(e)),
         }
         let owner = LockOwner::this_process(program);
         if let Ok(json) = serde_json::to_vec_pretty(&owner)

@@ -91,3 +91,38 @@ fn lock_holder_child() {
     std::fs::write(std::path::Path::new(&dir).join("child-locked"), b"").unwrap();
     std::thread::sleep(std::time::Duration::from_secs(120));
 }
+
+/// Another thread of this process starting programs (FFmpeg, sqlite3…) must not make a library
+/// that was just closed look "already open": a child briefly holds a copy of every descriptor
+/// between its creation and its program's start, the lock's among them.
+#[cfg(unix)]
+#[test]
+fn programs_started_by_other_threads_never_keep_a_closed_library_locked() {
+    let dir = std::env::temp_dir().join(format!("lc-lock-spawn-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let spawners: Vec<_> = (0..4)
+        .map(|_| {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let _ = std::process::Command::new("/bin/sh").arg("-c").arg("exit 0").status();
+                }
+            })
+        })
+        .collect();
+    let mut refused = 0;
+    for _ in 0..300 {
+        match LibraryLock::acquire(&dir, "test") {
+            Ok(l) => drop(l),
+            Err(_) => refused += 1,
+        }
+    }
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    for s in spawners {
+        s.join().unwrap();
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(refused, 0, "a closed library was refused {refused} times out of 300");
+}
