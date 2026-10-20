@@ -188,7 +188,7 @@ impl Faces {
         #[cfg(feature = "faces")]
         {
             let dir = self.model_dir().ok_or("there is no folder for the model on this system")?;
-            return self.download.start(self.mirrors(), dir);
+            self.download.start(self.mirrors(), dir)
         }
         #[cfg(not(feature = "faces"))]
         Err("this build of LightCraft can't analyze faces".into())
@@ -259,7 +259,7 @@ impl Session {
             }
             self.facemesh.progress.total += queued;
             self.facemesh.worker.submit(file, jobs);
-            return Ok((queued, skipped));
+            Ok((queued, skipped))
         }
         #[cfg(not(feature = "faces"))]
         {

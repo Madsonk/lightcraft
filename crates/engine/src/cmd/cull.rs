@@ -119,13 +119,13 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
     for id in ids {
         let key = measurement_key(s, id);
         let reused = key.as_ref().filter(|_| !force).and_then(|key| s.culling_cache.get(key)).filter(|m| m.valid()).cloned();
-        if let Some(m) = reused {
-            if let Ok(signature) = <[f32; 64]>::try_from(m.signature) {
-                let t = s.catalog.photo(id).and_then(|p| p.captured.as_deref().and_then(secs));
-                rows.push((id, t, m.sharpness, m.clipped, signature));
-                cached += 1;
-                continue;
-            }
+        if let Some(m) = reused
+            && let Ok(signature) = <[f32; 64]>::try_from(m.signature)
+        {
+            let t = s.catalog.photo(id).and_then(|p| p.captured.as_deref().and_then(secs));
+            rows.push((id, t, m.sharpness, m.clipped, signature));
+            cached += 1;
+            continue;
         }
         // Measure the original independently of the edited/denoised preview and decoded caches.
         let source = s.catalog.photo(id).map(|p| p.source.clone());

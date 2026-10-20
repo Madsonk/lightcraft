@@ -64,13 +64,13 @@ fn place_path(parts: impl IntoIterator<Item = String>) -> Option<String> {
 fn named_people(s: &mut Session) -> HashMap<String, (u32, String)> {
     #[cfg(feature = "people")]
     {
-        return crate::people::ops::overview(s, 0, 0, 0)
+        crate::people::ops::overview(s, 0, 0, 0)
             .ok()
             .into_iter()
             .flat_map(|o| o.persons)
             .filter_map(|p| p.person.zip(p.name))
             .map(|(id, name)| (folded(&name), (id, name)))
-            .collect();
+            .collect()
     }
     #[cfg(not(feature = "people"))]
     {

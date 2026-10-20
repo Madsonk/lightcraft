@@ -471,6 +471,26 @@ pub fn export_active(app: &mut LightcraftApp, p: &Value) -> Result<Value, String
     Ok(out)
 }
 
+pub fn save_screenshot(app: &mut LightcraftApp, image: &egui::ColorImage, path: Option<&str>) -> Value {
+    let [w, h] = image.size;
+    let Some(path) = path else {
+        return json!({"ok": true, "result": {"width": w, "height": h}});
+    };
+    let rgba: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
+    let Some(img) = lightcraft_raster::Rgba8::from_bytes(w, h, &rgba) else {
+        return json!({"ok": false, "error": "bad screenshot buffer"});
+    };
+    let Some(png) = app.services.png.as_ref() else { return json!({"ok": false, "error": "no encoder"}) };
+    let bytes = png(&img);
+    match app.services.write.as_mut() {
+        Some(wr) => match wr(path, &bytes) {
+            Ok(()) => json!({"ok": true, "result": {"path": path, "width": w, "height": h}}),
+            Err(e) => json!({"ok": false, "error": e}),
+        },
+        None => json!({"ok": false, "error": "no writer configured"}),
+    }
+}
+
 #[cfg(test)]
 mod workflow_tests {
     use super::*;
@@ -504,25 +524,5 @@ mod workflow_tests {
         assert_eq!(app.workspaces.quick.last.as_ref().unwrap()["proposals"].as_array().unwrap().len(), 2);
         assert_eq!(app.session.catalog.to_snapshot(), before);
         assert_eq!(app.session.undo.len(), undo);
-    }
-}
-
-pub fn save_screenshot(app: &mut LightcraftApp, image: &egui::ColorImage, path: Option<&str>) -> Value {
-    let [w, h] = image.size;
-    let Some(path) = path else {
-        return json!({"ok": true, "result": {"width": w, "height": h}});
-    };
-    let rgba: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
-    let Some(img) = lightcraft_raster::Rgba8::from_bytes(w, h, &rgba) else {
-        return json!({"ok": false, "error": "bad screenshot buffer"});
-    };
-    let Some(png) = app.services.png.as_ref() else { return json!({"ok": false, "error": "no encoder"}) };
-    let bytes = png(&img);
-    match app.services.write.as_mut() {
-        Some(wr) => match wr(path, &bytes) {
-            Ok(()) => json!({"ok": true, "result": {"path": path, "width": w, "height": h}}),
-            Err(e) => json!({"ok": false, "error": e}),
-        },
-        None => json!({"ok": false, "error": "no writer configured"}),
     }
 }

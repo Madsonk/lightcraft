@@ -6,6 +6,7 @@
 //!   inside the file). A trailing `*` matches an id prefix. Row ids must be unique and statuses valid.
 //! - **Summary**: per section done / partial / missing / out of scope and the share of P0 and P1 rows done;
 //!   `--write` refreshes the table between the `parity:summary` markers in the document.
+//!
 //! Set LIGHTCRAFT_PARITY_CLI to a freshly built CLI to check that exact build without compiling
 //! a second copy in the debug profile.
 

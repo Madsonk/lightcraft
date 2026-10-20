@@ -102,22 +102,22 @@ fn verify(_: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(C, "verification supports files up to 128 MiB"));
     }
     let hash = lightcraft_preview::hash_bytes(&bytes).to_string();
-    if let Some(n) = p.get("bytes") {
-        if n.as_u64() != Some(bytes.len() as u64) {
-            return Err(bad(C, "output byte count differs from receipt"));
-        }
+    if let Some(n) = p.get("bytes")
+        && n.as_u64() != Some(bytes.len() as u64)
+    {
+        return Err(bad(C, "output byte count differs from receipt"));
     }
-    if let Some(expected) = p.get("contentHash") {
-        if expected.as_str() != Some(hash.as_str()) {
-            return Err(bad(C, "output content hash differs from receipt"));
-        }
+    if let Some(expected) = p.get("contentHash")
+        && expected.as_str() != Some(hash.as_str())
+    {
+        return Err(bad(C, "output content hash differs from receipt"));
     }
     let header = lightcraft_codecs::read_header(&bytes).map_err(|e| bad(C, format!("invalid exported image: {e}")))?;
     for (key, actual) in [("width", header.width), ("height", header.height)] {
-        if let Some(expected) = p.get(key) {
-            if expected.as_u64() != Some(u64::from(actual)) {
-                return Err(bad(C, format!("output {key} differs from receipt")));
-            }
+        if let Some(expected) = p.get(key)
+            && expected.as_u64() != Some(u64::from(actual))
+        {
+            return Err(bad(C, format!("output {key} differs from receipt")));
         }
     }
     // Validate compressed pixels too, at a bounded preview size (not just a valid header).

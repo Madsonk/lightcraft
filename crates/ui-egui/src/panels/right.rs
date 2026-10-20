@@ -1236,32 +1236,6 @@ fn activity(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     });
 }
 
-#[cfg(test)]
-mod tests {
-    // Feature: the aspect button tells what is locked
-    #[test]
-    fn aspect_label_names_presets_in_either_orientation() {
-        assert_eq!(super::aspect_label(None, Some(1.5)), "Free");
-        assert_eq!(super::aspect_label(Some((1600, 900)), None), "16 × 9");
-        assert_eq!(super::aspect_label(Some((900, 1600)), None), "16 × 9", "portrait 16:9");
-        assert_eq!(super::aspect_label(Some((400, 500)), None), "4 × 5 / 8 × 10");
-    }
-
-    #[test]
-    fn aspect_label_prefers_original_over_a_coinciding_preset_and_never_shows_pixel_sizes() {
-        assert_eq!(super::aspect_label(Some((300, 200)), Some(1.5)), "Original");
-        assert_eq!(super::aspect_label(Some((600_000, 400_000)), Some(1.5)), "Original");
-        assert_eq!(super::aspect_label(Some((137, 100)), Some(1.5)), "1.37 : 1");
-        assert_eq!(super::aspect_label(Some((0, 5)), None), "Free");
-    }
-
-    #[test]
-    fn short_times() {
-        assert_eq!(super::short_time("2026-09-30T12:00:05"), "Sep 30, 2026, 12:00 PM");
-        assert_eq!(super::short_time("2026-01-02"), "Jan 2, 2026");
-    }
-}
-
 /// Library keeps batch actions, keywords and metadata together in one sidebar.
 fn library_batch_tools(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let ids: Vec<u64> = app.session.selection.ids.iter().map(|id| id.0).collect();
@@ -1338,10 +1312,13 @@ fn classification_tools(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let report: Option<serde_json::Value> = ui.data(|d| d.get_temp(egui::Id::new("classificationAuditReport")));
         let Some(report) = report else { return };
         ui.label(format!(
-            "{} · {} · {}",
-            format!("{}: {}", crate::i18n::tr("Safe changes"), report["safeChanges"]),
-            format!("{}: {}", crate::i18n::tr("Ambiguous"), report["ambiguous"].as_array().map_or(0, Vec::len)),
-            format!("{}: {}", crate::i18n::tr("Descriptive keywords preserved"), report["genericKeywords"].as_array().map_or(0, Vec::len)),
+            "{}: {} · {}: {} · {}: {}",
+            crate::i18n::tr("Safe changes"),
+            report["safeChanges"],
+            crate::i18n::tr("Ambiguous"),
+            report["ambiguous"].as_array().map_or(0, Vec::len),
+            crate::i18n::tr("Descriptive keywords preserved"),
+            report["genericKeywords"].as_array().map_or(0, Vec::len),
         ));
         if let Some(rows) = report["candidates"].as_array() {
             egui::ScrollArea::vertical().max_height(130.0).show(ui, |ui| {
@@ -1439,19 +1416,17 @@ fn series_tools(app: &mut LightcraftApp, ui: &mut egui::Ui, ids: &[u64], guard: 
         ui.checkbox(&mut options.1, crate::i18n::tr("Estimate white balance per photo"));
         ui.checkbox(&mut options.2, crate::i18n::tr("Share reference colour look"));
         ui.data_mut(|d| d.insert_temp(egui::Id::new("seriesOptions"), options));
-        if ui.add_enabled_ui(ids.len() >= 2 && ids.len() <= 1000, |ui| text_button(ui, "seriesPreview", "Preview series corrections", false)).inner.clicked() {
-            if app.run("series.plan", json!({"ids": ids, "reference": app.session.active().map(|p|p.0), "exposure":options.0,"whiteBalance":options.1,"look":options.2,"expectedSelection":guard})).is_ok() {
+        if ui.add_enabled_ui(ids.len() >= 2 && ids.len() <= 1000, |ui| text_button(ui, "seriesPreview", "Preview series corrections", false)).inner.clicked()
+            && app.run("series.plan", json!({"ids": ids, "reference": app.session.active().map(|p|p.0), "exposure":options.0,"whiteBalance":options.1,"look":options.2,"expectedSelection":guard})).is_ok() {
                 ui.data_mut(|d| d.insert_temp(egui::Id::new("seriesGuard"), guard.clone()));
             }
-        }
-        if ui.add_enabled_ui(ids.len() >= 2 && ids.len() <= 1000, |ui| text_button(ui, "seriesGroups", "Find time and place groups", false)).inner.clicked() {
-            if let Ok(groups) = app.run("series.groups", json!({"ids":ids,"expectedSelection":guard})) {
+        if ui.add_enabled_ui(ids.len() >= 2 && ids.len() <= 1000, |ui| text_button(ui, "seriesGroups", "Find time and place groups", false)).inner.clicked()
+            && let Ok(groups) = app.run("series.groups", json!({"ids":ids,"expectedSelection":guard})) {
                 ui.data_mut(|d|d.insert_temp(egui::Id::new("seriesGroupsReport"), groups));
             }
-        }
         let groups: Option<serde_json::Value> = ui.data(|d|d.get_temp(egui::Id::new("seriesGroupsReport")));
-        if let Some(groups) = groups {
-            if let Some(groups) = groups["groups"].as_array() {
+        if let Some(groups) = groups
+            && let Some(groups) = groups["groups"].as_array() {
                 egui::CollapsingHeader::new(crate::i18n::tr("Suggested series")).show(ui, |ui| {
                     for (i,g) in groups.iter().take(50).enumerate() {
                         let n=g.as_array().map_or(0,Vec::len);
@@ -1463,7 +1438,6 @@ fn series_tools(app: &mut LightcraftApp, ui: &mut egui::Ui, ids: &[u64], guard: 
                     ui.label(crate::i18n::tr("Review lighting changes; missing capture times stay separate"));
                 });
             }
-        }
         let report=app.session.series.status();
         let state=report["state"].as_str().unwrap_or("idle");
         if state=="idle" {return;}
@@ -1471,9 +1445,8 @@ fn series_tools(app: &mut LightcraftApp, ui: &mut egui::Ui, ids: &[u64], guard: 
         if state=="running" {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
             if text_button(ui,"seriesPause","Pause series analysis",false).clicked(){let _=app.run("series.pause",json!({}));}
-        } else if state=="paused" {
-            if text_button(ui,"seriesResume","Resume series analysis",false).clicked(){let _=app.run("series.resume",json!({}));}
-        }
+        } else if state=="paused"
+            && text_button(ui,"seriesResume","Resume series analysis",false).clicked(){let _=app.run("series.resume",json!({}));}
         if let Some(error)=report["error"].as_str(){ui.label(error);}
         if let Some(rows)=report["photos"].as_array(){
             egui::CollapsingHeader::new(crate::i18n::tr("Review proposed corrections")).show(ui,|ui|{
@@ -1483,9 +1456,8 @@ fn series_tools(app: &mut LightcraftApp, ui: &mut egui::Ui, ids: &[u64], guard: 
                         if row["reference"].as_bool()==Some(true){ui.label(format!("{name} · {}",crate::i18n::tr("Reference")));}
                         else if let Some(e)=row["error"].as_str(){ui.label(format!("{name} · {e}"));}
                         else {
-                            if ui.selectable_label(false,format!("{name} · EV {:.2} · {:.0} K · {:.0}",row["exposure"].as_f64().unwrap_or(0.0),row["temperature"].as_f64().unwrap_or(0.0),row["tint"].as_f64().unwrap_or(0.0))).clicked() {
-                                if let Some(id)=row["id"].as_u64(){ui.data_mut(|d|d.insert_temp(egui::Id::new("seriesReviewPhoto"),id));}
-                            }
+                            if ui.selectable_label(false,format!("{name} · EV {:.2} · {:.0} K · {:.0}",row["exposure"].as_f64().unwrap_or(0.0),row["temperature"].as_f64().unwrap_or(0.0),row["tint"].as_f64().unwrap_or(0.0))).clicked()
+                                && let Some(id)=row["id"].as_u64(){ui.data_mut(|d|d.insert_temp(egui::Id::new("seriesReviewPhoto"),id));}
                             if row["review"].as_bool()==Some(true){ui.label(crate::i18n::tr("Check this photo; white balance may be unchanged"));}
                         }
                     }
@@ -1499,11 +1471,36 @@ fn series_tools(app: &mut LightcraftApp, ui: &mut egui::Ui, ids: &[u64], guard: 
             super::proposals::pair(app,ui,id,after);
         }
         ui.label(crate::i18n::tr("Statistical proposal: preserve atmosphere and review before applying"));
-        if state=="ready" && report["error"].is_null() {
-            if text_button(ui,"seriesApply","Apply reviewed series",false).clicked(){
+        if state=="ready" && report["error"].is_null()
+            && text_button(ui,"seriesApply","Apply reviewed series",false).clicked(){
                 let old: Option<serde_json::Value>=ui.data(|d|d.get_temp(egui::Id::new("seriesGuard")));
                 if let Some(old)=old {let _=app.run("series.apply",json!({"expectedSelection":old}));}
             }
-        }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    // Feature: the aspect button tells what is locked
+    #[test]
+    fn aspect_label_names_presets_in_either_orientation() {
+        assert_eq!(super::aspect_label(None, Some(1.5)), "Free");
+        assert_eq!(super::aspect_label(Some((1600, 900)), None), "16 × 9");
+        assert_eq!(super::aspect_label(Some((900, 1600)), None), "16 × 9", "portrait 16:9");
+        assert_eq!(super::aspect_label(Some((400, 500)), None), "4 × 5 / 8 × 10");
+    }
+
+    #[test]
+    fn aspect_label_prefers_original_over_a_coinciding_preset_and_never_shows_pixel_sizes() {
+        assert_eq!(super::aspect_label(Some((300, 200)), Some(1.5)), "Original");
+        assert_eq!(super::aspect_label(Some((600_000, 400_000)), Some(1.5)), "Original");
+        assert_eq!(super::aspect_label(Some((137, 100)), Some(1.5)), "1.37 : 1");
+        assert_eq!(super::aspect_label(Some((0, 5)), None), "Free");
+    }
+
+    #[test]
+    fn short_times() {
+        assert_eq!(super::short_time("2026-09-30T12:00:05"), "Sep 30, 2026, 12:00 PM");
+        assert_eq!(super::short_time("2026-01-02"), "Jan 2, 2026");
+    }
 }
