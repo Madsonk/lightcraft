@@ -26,6 +26,7 @@ pub mod crs;
 pub mod crs_masks;
 pub mod demo;
 pub mod denoise;
+pub mod describe;
 pub mod devices;
 pub mod dust;
 pub mod export;
@@ -68,6 +69,7 @@ pub mod segment;
 pub mod series;
 pub mod sidecar;
 pub mod smart;
+pub mod video;
 mod view;
 pub mod walk;
 
@@ -238,6 +240,8 @@ pub struct Session {
     pub people: people::People,
     /// Places: the settings and the suggestions waiting for a yes.
     pub places: places::Places,
+    /// Videos: the pictures cut out of them (`<library>/video/`).
+    pub video: video::Videos,
     /// Selected spot (Remove panel), by index into the active photo's spots.
     pub active_spot: Option<usize>,
     /// The persistent library this session writes to (`None` = in-memory only).
@@ -348,6 +352,7 @@ impl Session {
             searcher: search::Searcher::default(),
             people: people::People::default(),
             places: places::Places::default(),
+            video: video::Videos::default(),
             active_spot: None,
             library: None,
             library_identity: Arc::new(()),
@@ -1024,6 +1029,8 @@ mod tests_settings_files;
 mod tests_spots;
 #[cfg(all(test, feature = "search"))]
 mod tests_taste;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_video;
 #[cfg(test)]
 mod tests_xmp;
 

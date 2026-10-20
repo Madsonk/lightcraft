@@ -64,7 +64,9 @@ pub struct People {
 
 #[cfg(feature = "people")]
 pub use ops::inject as inject_faces;
-pub use views::{GroupView, Likely, Overview, SuggestionView, Thumb};
+#[cfg(feature = "people")]
+pub use ops::inject_keys as inject_faces_at;
+pub use views::{GroupView, Likely, Overview, SuggestionView, Thumb, VideoAt};
 
 impl People {
     /// Whether this build can recognize faces at all.

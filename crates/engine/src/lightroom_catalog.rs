@@ -337,6 +337,23 @@ fn committed_wal_len(main: &[u8], wal: &[u8]) -> Result<usize, String> {
 }
 
 /// Inspect `.lrcat` plus committed WAL pages without modifying either source file.
+/// Read whole tables of any SQLite file (and its committed WAL) without writing to either: each
+/// row as column name → value (blobs left out). A table that is not there reads as empty. Used by
+/// `video.importVideoCatcher` as well as the Lightroom import.
+pub(crate) fn read_sqlite_tables(path: &Path, names: &[&str]) -> Result<HashMap<String, Vec<BTreeMap<String, Value>>>, String> {
+    let wal_path = PathBuf::from(format!("{}-wal", path.display()));
+    let main = bytes(path)?;
+    let wal = match std::fs::metadata(&wal_path) {
+        Ok(_) => bytes(&wal_path)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(e.to_string()),
+    };
+    let wal_len = committed_wal_len(&main, &wal)?;
+    let db = Database::open_with_wal(main, wal.get(..wal_len).unwrap_or(&[])).map_err(|e| format!("not a readable SQLite file: {e:?}"))?;
+    let reader = Reader { tables: db.live_tables()?, db };
+    names.iter().map(|n| Ok((n.to_string(), reader.table(n, false)?))).collect()
+}
+
 pub fn read(path: &Path) -> Result<CatalogImport, String> {
     let cancel = AtomicBool::new(false);
     let total = AtomicUsize::new(0);

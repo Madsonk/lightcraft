@@ -30,6 +30,7 @@ lightcraft-lens = { workspace = true }
 miniz_oxide = { workspace = true }
 lightcraft-merge = { workspace = true }
 rayon = { workspace = true }
+siphasher = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

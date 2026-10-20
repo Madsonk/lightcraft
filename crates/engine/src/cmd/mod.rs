@@ -42,6 +42,7 @@ mod query;
 mod restore;
 mod search;
 mod taste;
+mod video;
 mod xmp;
 
 use serde::Serialize;
@@ -151,6 +152,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(taste::specs());
         v.extend(people::specs());
         v.extend(places::specs());
+        v.extend(video::specs());
         v.extend(convert::specs());
         v.extend(convert::edit_specs());
         v.extend(merge::specs());

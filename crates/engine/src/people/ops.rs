@@ -18,7 +18,7 @@ use lightcraft_people::{FAST_MODEL, MODEL, ModelInfo, key_of};
 use serde_json::{Value, json};
 
 use super::core::{Entry, Item, Slot, lock};
-use super::views::{GroupView, Likely, Overview, SuggestionView, Thumb};
+use super::views::{GroupView, Likely, Overview, SuggestionView, Thumb, VideoAt};
 use super::{KEYWORD_ROOT, People};
 use crate::cmd::{bad, bool_or, f64_or, str_param};
 use crate::media::SourceLevel;
@@ -133,13 +133,23 @@ fn remember(sl: &mut Slot, label: &str) {
 
 // ------------------------------------------------------------------------------------ photos
 
-/// Photos of the library by the key of their content.
-fn key_map(s: &Session) -> HashMap<u64, Vec<PhotoId>> {
+/// Photos (and videos) of the library by the key of their content; each picture cut out of a
+/// video (`key_of("<content key>@<ms>")`, see [`crate::video`]) leads to its video.
+fn key_map(s: &mut Session) -> HashMap<u64, Vec<PhotoId>> {
     let mut m: HashMap<u64, Vec<PhotoId>> = HashMap::new();
-    for p in s.catalog.photos().filter(|p| p.in_library() && p.kind != MediaKind::Video) {
+    for p in s.catalog.photos().filter(|p| p.in_library()) {
         m.entry(key_of(&crate::media::content_key(p))).or_default().push(p.id);
     }
+    for (k, f) in s.video_frames().iter() {
+        m.entry(*k).or_insert_with(|| f.ids.clone());
+    }
     m
+}
+
+/// The moment of a video a face key is, if it is one.
+fn video_at(frames: &HashMap<u64, crate::video::FrameAt>, key: u64) -> Option<VideoAt> {
+    let f = frames.get(&key)?;
+    Some(VideoAt { video: f.ids.first()?.0, ms: f.ms, frame: f.file.display().to_string() })
 }
 
 fn photos_of(map: &HashMap<u64, Vec<PhotoId>>, keys: impl IntoIterator<Item = u64>) -> Vec<PhotoId> {
@@ -156,14 +166,22 @@ fn photos_of(map: &HashMap<u64, Vec<PhotoId>>, keys: impl IntoIterator<Item = u6
     out
 }
 
+/// The keys of `keys` none of whose photos is among those of `keep` (the keyword of a person may
+/// go from them). A video has several keys (its own, one per picture cut out of it): one of them
+/// still holding the person keeps the video's keyword.
+fn without(map: &HashMap<u64, Vec<PhotoId>>, keys: &HashSet<u64>, keep: &HashSet<u64>) -> HashSet<u64> {
+    let kept: HashSet<PhotoId> = photos_of(map, keep.iter().copied()).into_iter().collect();
+    keys.iter().copied().filter(|k| !keep.contains(k) && map.get(k).is_none_or(|ids| !ids.iter().any(|i| kept.contains(i)))).collect()
+}
+
 // ------------------------------------------------------------------------------------ views
 
-fn thumbs_of(sl: &Slot, slots: &[usize], first: &HashMap<u64, PhotoId>, n: usize) -> Vec<Thumb> {
+fn thumbs_of(sl: &Slot, slots: &[usize], first: &HashMap<u64, PhotoId>, frames: &HashMap<u64, crate::video::FrameAt>, n: usize) -> Vec<Thumb> {
     slots
         .iter()
         .filter_map(|s| {
             let m = sl.store.meta(*s)?;
-            Some(Thumb { photo: first.get(&m.key)?.0, face: face_id(m.face()), rect: m.rect })
+            Some(Thumb { photo: first.get(&m.key)?.0, face: face_id(m.face()), rect: m.rect, video: video_at(frames, m.key) })
         })
         .take(n)
         .collect()
@@ -212,6 +230,7 @@ fn person_keys(state: &State, pid: u32) -> HashSet<u64> {
 pub fn overview(s: &mut Session, groups: usize, suggestions: usize, thumbs: usize) -> Result<Overview> {
     ensure_open(s).map_err(other)?;
     let map = key_map(s);
+    let frames = s.video_frames();
     let first: HashMap<u64, PhotoId> = map.iter().filter_map(|(k, v)| v.first().map(|p| (*k, *p))).collect();
     let computing = s.people.core.computing();
     let arc = s.people.core.slot.clone();
@@ -233,7 +252,7 @@ pub fn overview(s: &mut Session, groups: usize, suggestions: usize, thumbs: usiz
             keyword: p.name.as_deref().map(keyword_of),
             faces: slots.len(),
             photos: present,
-            thumbs: thumbs_of(sl, &best, &first, thumbs),
+            thumbs: thumbs_of(sl, &best, &first, &frames, thumbs),
             likely: Vec::new(),
             tightness: known.iter().find(|k| k.id == p.id).map_or(0.0, |k| mean_sim(sl, &slots, &k.centroid)),
         });
@@ -270,7 +289,7 @@ pub fn overview(s: &mut Session, groups: usize, suggestions: usize, thumbs: usiz
                 keyword: None,
                 faces: gr.members.len(),
                 photos: photos_of(&map, keys).len(),
-                thumbs: thumbs_of(sl, &gr.members, &first, thumbs),
+                thumbs: thumbs_of(sl, &gr.members, &first, &frames, thumbs),
                 likely: likely_for(&sl.state, &known, &gr.centroid, sl.state.settings.suggest - 0.1),
                 tightness: mean_sim(sl, &gr.members, &gr.centroid),
             });
@@ -286,6 +305,7 @@ pub fn overview(s: &mut Session, groups: usize, suggestions: usize, thumbs: usiz
                 person: sg.person,
                 name: sl.state.person(sg.person).and_then(|p| p.name.clone()),
                 score: sg.score,
+                video: video_at(&frames, m.key),
                 runner_up: sg.runner_up.map(|(person, score)| Likely { person, name: sl.state.person(person).and_then(|p| p.name.clone()), score }),
             });
         }
@@ -379,7 +399,7 @@ fn sync_person(s: &mut Session, pid: u32) -> Result<(usize, usize)> {
     let added = tag(s, &map, &keys, &kw, true)?;
     // photos that carry the keyword but have none of the person's faces
     let all: HashSet<u64> = map.keys().copied().collect();
-    let stale: HashSet<u64> = all.difference(&keys).copied().collect();
+    let stale = without(&map, &all, &keys);
     let removed = tag(s, &map, &stale, &kw, false)?;
     Ok((added, removed))
 }
@@ -394,7 +414,7 @@ fn sync_unknown(s: &mut Session) -> Result<(usize, usize)> {
     let map = key_map(s);
     let added = tag(s, &map, &keys, UNKNOWN_KEYWORD, true)?;
     let all: HashSet<u64> = map.keys().copied().collect();
-    let stale: HashSet<u64> = all.difference(&keys).copied().collect();
+    let stale = without(&map, &all, &keys);
     let removed = tag(s, &map, &stale, UNKNOWN_KEYWORD, false)?;
     Ok((added, removed))
 }
@@ -494,6 +514,12 @@ fn scope(s: &Session, p: &Value) -> Vec<PhotoId> {
     ids.into_iter().filter(|i| s.catalog.photo(*i).is_some_and(|q| q.kind != MediaKind::Video)).collect()
 }
 
+/// The videos among `ids` (default: the library's).
+fn video_scope(s: &Session, p: &Value) -> Vec<PhotoId> {
+    let ids: Vec<PhotoId> = if p.get("ids").is_some() { s.targets(p) } else { s.catalog.photos().filter(|q| q.in_library()).map(|q| q.id).collect() };
+    ids.into_iter().filter(|i| s.catalog.photo(*i).is_some_and(|q| q.kind == MediaKind::Video)).collect()
+}
+
 pub fn index(s: &mut Session, p: &Value) -> Result<Value> {
     ensure_open(s).map_err(other)?;
     let (force, background) = (bool_or(p, "force", false), bool_or(p, "background", s.people.background));
@@ -531,6 +557,39 @@ pub fn index(s: &mut Session, p: &Value) -> Result<Value> {
         let source = s.media.source_ref(&ph, SourceLevel::Preview);
         items.push(Item { id, key, source });
     }
+    // the pictures cut out of videos (video.frames): their faces go to the same index, each under
+    // the key of its moment, `key_of("<content key>@<ms>")`
+    let (mut video_frames, mut videos_without) = (0usize, 0usize);
+    if bool_or(p, "videos", true) {
+        let loader = s.media.file_loader.clone();
+        for id in video_scope(s, p) {
+            let fr = s.frames_of_video(id);
+            if fr.is_empty() {
+                videos_without += 1;
+            }
+            for (key, f) in fr {
+                if !seen.insert(key) {
+                    continue;
+                }
+                if have.contains(&key) && !force {
+                    already += 1;
+                    continue;
+                }
+                if items.len() >= limit {
+                    continue;
+                }
+                let source = crate::media::SourceRef::File {
+                    path: f.file.display().to_string(),
+                    max_edge: edge.max(512),
+                    loader: loader.clone(),
+                    fallback: None,
+                    denoise: None,
+                };
+                items.push(Item { id, key, source });
+                video_frames += 1;
+            }
+        }
+    }
     let queued = items.len();
     if queued > 0 {
         s.people.core.start_job(items, m, model_file, face_file, edge, flip, background).map_err(other)?;
@@ -548,6 +607,8 @@ pub fn index(s: &mut Session, p: &Value) -> Result<Value> {
         "seconds": st.seconds, "phaseSeconds": st.phase_seconds,
         "secondsPerPhoto": if st.done > 0 && !background { json!(st.seconds / st.done as f64) } else { Value::Null },
         "error": st.error, "indexedPhotos": photos.0, "indexedFaces": photos.1,
+        "videoFrames": video_frames, "videosWithoutFrames": videos_without,
+        "hint": (videos_without > 0).then_some("video.frames cuts the pictures of the videos that have none yet"),
     }))
 }
 
@@ -690,11 +751,15 @@ pub fn photos(s: &mut Session, p: &Value) -> Result<Value> {
         }
         Ok(keys)
     })??;
+    let frames = s.video_frames();
+    let mut moments: Vec<VideoAt> = keys.iter().filter_map(|k| video_at(&frames, *k)).collect();
+    moments.sort_by_key(|m| (m.video, m.ms));
     let ids = photos_of(&map, keys);
     if bool_or(p, "filter", false) {
         s.filter.only = ids.clone();
     }
-    Ok(json!({"ids": ids.iter().map(|i| i.0).collect::<Vec<_>>(), "count": ids.len()}))
+    let videos = ids.iter().filter(|i| s.catalog.photo(**i).is_some_and(|x| x.kind == MediaKind::Video)).count();
+    Ok(json!({"ids": ids.iter().map(|i| i.0).collect::<Vec<_>>(), "count": ids.len(), "videos": videos, "moments": moments}))
 }
 
 pub fn name(s: &mut Session, p: &Value) -> Result<Value> {
@@ -1212,7 +1277,8 @@ pub fn untag_photos(s: &mut Session, p: &Value) -> Result<Value> {
             sl.state.photo_tags.retain(|(k, x)| !(*x == pid && keys.contains(k)));
             save(sl).map(|_| sl.state.person(pid).map(|x| x.faces.iter().map(|f| f.0).collect()).unwrap_or_default())
         })??;
-        let gone: HashSet<u64> = keys.difference(&faced).copied().collect();
+        let map = key_map(s);
+        let gone = without(&map, &keys, &faced);
         tag(s, &sel, &gone, &kw, false)
     })?;
     Ok(json!({"person": format!("p:{pid}"), "keyword": kw, "removed": removed}))
@@ -1225,6 +1291,7 @@ pub fn members(s: &mut Session, p: &Value) -> Result<Value> {
     ensure_open(s).map_err(other)?;
     let (limit, offset) = (f64_or(p, "limit", 60.0).clamp(1.0, 2000.0) as usize, f64_or(p, "offset", 0.0).max(0.0) as usize);
     let map = key_map(s);
+    let frames = s.video_frames();
     let first: HashMap<u64, PhotoId> = map.iter().filter_map(|(k, v)| v.first().map(|p| (*k, *p))).collect();
     with_slot(s, |sl| -> Result<Value> {
         let key = if p.get("person").is_some() { "person" } else { "group" };
@@ -1254,7 +1321,11 @@ pub fn members(s: &mut Session, p: &Value) -> Result<Value> {
                                "unknown": sl.state.is_unknown(o.face()), "ignored": sl.state.ignored.contains(&o.face())})
                     })
                     .collect();
-                Some(json!({"face": face_id(f), "photo": photo.0, "rect": m.rect, "others": others}))
+                let mut row = json!({"face": face_id(f), "photo": photo.0, "rect": m.rect, "others": others});
+                if let Some(v) = video_at(&frames, f.0) {
+                    row["video"] = json!(v);
+                }
+                Some(row)
             })
             .collect();
         Ok(json!({"faces": rows, "total": total}))
@@ -1486,17 +1557,24 @@ pub fn faces(s: &mut Session, p: &Value) -> Result<Value> {
     ensure_open(s).map_err(other)?;
     let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or(s.active()).ok_or_else(|| bad("people.faces", "no photo"))?;
     let key = s.catalog.photo(id).map(|ph| key_of(&crate::media::content_key(ph))).ok_or_else(|| bad("people.faces", "no such photo"))?;
+    // a video: the faces of every picture cut out of it, each with its moment
+    let moments: Vec<(u64, Option<VideoAt>)> = match s.frames_of_video(id) {
+        f if f.is_empty() => vec![(key, None)],
+        f => f.into_iter().map(|(k, at)| (k, Some(VideoAt { video: id.0, ms: at.ms, frame: at.file.display().to_string() }))).collect(),
+    };
     with_slot(s, |sl| {
-        let analysed = sl.store.has_photo(key);
-        let faces: Vec<Value> = sl
-            .store
-            .slots_of(key)
+        let analysed = moments.iter().any(|(k, _)| sl.store.has_photo(*k));
+        let faces: Vec<Value> = moments
             .iter()
-            .filter_map(|x| sl.store.meta(*x))
-            .map(|m| {
+            .flat_map(|(k, at)| sl.store.slots_of(*k).iter().filter_map(|x| sl.store.meta(*x)).map(move |m| (m, at)))
+            .map(|(m, at)| {
                 let person = sl.state.person_of(m.face());
-                json!({"face": face_id(m.face()), "rect": m.rect, "size": m.size, "quality": m.quality(), "person": person.map(|x| format!("p:{}", x.id)), "name": person.and_then(|x| x.name.clone()),
-                       "ignored": sl.state.ignored.contains(&m.face()), "unknown": sl.state.is_unknown(m.face())})
+                let mut row = json!({"face": face_id(m.face()), "rect": m.rect, "size": m.size, "quality": m.quality(), "person": person.map(|x| format!("p:{}", x.id)), "name": person.and_then(|x| x.name.clone()),
+                       "ignored": sl.state.ignored.contains(&m.face()), "unknown": sl.state.is_unknown(m.face())});
+                if let Some(at) = at {
+                    row["video"] = json!(at);
+                }
+                row
             })
             .collect();
         // people the photo is filed under as a whole (dropped on them), whatever its faces say
@@ -1509,6 +1587,42 @@ pub fn faces(s: &mut Session, p: &Value) -> Result<Value> {
             .collect();
         json!({"id": id.0, "analysed": analysed, "faces": faces, "filedUnder": filed})
     })
+}
+
+/// Who the faces found under `key` (a photo, or a moment of a video) are, for the annotations of
+/// that picture ([`crate::describe`]): nothing is copied, the face index says it.
+pub fn people_at(s: &mut Session, key: u64) -> Vec<Value> {
+    with_slot(s, |sl| {
+        sl.store
+            .slots_of(key)
+            .iter()
+            .filter_map(|x| sl.store.meta(*x))
+            .filter(|m| !sl.state.ignored.contains(&m.face()))
+            .map(|m| {
+                let who = sl.state.person_of(m.face());
+                json!({"face": face_id(m.face()), "person": who.map(|x| format!("p:{}", x.id)), "name": who.and_then(|x| x.name.clone()), "unknown": sl.state.is_unknown(m.face())})
+            })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// [`inject`] under any key, e.g. a picture of a video ([`crate::video::frame_key`]).
+pub fn inject_keys(s: &mut Session, records: Vec<(u64, Vec<(Vec<f32>, [f32; 4])>)>) -> std::result::Result<(), String> {
+    use lightcraft_people::store::FaceMeta;
+    ensure_open(s)?;
+    let records: Vec<(u64, Vec<(FaceMeta, Vec<f32>)>)> = records
+        .into_iter()
+        .map(|(key, faces)| {
+            (key, faces.into_iter().map(|(v, rect)| (FaceMeta { key, idx: 0, rect, det: 0.95, size: 120.0, turn: 0.0 }, v)).collect())
+        })
+        .collect();
+    with_slot(s, |sl| {
+        sl.store.add(records).map_err(|e| e.to_string())?;
+        sl.store_rev += 1;
+        Ok(())
+    })
+    .map_err(|e| e.to_string())?
 }
 
 /// Add faces to the index without the models (for tests and tools): each photo with its faces

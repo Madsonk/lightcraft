@@ -180,6 +180,7 @@ fn thumbs_of_json(v: &Value) -> Vec<Thumb> {
                         photo: t["photo"].as_u64()?,
                         face: t["face"].as_str()?.to_string(),
                         rect: [*r.first()?, *r.get(1)?, *r.get(2)?, *r.get(3)?],
+                        video: None,
                     })
                 })
                 .collect()
@@ -512,7 +513,7 @@ fn who(f: &Value) -> String {
 
 fn thumb_of(photo: u64, f: &Value) -> Option<Thumb> {
     let r: Vec<f32> = f["rect"].as_array()?.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
-    Some(Thumb { photo, face: f["face"].as_str()?.to_string(), rect: [*r.first()?, *r.get(1)?, *r.get(2)?, *r.get(3)?] })
+    Some(Thumb { photo, face: f["face"].as_str()?.to_string(), rect: [*r.first()?, *r.get(1)?, *r.get(2)?, *r.get(3)?], video: None })
 }
 
 /// A face you can pick (click) and drag (alone, or with the other picked ones) onto a person, a group,
@@ -989,7 +990,7 @@ fn suggestions(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             egui::Frame::new().fill(t.inset).corner_radius(6.0).inner_margin(6.0).show(ui, |ui| {
                 ui.vertical(|ui| {
                     ui.set_width(THUMB + 20.0);
-                    face(app, ui, &Thumb { photo: sg.photo, face: sg.face.clone(), rect: sg.rect }, THUMB + 20.0);
+                    face(app, ui, &Thumb { photo: sg.photo, face: sg.face.clone(), rect: sg.rect, video: sg.video.clone() }, THUMB + 20.0);
                     let name = sg.name.clone().unwrap_or_else(|| "this person".into());
                     ui.label(egui::RichText::new(format!("{name}? {:.0} %", sg.score * 100.0)).font(t.font(11.0)).color(t.text_label));
                     ui.horizontal(|ui| {

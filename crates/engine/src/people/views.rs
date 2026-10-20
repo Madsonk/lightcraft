@@ -4,9 +4,23 @@ use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Thumb {
+    /// The catalog item: a photo, or the video the face was seen in.
     pub photo: u64,
     pub face: String,
+    /// `[x0, y0, x1, y1]`, fractions of the photo — or of the picture of the video (`video.frame`).
     pub rect: [f32; 4],
+    /// The face was seen in a video: when, and the picture it is in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video: Option<VideoAt>,
+}
+
+/// A moment of a video: the video's catalog id, milliseconds into it, the picture cut there
+/// (`<library>/video/<key>/t<ms>.jpg`).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct VideoAt {
+    pub video: u64,
+    pub ms: u64,
+    pub frame: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -41,6 +55,8 @@ pub struct SuggestionView {
     pub person: u32,
     pub name: Option<String>,
     pub score: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video: Option<VideoAt>,
     pub runner_up: Option<Likely>,
 }
 

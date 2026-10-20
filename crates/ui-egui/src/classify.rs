@@ -480,6 +480,7 @@ fn thumbs_of(v: &Value) -> Vec<Thumb> {
                         photo: t["photo"].as_u64()?,
                         face: t["face"].as_str()?.to_string(),
                         rect: [*r.first()?, *r.get(1)?, *r.get(2)?, *r.get(3)?],
+                        video: None,
                     })
                 })
                 .collect()

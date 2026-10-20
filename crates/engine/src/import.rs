@@ -1231,6 +1231,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                 p.content_hash = info.content_hash;
                 p.embedded_lens = info.embedded_lens;
                 p.preview_only = info.preview_only.clone();
+                p.duration = info.duration;
                 apply_import_defaults(s, &mut p);
                 if let Some(sc) = &sidecar {
                     crate::sidecar::merge_into(&mut p, sc, &now);
