@@ -233,8 +233,8 @@
   "Person present, action not detected ({n})": "Человек есть, действие не обнаружено ({n})",
   "Play at {t}": "Смотреть с {t}",
   "video · {t}": "видео · {t}",
-  "{n} moments described · {c} confirmed": "Описано моментов: {n} · подтверждено: {c}",
-  "{n} results": "Результатов: {n}",
-  "{n} videos": "Видео: {n}",
-  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher: видео — {m}, добавлено описаний — {a}"
+  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher: видео — {m}, добавлено описаний — {a}",
+  "{n} video{0}{1:.0}": "Видео: {n}{0:.0}{1:.0}",
+  "{n} result{0}{1:.0}": "Результатов: {n}{0:.0}{1:.0}",
+  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "Описано моментов: {n}{0:.0}{2:.0} · подтверждено: {c}{1:.0}"
 }

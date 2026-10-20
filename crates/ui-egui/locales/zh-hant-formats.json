@@ -233,8 +233,8 @@
   "Person present, action not detected ({n})": "人物在場，未偵測到動作（{n}）",
   "Play at {t}": "從 {t} 播放",
   "video · {t}": "影片 · {t}",
-  "{n} moments described · {c} confirmed": "已描述 {n} 個時刻 · 已確認 {c} 個",
-  "{n} results": "{n} 個結果",
-  "{n} videos": "{n} 部影片",
-  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher：{m} 部影片，新增 {a} 則描述"
+  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher：{m} 部影片，新增 {a} 則描述",
+  "{n} video{0}{1:.0}": "{n} 部影片{0:.0}{1:.0}",
+  "{n} result{0}{1:.0}": "{n} 個結果{0:.0}{1:.0}",
+  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "已描述 {n} 個時刻{0:.0}{2:.0} · 已確認 {c} 個{1:.0}"
 }

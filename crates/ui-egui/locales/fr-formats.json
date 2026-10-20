@@ -233,8 +233,8 @@
   "Person present, action not detected ({n})": "Personne présente, action non détectée ({n})",
   "Play at {t}": "Lire à {t}",
   "video · {t}": "vidéo · {t}",
-  "{n} moments described · {c} confirmed": "{n} moments décrits · {c} confirmés",
-  "{n} results": "{n} résultats",
-  "{n} videos": "{n} vidéos",
-  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher : {m} vidéos, {a} descriptions ajoutées"
+  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher : {m} vidéos, {a} descriptions ajoutées",
+  "{n} video{0}{1:.0}": "{n} vidéo{1}{0:.0}",
+  "{n} result{0}{1:.0}": "{n} résultat{1}{0:.0}",
+  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "{n} moment{2} décrit{2} · {c} confirmé{1}{0:.0}"
 }

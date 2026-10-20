@@ -186,6 +186,26 @@ impl VideosUi {
     }
 }
 
+/// Plural endings for `n`: English (one, else "s"), French (zero or one, else "s").
+fn ends(n: usize) -> (&'static str, &'static str) {
+    (if n == 1 { "" } else { "s" }, if n <= 1 { "" } else { "s" })
+}
+
+fn n_videos(n: usize) -> String {
+    let (en, fr) = ends(n);
+    crate::i18n::tr_format!("{n} video{0}{1:.0}", en, fr, n = n)
+}
+
+fn n_results(n: usize) -> String {
+    let (en, fr) = ends(n);
+    crate::i18n::tr_format!("{n} result{0}{1:.0}", en, fr, n = n)
+}
+
+pub(crate) fn described_line(n: usize, c: usize) -> String {
+    let ((en_n, fr_n), (_, fr_c)) = (ends(n), ends(c));
+    crate::i18n::tr_format!("{n} moment{0} described · {c} confirmed{1:.0}{2:.0}", en_n, fr_c, fr_n, n = n, c = c)
+}
+
 /// `m:ss` (or `h:mm:ss`).
 pub fn timecode(ms: u64) -> String {
     lightcraft_engine::video::views::timecode(ms)
@@ -381,7 +401,7 @@ fn list(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             ui.add_space(PAD);
             ui.vertical(|ui| {
                 let n = rows.len();
-                title_row(app, ui, false, tr("Videos"), &crate::i18n::tr_format!("{n} videos", n = n));
+                title_row(app, ui, false, tr("Videos"), &n_videos(n));
                 ui.add_space(6.0);
                 ui.horizontal_wrapped(|ui| {
                     if text_button(ui, "videosImport", "Import videos…", false)
@@ -580,11 +600,7 @@ fn video_card(app: &mut LightcraftApp, ui: &mut egui::Ui, r: &Value) {
         states(ui, r);
         let (m, c) = (r["moments"].as_u64().unwrap_or(0), r["confirmed"].as_u64().unwrap_or(0));
         if m > 0 {
-            ui.label(
-                egui::RichText::new(crate::i18n::tr_format!("{n} moments described · {c} confirmed", n = m, c = c))
-                    .font(t.font(10.5))
-                    .color(t.text_dim),
-            );
+            ui.label(egui::RichText::new(described_line(m as usize, c as usize)).font(t.font(10.5)).color(t.text_dim));
         }
     });
 }
@@ -735,9 +751,9 @@ pub fn moment_card(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64, m: &Valu
         ui.label(egui::RichText::new(tr(label)).font(t.font(10.5)).color(t.text_dim));
         let mut text = app.caches.videos.edits.get(&ek).cloned().unwrap_or_else(|| value.clone());
         let edit = if lines > 1 {
-            egui::TextEdit::multiline(&mut text).desired_rows(lines).desired_width(width).id(egui::Id::new(("moment-field", &ek)))
+            egui::TextEdit::multiline(&mut text).desired_rows(lines).desired_width(width - 12.0).id(egui::Id::new(("moment-field", &ek)))
         } else {
-            egui::TextEdit::singleline(&mut text).desired_width(width).id(egui::Id::new(("moment-field", &ek)))
+            egui::TextEdit::singleline(&mut text).desired_width(width - 12.0).id(egui::Id::new(("moment-field", &ek)))
         };
         let resp = ui.add(edit);
         register(ui.ctx(), format!("field:{ek}"), resp.rect);
@@ -826,10 +842,9 @@ pub fn info_section(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64, width: 
     if v["video"] == true {
         let described = v["moments"].as_array().into_iter().flatten().filter(|m| !m["annotation"].is_null()).count();
         ui.label(
-            egui::RichText::new(crate::i18n::tr_format!(
-                "{n} moments described · {c} confirmed",
-                n = described,
-                c = v["moments"].as_array().into_iter().flatten().filter(|m| m["annotation"]["status"] == "confirmed").count()
+            egui::RichText::new(described_line(
+                described,
+                v["moments"].as_array().into_iter().flatten().filter(|m| m["annotation"]["status"] == "confirmed").count(),
             ))
             .color(t.text_dim),
         );
@@ -863,7 +878,7 @@ pub fn search_from_field(app: &mut LightcraftApp, query: &str) {
         match app.run("search.semantic", json!({"query": rest, "filter": true})) {
             Ok(r) => {
                 let n = r["photos"].as_array().map_or(0, Vec::len);
-                app.ui.status = crate::i18n::tr_format!("{n} results", n = n);
+                app.ui.status = n_results(n);
             }
             Err(e) => app.ui.status = e,
         }
@@ -905,7 +920,7 @@ fn results(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             ui.vertical(|ui| {
                 let q = r["query"].as_str().unwrap_or_default();
                 let total = r["total"].as_u64().unwrap_or(0);
-                if title_row(app, ui, true, &format!("« {q} »"), &crate::i18n::tr_format!("{n} results", n = total)) {
+                if title_row(app, ui, true, &format!("« {q} »"), &n_results(total as usize)) {
                     return;
                 }
                 // what the search understood, in plain words

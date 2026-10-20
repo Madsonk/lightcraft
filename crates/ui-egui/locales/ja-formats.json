@@ -233,8 +233,8 @@
   "Person present, action not detected ({n})": "人物はいるが動作は検出されず（{n}）",
   "Play at {t}": "{t} から再生",
   "video · {t}": "動画 · {t}",
-  "{n} moments described · {c} confirmed": "説明済みの場面 {n} · 確認済み {c}",
-  "{n} results": "{n} 件",
-  "{n} videos": "動画 {n} 本",
-  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher：動画 {m} 本、説明 {a} 件を追加"
+  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher：動画 {m} 本、説明 {a} 件を追加",
+  "{n} video{0}{1:.0}": "動画 {n} 本{0:.0}{1:.0}",
+  "{n} result{0}{1:.0}": "{n} 件{0:.0}{1:.0}",
+  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "説明済みの場面 {n}{0:.0}{2:.0} · 確認済み {c}{1:.0}"
 }

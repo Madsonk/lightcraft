@@ -233,8 +233,8 @@
   "Person present, action not detected ({n})": "Persona presente, acción no detectada ({n})",
   "Play at {t}": "Reproducir en {t}",
   "video · {t}": "vídeo · {t}",
-  "{n} moments described · {c} confirmed": "{n} momentos descritos · {c} confirmados",
-  "{n} results": "{n} resultados",
-  "{n} videos": "{n} vídeos",
-  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher: {m} vídeos, {a} descripciones añadidas"
+  "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher: {m} vídeos, {a} descripciones añadidas",
+  "{n} video{0}{1:.0}": "{n} vídeo{0}{1:.0}",
+  "{n} result{0}{1:.0}": "{n} resultado{0}{1:.0}",
+  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "{n} momento{0} descrito{0} · confirmados: {c}{1:.0}{2:.0}"
 }

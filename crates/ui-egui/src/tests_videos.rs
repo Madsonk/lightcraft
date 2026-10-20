@@ -94,6 +94,13 @@ fn french_texts_of_the_videos_view_are_there() {
     }
     assert_eq!(crate::i18n::tr_format!("Person present, action not detected ({n})", n = 4), "Personne présente, action non détectée (4)");
     assert_eq!(crate::i18n::tr_format!("Play at {t}", t = "1:23"), "Lire à 1:23");
+    assert_eq!(crate::panels::videos::described_line(4, 1), "4 moments décrits · 1 confirmé");
+    assert_eq!(crate::panels::videos::described_line(1, 2), "1 moment décrit · 2 confirmés");
+    assert_eq!(crate::panels::videos::described_line(0, 0), "0 moment décrit · 0 confirmé");
+    set_language(Locale::En);
+    assert_eq!(crate::panels::videos::described_line(1, 3), "1 moment described · 3 confirmed");
+    assert_eq!(crate::panels::videos::described_line(2, 1), "2 moments described · 1 confirmed");
+    set_language(Locale::Fr);
     set_language(Locale::En);
 }
 
