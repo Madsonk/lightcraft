@@ -61,6 +61,16 @@ HEAD is back on branch `v14` (`ebc08b01`) with its index re-read from it (its 64
 now all unstaged — a staging state from before 20 Oct, if any, could not be recovered). Backup of the admin files:
 `/Volumes/Data/work/lv-gitadmin-backup-202610210608/`. Lesson: copy a worktree with `git worktree add`, never `cp -R`.
 
+## Final bundle (21 Oct 2026)
+
+`/Volumes/Data/work/lv-bundle-final/LightCraft.app`, built from a clean worktree (`/Volumes/Data/work/lv-final`, commit
+`889bee37`: the tree `lightcraft-videos` also holds another session's unfinished culling work, not included).
+Binary `Contents/MacOS/LightCraft` after ad-hoc signing: 68 372 960 bytes, SHA-256
+`ff5180709efe15e512f33edddeec5b41dd591dee6218c1350c4306a54f73c0a7`; bundle 69 MB; `codesign --verify --strict` valid.
+`LightCraft-f81d38c1-gel-NE-PAS-INSTALLER.app` next to it is the build before the fix of the window freeze
+(`video.status` read every video's list of pictures every 3 s on the window's thread): never install it.
+The first launch of a newly signed binary takes about 6 min on this Mac (system check), not a freeze.
+
 ## Install / go back (Madson's decision)
 
 ```sh
