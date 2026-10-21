@@ -243,6 +243,7 @@
   "Faces in the selected photo ({name})": "選択した写真の顔（{name}）",
   "Recognized people ({n})": "認識された人物（{n}）",
   "Groups to name ({n})": "名前を付けるグループ（{n}）",
-  "{f} faces · {p} photos · drag": "顔 {f} · 写真 {p} · ドラッグ",
-  "{sel} selected of {all}": "{all} 件中 {sel} 件を選択"
+  "{f} face{fs} · {p} photo{ps} · drag": "顔 {f} · 写真 {p} · ドラッグ{fs:.0}{ps:.0}",
+  "{sel} selected of {all}": "{all} 件中 {sel} 件を選択",
+  "{faces} faces found: name them…": "{faces}個の顔が見つかりました：名前を付ける…"
 }

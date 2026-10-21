@@ -243,6 +243,7 @@
   "Faces in the selected photo ({name})": "Лица на выбранном фото ({name})",
   "Recognized people ({n})": "Узнанные люди ({n})",
   "Groups to name ({n})": "Группы без имени ({n})",
-  "{f} faces · {p} photos · drag": "Лиц: {f} · фото: {p} · перетащить",
-  "{sel} selected of {all}": "Выбрано {sel} из {all}"
+  "{f} face{fs} · {p} photo{ps} · drag": "Лиц: {f} · фото: {p} · перетащить{fs:.0}{ps:.0}",
+  "{sel} selected of {all}": "Выбрано {sel} из {all}",
+  "{faces} faces found: name them…": "Найдено лиц: {faces}. Назовите их…"
 }

@@ -65,9 +65,9 @@ pub fn sections(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             }
             let named = people.as_ref().map_or(0, |p| p.children.len());
             let label = match index {
-                Some((faces, _)) if faces > 0 && named == 0 => format!("{faces} faces found: name them…"),
-                Some((faces, _)) if faces > 0 => "All people and groups…".to_string(),
-                _ => "All people…".to_string(),
+                Some((faces, _)) if faces > 0 && named == 0 => crate::i18n::tr_format!("{faces} faces found: name them…", faces = faces),
+                Some((faces, _)) if faces > 0 => crate::i18n::tr("All people and groups…").to_string(),
+                _ => crate::i18n::tr("All people…").to_string(),
             };
             if row(app, ui, "peopleOpen", Icon::Subject, &label, None, false, 0.0)
                 .on_hover_text(crate::i18n::tr("Opens the People view: the faces found in your photos, grouped, to name"))

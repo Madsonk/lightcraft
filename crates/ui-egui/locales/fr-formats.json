@@ -243,6 +243,7 @@
   "Faces in the selected photo ({name})": "Visages de la photo sélectionnée ({name})",
   "Recognized people ({n})": "Personnes reconnues ({n})",
   "Groups to name ({n})": "Groupes à nommer ({n})",
-  "{f} faces · {p} photos · drag": "{f} visages · {p} photos · glisser",
-  "{sel} selected of {all}": "{sel} sélectionnée(s) sur {all}"
+  "{f} face{fs} · {p} photo{ps} · drag": "{f} visage{fs} · {p} photo{ps} · glisser",
+  "{sel} selected of {all}": "{sel} sélectionnée(s) sur {all}",
+  "{faces} faces found: name them…": "{faces} visages trouvés : nommez-les…"
 }

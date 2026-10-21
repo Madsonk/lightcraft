@@ -243,6 +243,7 @@
   "Faces in the selected photo ({name})": "所選相片中的臉（{name}）",
   "Recognized people ({n})": "已辨識的人（{n}）",
   "Groups to name ({n})": "待命名的群組（{n}）",
-  "{f} faces · {p} photos · drag": "{f} 張臉 · {p} 張相片 · 拖曳",
-  "{sel} selected of {all}": "已選 {sel} / {all}"
+  "{f} face{fs} · {p} photo{ps} · drag": "{f} 張臉 · {p} 張相片 · 拖曳{fs:.0}{ps:.0}",
+  "{sel} selected of {all}": "已選 {sel} / {all}",
+  "{faces} faces found: name them…": "找到 {faces} 張臉孔：為其命名…"
 }

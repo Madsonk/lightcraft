@@ -914,7 +914,7 @@ fn group_card(app: &mut LightcraftApp, ui: &mut egui::Ui, g: &GroupView, unknown
             ui.vertical(|ui| {
                 // the whole group can be dragged by its caption
                 let cap = ui
-                    .add(egui::Label::new(egui::RichText::new(crate::i18n::tr_format!("{f} faces · {p} photos · drag", f = g.faces, p = g.photos)).font(t.font(12.0)).color(t.text_label)).sense(Sense::drag()))
+                    .add(egui::Label::new(egui::RichText::new(crate::i18n::tr_format!("{f} face{fs} · {p} photo{ps} · drag", f = g.faces, fs = if g.faces == 1 { "" } else { "s" }, p = g.photos, ps = if g.photos == 1 { "" } else { "s" })).font(t.font(12.0)).color(t.text_label)).sense(Sense::drag()))
                     .on_hover_text(crate::i18n::tr("Drag the whole group onto a person (or onto Unknown person / Not a real face)"));
                 register(ui.ctx(), format!("recGroupGrip:{}", g.id), cap.rect);
                 if cap.drag_started()

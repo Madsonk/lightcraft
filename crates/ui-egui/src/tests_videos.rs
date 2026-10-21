@@ -97,6 +97,10 @@ fn french_texts_of_the_videos_view_are_there() {
     assert_eq!(crate::panels::videos::described_line(4, 1), "4 moments décrits · 1 confirmé");
     assert_eq!(crate::panels::videos::described_line(1, 2), "1 moment décrit · 2 confirmés");
     assert_eq!(crate::panels::videos::described_line(0, 0), "0 moment décrit · 0 confirmé");
+    assert_eq!(crate::i18n::tr_format!("{f} face{fs} · {p} photo{ps} · drag", f = 1, fs = "", p = 1, ps = ""), "1 visage · 1 photo · glisser");
+    assert_eq!(crate::i18n::tr_format!("{f} face{fs} · {p} photo{ps} · drag", f = 4, fs = "s", p = 2, ps = "s"), "4 visages · 2 photos · glisser");
+    assert_eq!(crate::i18n::tr_format!("{faces} faces found: name them…", faces = 943), "943 visages trouvés : nommez-les…");
+    assert_eq!(tr("All people and groups…"), "Toutes les personnes et groupes…");
     set_language(Locale::En);
     assert_eq!(crate::panels::videos::described_line(1, 3), "1 moment described · 3 confirmed");
     assert_eq!(crate::panels::videos::described_line(2, 1), "2 moments described · 1 confirmed");
