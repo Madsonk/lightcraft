@@ -218,7 +218,8 @@ fn the_preview_plays_a_moment_without_sound_and_closes() {
     assert_eq!(r["ok"], true, "{r}");
     h.step();
     h.settle(SETTLE); // waits while the player is loading (headless::busy)
-    let (frames, error, playing) = h.app.caches.videos.player.as_ref().map(|p| p.state()).map(|(n, e, p)| (n, e.map(str::to_string), p)).expect("a player");
+    let (frames, error, playing) =
+        h.app.caches.videos.player.as_ref().map(|p| p.state()).map(|(n, e, p)| (n, e.map(str::to_string), p)).expect("a player");
     assert!(error.is_none(), "{error:?}");
     assert!(frames > 10, "the clip's pictures are decoded ({frames})");
     assert!(playing, "it plays once ready (the user asked for it)");
