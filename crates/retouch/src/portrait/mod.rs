@@ -111,7 +111,7 @@ pub const KINDS: &[Info] = &[
         label: "Face shine",
         group: "Face",
         help: "tones down oily highlights and gives their colour back",
-        auto: 0.4,
+        auto: 0.25,
     },
     Info {
         kind: Kind::DoubleChin,

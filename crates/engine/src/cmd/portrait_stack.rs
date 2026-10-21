@@ -401,7 +401,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Auto Portrait Retouch",
             ["Photo"],
             None,
-            "{ids?, offset?, chunk?, maxFaces?} — portrait.batch with the default recipe (smoothing 35, blemishes 55, dark circles 40, shine 40, teeth 30, eyes 30, light wrinkles, neck 25) over the selection or the view",
+            "{ids?, offset?, chunk?, maxFaces?} — portrait.batch with the default recipe (smoothing 35, blemishes 55, dark circles 40, shine 25, teeth 30, eyes 30, light wrinkles, neck 25) over the selection or the view",
             always,
             auto_batch
         ),

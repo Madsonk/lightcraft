@@ -101,7 +101,7 @@ lightcraft-cli run --import-folder shoot/ portrait.auto '{"chunk":50}'
 
 ### Auto retouch
 
-The default recipe (`auto: true`, `portrait.auto`): smoothing 35, blemishes 55, dark circles 40, shine 40,
+The default recipe (`auto: true`, `portrait.auto`): smoothing 35, blemishes 55, dark circles 40, shine 25,
 teeth 30, eyes 30, eye wrinkles 20, forehead wrinkles 20, smile lines 15, neck smoothing 25. It is a
 *prudent* default — visible on a close look, never plastic — chosen to be safe over a whole album, not to
 be the best look for each face. Freckles, double chin, stray hairs, neck brightness and the background are
@@ -226,9 +226,31 @@ forehead lines are lightened; a stray hair over the wall disappears; the same re
 matches within ΔE00 < 6; the file on disk is byte-identical after `portrait.apply`; one undo removes a whole
 application; a photo without a face is skipped in a batch; a cancelled batch stops.
 
+## Real faces (12 wedding photos, a read-only copy, 21/10)
+
+The sliders were run (`portrait.preview` then `portrait.apply` with the auto recipe, then `portrait.reset`) on
+12 JPEGs of a wedding album with the real MediaPipe face model, through the real pipeline. Nothing was written
+next to the originals; the outputs stayed in a scratch folder (client photos: not in the repository).
+
+* **Speed per photo, face finding included:** preview 0.7–1.3 s, apply 0.6–2.2 s (1 face 0.7–1.6 s, 2 faces
+  1.7–2.2 s, 4 faces 2.1 s; a photo with no face 0.6 s), on a machine under load.
+* **Faces:** found on 8 of 12 photos (1, 1, 1, 2, 2, 1, 4 faces…); the 4 without a face are the photos with
+  none (details, flowers, backs). All 4 faces of a group shot were treated, and the difference map (amplified
+  8×) is confined to the faces (eyes, skin, mouth): nothing moves in the background, the dress or the hair.
+* **Look:** on a 250 px face the auto recipe is subtle and natural — slightly brighter whites and irises, a
+  calmer forehead and cheek highlight, 30–70 marks treated per photo, no plastic skin, no halo. Skin smoothing at
+  35 % hardly shows at this size (it is meant to: pores are kept).
+* **Found while looking:** the *Face shine* step at 40 % flattened the natural cheek highlight on a
+  dark skin tone (29 % of the face moved). The auto default was lowered to 25 %. Dark skin and strongly lit
+  faces are where the "highlight above the skin median" rule is most likely to over-correct; judge it per
+  photo and lower the amount.
+* **Not verified on real faces:** open eyes (no burst with a blink in this album), the background step (the
+  installed matte models are not the ones LightCraft loads), teeth (no open mouth with visible teeth among the
+  treated faces), stray hairs.
+
 ## Limits (read before trusting a ✅)
 
-* **Verified on synthetic portraits only** (`lightcraft_retouch::portrait::fixture`: a procedural face with
+* **Mostly verified on synthetic portraits** (real faces: see above, speed and look only) (`lightcraft_retouch::portrait::fixture`: a procedural face with
   planted defects). No real face photo was used — none is in the repository (the corpus is CC0 scenes), and
   the face model was not installed in this session. Real skin, hair and lighting will expose cases the
   synthetic face cannot: the thresholds are relative to measured skin statistics, not tuned on real faces.

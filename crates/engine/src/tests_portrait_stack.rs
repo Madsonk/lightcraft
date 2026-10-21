@@ -357,3 +357,58 @@ fn without_a_usable_reference_it_says_so_instead_of_inventing_eyes() {
     assert!(std::path::Path::new(r["willLeaveTheMac"]["file"].as_str().unwrap()).is_file());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Real faces, real model: `LC_PORTRAIT_DIR=<folder of JPEGs (a copy)> LC_PORTRAIT_OUT=<folder>
+/// LIGHTCRAFT_FACES_DIR=<folder with face_landmarker.task> cargo test … real_faces -- --ignored --nocapture`.
+/// Previews (before/after) go to the output folder; nothing is written next to the photos.
+#[cfg(feature = "faces")]
+#[test]
+#[ignore = "needs the face model and a folder of photos"]
+fn real_faces_preview_and_apply_timings() {
+    let (Some(dir), Some(out)) = (std::env::var_os("LC_PORTRAIT_DIR"), std::env::var_os("LC_PORTRAIT_OUT")) else { return };
+    let (dir, out) = (PathBuf::from(dir), PathBuf::from(out));
+    std::fs::create_dir_all(&out).unwrap();
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [dir.to_string_lossy()]})).unwrap();
+    let mut photos: Vec<(String, PhotoId)> = s.catalog.photos().map(|p| (p.file_name.clone(), p.id)).collect();
+    photos.sort();
+    for (name, id) in photos {
+        let path = out.join(format!("{}-after.png", name.trim_end_matches(".jpg")));
+        let t = std::time::Instant::now();
+        let r = s.execute("portrait.preview", &json!({"id": id.0, "auto": true, "edge": 1400, "path": path.to_string_lossy()}));
+        let pv = t.elapsed().as_secs_f64();
+        match r {
+            Ok(v) => {
+                let t = std::time::Instant::now();
+                let a = s.execute("portrait.apply", &json!({"id": id.0, "auto": true}));
+                let ap = t.elapsed().as_secs_f64();
+                let steps: Vec<String> = v["steps"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .map(|x| {
+                                format!(
+                                    "{}:{}%{}",
+                                    x["step"].as_str().unwrap_or("?"),
+                                    (x["changed"].as_f64().unwrap_or(0.0) * 100.0).round(),
+                                    x["found"].as_u64().map_or(String::new(), |n| format!("({n})"))
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                println!(
+                    "{name}: faces={} preview={pv:.1}s apply={ap:.1}s {} steps: {}",
+                    v["faces"],
+                    if a.is_ok() { "applied" } else { "apply failed" },
+                    steps.join(" ")
+                );
+                if let Ok(a) = a {
+                    println!("   apply detail: {}", a["photos"][0]["seconds"]);
+                }
+                let _ = s.execute("portrait.reset", &json!({"id": id.0}));
+            }
+            Err(e) => println!("{name}: ERROR {e}"),
+        }
+    }
+}
