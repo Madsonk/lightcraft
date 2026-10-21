@@ -32,7 +32,7 @@ fn exact_sum(polys: &[&&Poly], w: usize, h: usize) -> Plane {
                     }
                 }
                 xs.sort_by(f32::total_cmp);
-                spans.extend(xs.chunks_exact(2).map(|c| (c[0].max(0.0), c[1].min(w as f32))).filter(|(a, b)| b > a));
+                spans.extend(xs.as_chunks::<2>().0.iter().map(|c| (c[0].max(0.0), c[1].min(w as f32))).filter(|(a, b)| b > a));
             }
             if spans.is_empty() {
                 continue;

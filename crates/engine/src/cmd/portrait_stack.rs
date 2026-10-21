@@ -496,10 +496,10 @@ fn find_reference(s: &mut Session, id: PhotoId, c: [f32; 2]) -> Option<PhotoId> 
                 continue;
             }
             // two named people must be the same one
-            if let (Some(a), Some(b)) = (&who, name_at(&theirs, k)) {
-                if *a != b {
-                    continue;
-                }
+            if let (Some(a), Some(b)) = (&who, name_at(&theirs, k))
+                && *a != b
+            {
+                continue;
             }
             let q = f.quality();
             if best.is_none_or(|(bq, _)| q > bq) {

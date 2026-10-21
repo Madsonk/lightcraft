@@ -66,7 +66,7 @@ fn main() {
     let cell_w = 200 * zoom;
     let cell_h = 100 * zoom;
     let mut sheet = image::RgbImage::from_pixel((cell_w * 2 + 12) as u32, ((cell_h + 6) * (rows.len() + 1)) as u32, image::Rgb([30, 30, 30]));
-    let mut put = |sheet: &mut image::RgbImage, src: &[u8], reg: [usize; 4], ox: usize, oy: usize| {
+    let put = |sheet: &mut image::RgbImage, src: &[u8], reg: [usize; 4], ox: usize, oy: usize| {
         for y in 0..cell_h {
             for x in 0..cell_w {
                 let (sx, sy) = ((reg[0] + x / zoom).min(W - 1) * k, (reg[1] + y / zoom).min(W - 1) * k);

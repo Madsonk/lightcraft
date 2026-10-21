@@ -64,7 +64,7 @@ struct Lab {
 fn lab_of(rgb: &[u8], w: usize, h: usize) -> Lab {
     let n = w * h;
     let (mut l, mut a, mut b) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
-    for px in rgb.chunks_exact(3).take(n) {
+    for px in rgb.as_chunks::<3>().0.iter().take(n) {
         let v = rgb8_to_lab([px[0], px[1], px[2]]);
         l.push(v[0]);
         a.push(v[1]);

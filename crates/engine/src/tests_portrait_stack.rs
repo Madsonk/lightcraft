@@ -14,7 +14,7 @@ use crate::portrait_stack::{self as ps, Meshes, Sources};
 use crate::{Result, Session};
 
 fn write_png(path: &Path, rgb: &[u8], w: usize, h: usize) {
-    let data: Vec<[u8; 4]> = rgb.chunks_exact(3).map(|c| [c[0], c[1], c[2], 255]).collect();
+    let data: Vec<[u8; 4]> = rgb.as_chunks::<3>().0.iter().map(|c| [c[0], c[1], c[2], 255]).collect();
     let png = lightcraft_codecs::encode_png(
         &lightcraft_codecs::EncodeImage::rgba8(&lightcraft_raster::Rgba8 { width: w, height: h, data }),
         &Default::default(),
