@@ -157,6 +157,12 @@ impl Drop for Player {
 }
 
 impl Player {
+    /// Pictures decoded, the error if any, playing or not.
+    #[cfg(test)]
+    pub fn state(&self) -> (usize, Option<&str>, bool) {
+        (self.frames.len(), self.error.as_deref(), self.playing.is_some())
+    }
+
     /// Still being made or decoded.
     pub fn loading(&self) -> bool {
         #[cfg(not(target_arch = "wasm32"))]

@@ -182,3 +182,65 @@ fn the_search_field_opens_who_and_what_results() {
     h.settle(SETTLE);
     assert_eq!((h.app.caches.videos.section, h.app.caches.videos.open), (Section::Sheet, Some(id)));
 }
+
+/// The sheet's silent preview: "Preview" on a moment makes the 8 s clip and decodes it on a
+/// thread (the window keeps drawing meanwhile), it plays once ready, Pause / Play, -5 s makes a new one, Close stops
+/// it. Skips when FFmpeg is not installed.
+#[test]
+fn the_preview_plays_a_moment_without_sound_and_closes() {
+    let Some(ff) = lightcraft_engine::video::ffmpeg::ffmpeg() else {
+        eprintln!("skipped: FFmpeg is not installed");
+        return;
+    };
+    let dir = temp_dir("preview");
+    let v = dir.join("v.mp4");
+    let st = std::process::Command::new(ff)
+        .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=12:size=320x240:rate=10"])
+        .args(["-pix_fmt", "yuv420p", "-c:v", "mpeg4"])
+        .arg(&v)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    let mut s = lightcraft_engine::Session::new().with_fs();
+    s.open_library(dir.join("lib"), false).unwrap();
+    let r = s.execute("library.import", &json!({"paths": [v.to_string_lossy()]})).unwrap();
+    let id = r["imported"][0].as_u64().unwrap();
+    s.execute("video.frames", &json!({"ids": [id]})).unwrap();
+    let ms = s.execute("video.moments", &json!({"id": id})).unwrap()["moments"]
+        .as_array()
+        .and_then(|m| m.iter().filter_map(|x| x["ms"].as_u64()).find(|&ms| ms >= 6000))
+        .expect("a moment after 6 s");
+    let mut h = Headless::new(LightcraftApp::new(s, Services::default()), [1300.0, 900.0], 1.0);
+    h.settle(SETTLE);
+    assert!(h.app.run("videos.open", json!({"id": id})).is_ok());
+    h.settle(SETTLE);
+    let r = h.request("ui.clickWidget", json!({"id": format!("button:preview:{id}:{ms}")}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    h.settle(SETTLE); // waits while the player is loading (headless::busy)
+    let (frames, error, playing) = h.app.caches.videos.player.as_ref().map(|p| p.state()).map(|(n, e, p)| (n, e.map(str::to_string), p)).expect("a player");
+    assert!(error.is_none(), "{error:?}");
+    assert!(frames > 10, "the clip's pictures are decoded ({frames})");
+    assert!(playing, "it plays once ready (the user asked for it)");
+    let r = h.request("ui.clickWidget", json!({"id": "button:previewPlay"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    assert!(h.app.caches.videos.player.as_ref().is_some_and(|p| !p.state().2), "paused");
+    let r = h.request("ui.clickWidget", json!({"id": "button:previewPlay"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    assert!(h.app.caches.videos.player.as_ref().is_some_and(|p| p.state().2), "playing again");
+    for _ in 0..5 {
+        h.step();
+    }
+    // -5 s: a new clip, earlier
+    let r = h.request("ui.clickWidget", json!({"id": "button:previewBack"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    assert!(h.app.caches.videos.player.as_ref().is_some_and(|p| p.ms < ms), "a clip earlier in the video");
+    h.settle(SETTLE);
+    let r = h.request("ui.clickWidget", json!({"id": "button:previewClose"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    assert!(h.app.caches.videos.player.is_none(), "closed");
+}
