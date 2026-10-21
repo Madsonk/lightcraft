@@ -174,10 +174,10 @@ originals, never the 736-photo album), imported in a throw-away catalogue, genre
 * **Without faces** (focus, exposure, duplicates, scenes): 2 highlights, 8 selected, 1 review (soft), 2 rejected —
   both rejected are byte-identical re-exports of a better-ranked file in the same duplicate group, which is
   right. Four scenes from the capture times, two duplicate groups.
-* **With faces**, the first rules rejected 7 of 13. Looking at the images, at least two rejections were wrong
+* **With faces**, the first rules rejected 7 of 13 (final rules: 2 rejected — the two byte-identical duplicates —, 5 to review, 5 selected, 1 highlight). Looking at the images, at least two rejections were wrong
   (a groom with open eyes rejected for "closed eyes" and "blurred face"; a ceremony photo rejected for out-of-focus
-  guests in the background). Two fixes came out of it: only prominent faces are judged, and a blurred face no
-  longer rejects. What remains: the eye measurements are noisy on small faces of this retouched portfolio (faces are
+  guests in the background). Fixes that came out of it: only prominent faces are judged (≥ half the largest face and ≥ 4 % of the long edge, aspect-aware), a blurred face no
+  longer rejects, and only *both* eyes closed rejects. What remains: the eye measurements are noisy on small faces of this retouched portfolio (faces are
   2–10 % of the frame; many read "blurred"), so **closed-eyes rejections on a real shoot must be checked by a
   person** — they are reported with their reason and nothing is written without `cull.apply`.
 * The dominant risk is therefore the face model's calibration on real faces (it was calibrated in `faces.md`
