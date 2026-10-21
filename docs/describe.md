@@ -75,7 +75,44 @@ a video is a **result** when:
    within `window` seconds (6) of the moment;
 2. the words match **what** it shows: the value of its annotation (scene, action, description; accents, case and word
    endings ignored: « conduisant » finds « conduit … voiture »), **or** its meaning, when the semantic model is installed
-   and the picture is indexed (`search.index` indexes the pictures of videos too): probability ≥ `minProbability` (0.02).
+   and the picture is indexed (`search.index` indexes the pictures of videos too): among the `semanticTop` (20) pictures
+   closest to the query. A rank, not an absolute probability: SigLIP's probabilities on a French sentence are all tiny
+   and their level changes from one query to the next, so a fixed threshold (0.02 before) let almost nothing or almost
+   everything through. `minProbability` is still honoured when it is given.
+
+The meaning is asked with the query as typed **and** in English (`lang`: `fr`, `en`, `both` — the default): a local
+French → English glossary of about 300 words of the library's annotations (`describe/glossary.rs`, nothing sent
+anywhere; a word it does not know stays as it is) — the model reads English best. The text and the meaning are merged by
+**rank fusion** (reciprocal rank, k = 60): a moment found by both comes first. `fields` limits the words to some of
+`scene` / `action` / `description`; `text: false` or `semantic: false` turn one side off.
+
+**Bench** (`examples/describe_bench.rs`, test library of 386 videos, 21 Oct 2026). The 1 312 moments Video Catcher
+described with both an action and a description are the questions: the query is one field, the search may only use
+the other fields and the pictures (limit 200). Recall@k = the moment is in the first k; "video" = the right video.
+
+| query | method | r@1 | r@5 | r@10 | median rank | video r@1 | video r@5 |
+|---|---|---|---|---|---|---|---|
+| action (short) | text only | 19.5 % | 36.4 % | 45.0 % | 14 | 22.7 % | 41.8 % |
+| | meaning, French as typed | 6.2 % | 19.1 % | 26.4 % | 69 | 15.7 % | 36.7 % |
+| | meaning, glossary English | 6.7 % | 16.4 % | 23.8 % | 90 | 15.3 % | 33.9 % |
+| | meaning, both | 8.1 % | 20.4 % | 27.2 % | 63 | 18.4 % | 38.2 % |
+| | **fusion, both (default)** | **20.9 %** | **42.3 %** | **53.5 %** | **8** | **25.6 %** | **52.0 %** |
+| | fusion, English | 19.2 % | 40.6 % | 51.7 % | 10 | 24.5 % | 49.7 % |
+| description (long) | text only | 20.5 % | 36.9 % | 45.3 % | 14 | 23.9 % | 44.5 % |
+| | meaning, French as typed | 22.7 % | 49.7 % | 61.6 % | 6 | 46.4 % | 77.8 % |
+| | meaning, glossary English | 18.9 % | 43.8 % | 55.4 % | 8 | 40.2 % | 70.4 % |
+| | meaning, both | 22.2 % | 48.9 % | 61.7 % | 6 | 46.2 % | 77.1 % |
+| | **fusion, both (default)** | **35.4 %** | **64.0 %** | **74.4 %** | **3** | 43.4 % | 73.0 % |
+| | fusion, English | 33.5 % | 61.6 % | 72.0 % | 3 | 41.0 % | 71.1 % |
+
+Read with care: the fusion is the best way to find *the moment* for both kinds of query (median rank 14 → 8 for a
+short action, 14 → 3 for a sentence), so it is the default. The glossary alone does **not** help (English is below
+French as typed on both); asking both only helps a little on short queries — it is kept because it costs nothing and
+never hurt the fusion. To find *the video* from a long sentence, the meaning alone does a little better than the fusion
+(77.8 % vs 73.0 % in the first 5). Video Catcher wrote its descriptions from these very pictures with a vision model,
+so the meaning's numbers here are optimistic for a person's own words. The old default (meaning kept above an absolute
+probability of 0.02) was not measured in this bench. 0.03–0.07 s per query; the run took 28 min for 12 × 1 312
+searches (peak memory 3.3 GB).
 
 Results: `{id, kind: photo|video, ms, frame, scene, action, description, status, from, people, matched: {words,
 probability}}`, best first. `filter: true` shows only those photos and videos in the grid.
@@ -117,7 +154,16 @@ from the control channel, the CLI and MCP.
 - **People ▸ Recognition**: a face seen in a video is cut out of its picture and marked *video · m:ss*; a click on the
   mark opens that moment. Naming, merging, moving and ignoring work as for any face.
 
-There is no video player inside LightCraft yet: a moment opens in the system's player. For a future player, `video.clip {id, ms, seconds?}` makes a short clip around a moment (8 s by default, 540 lines, H.264 + AAC, MP4 `+faststart`) once and keeps it in `<library>/video/<key>/clips/`; it returns its path.
+- **Preview** (on a moment of the sheet): plays 8 s around the moment in the sheet itself — the clip `video.clip` makes,
+  shown as 8 pictures a second (480 px), **without sound**; a click on the picture or **Play / Pause** stops and goes on,
+  the bar moves inside the clip, **-5 s / +5 s** make the clip around the new time, **Play in VLC** opens the system's
+  player there. The clip is made and decoded on a worker thread; closing the preview stops it.
+- **Unreadable** (in the list): the videos an import could not read, with their cause in plain words — an empty file
+  (0 bytes), a file cut short whose index (`moov`) is missing (it cannot be rebuilt without a sound file from the same
+  camera; LightCraft does not try), no picture track, a file gone — and **Open the folder**. A file that imports later
+  leaves the list (`video.unreadable`, `<library>/video/unreadable.json`).
+
+There is no full player inside LightCraft (no sound, no long playback): the system's player does that. For a future player, `video.clip {id, ms, seconds?}` makes a short clip around a moment (8 s by default, 540 lines, H.264 + AAC, MP4 `+faststart`) once and keeps it in `<library>/video/<key>/clips/`; it returns its path.
 
 ## Video Catcher
 

@@ -90,6 +90,17 @@ moments, see [`describe.md`](describe.md)) for the catalog's videos it knows by 
 `createMissing: true` first imports its videos the catalog lacks. Its people are only hints, never faces of People.
 Who is where and doing what: `describe.search` ([`describe.md`](describe.md)).
 
+**At scale (test library of 386 videos, 3 897 pictures, M4 under load, 21 Oct 2026).** `people.index` took 1 635 s
+(943 faces, peak memory 1.15 GB), `search.index` 246 s (2.2 GB); on disk `people/` 5 MB, `search/` 6 MB, `video/`
+377 MB (pictures and previews), `describe/` 0.4 MB. Grouping with the photo settings (`link` 0.5, `suggest` 0.45,
+`minFacePx` 40) gave 146 groups. Checked by eye on face sheets: the biggest group (407 faces in 67 videos) is one man,
+the one who films himself, with no clear stranger in an 80-face sample; the next 14 groups are each one person, except
+**one group of 33 "faces" that are not faces** (car wheels, a steering wheel, objects — the finder's false detections,
+which group together) and two or three groups that may hold two look-alike men under caps or at a sharp angle. No
+default was changed: nothing measured says another `link` would do better on photos. What to do in a video library:
+mark the false-detection group *Not a real face* (`people.ignore`), and check the big group's pictures at an angle
+before confirming it whole.
+
 Importing a video: `library.import {paths: [file]}` with the file named, or a folder with `videos: true` (by default a
 folder brings its photos only, so a photo library is not filled with videos unless asked; files already catalogued are
 skipped, so an interrupted import of a big folder resumes).
