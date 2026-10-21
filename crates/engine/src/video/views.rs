@@ -56,9 +56,18 @@ pub fn list(s: &mut Session, p: &Value) -> Result<Value> {
         .collect();
     let mut rows = Vec::new();
     let mut all_people: BTreeMap<String, usize> = BTreeMap::new();
+    // the pictures of every video from the remembered lists (read once, until they change), not one
+    // `frames.json` per video per call: that froze the window on a cold disk
+    let mut keys_of: std::collections::HashMap<PhotoId, Vec<(u64, u64, std::path::PathBuf)>> = std::collections::HashMap::new();
+    for (k, f) in s.video_frames().iter() {
+        for id in &f.ids {
+            keys_of.entry(*id).or_default().push((f.ms, *k, f.file.clone()));
+        }
+    }
     for (id, ck, name, duration, captured) in videos {
-        let frames = s.frames_of_video(id);
-        let keys: Vec<u64> = frames.iter().map(|(k, _)| *k).collect();
+        let mut frames = keys_of.remove(&id).unwrap_or_default();
+        frames.sort_unstable();
+        let keys: Vec<u64> = frames.iter().map(|(_, k, _)| *k).collect();
         let looked = analysed(s, &keys);
         let mut people: Vec<String> = Vec::new();
         for k in &keys {
@@ -98,7 +107,7 @@ pub fn list(s: &mut Session, p: &Value) -> Result<Value> {
             "id": id.0, "name": name, "duration": duration, "captured": captured,
             "frames": frames.len(), "facesLooked": looked, "people": people,
             "moments": moments.len(), "confirmed": confirmed, "toConfirm": moments.len() - confirmed,
-            "poster": frames.get(frames.len() / 2).map(|(_, f)| f.file.display().to_string()),
+            "poster": frames.get(frames.len() / 2).map(|(_, _, f)| f.display().to_string()),
         }));
     }
     Ok(json!({"videos": rows, "people": all_people.keys().collect::<Vec<_>>(), "total": rows.len()}))
