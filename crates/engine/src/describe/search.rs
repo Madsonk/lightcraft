@@ -307,7 +307,7 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
         })
         .collect();
     let mut text_order: Vec<(usize, usize)> = texts.iter().enumerate().filter(|(_, (_, w))| !w.is_empty()).map(|(i, (_, w))| (i, w.len())).collect();
-    text_order.sort_by(|a, b| b.1.cmp(&a.1));
+    text_order.sort_by_key(|x| std::cmp::Reverse(x.1));
     let text_rank: HashMap<usize, usize> = text_order.iter().enumerate().map(|(r, (i, _))| (*i, r + 1)).collect();
     let mut results: Vec<(f32, Value)> = Vec::new();
     let mut present_only: Vec<(f32, Value)> = Vec::new();
