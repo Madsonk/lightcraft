@@ -1245,7 +1245,10 @@ fn library_batch_tools(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     ui.label(format!("{}: {}", crate::i18n::tr("Selected photos"), ids.len()));
     series_tools(app, ui, &ids, &guard);
     classification_tools(app, ui);
-    egui::CollapsingHeader::new(crate::i18n::tr("Sorting Help")).show(ui, |ui| crate::quick_sort::show(app, ui));
+    // only in the Sort step, where it has something to say; open, since the user asked for that step
+    if crate::quick_sort::visible(app) {
+        egui::CollapsingHeader::new(crate::i18n::tr("Sorting Help")).default_open(true).show(ui, |ui| crate::quick_sort::show(app, ui));
+    }
     egui::CollapsingHeader::new(crate::i18n::tr("Quick Develop")).default_open(true).show(ui, |ui| {
         ui.add_enabled_ui(!ids.is_empty(), |ui| {
             for (control, label, step) in [("light.exposure", "Exposure", 0.33), ("wb.temp", "Temperature", 250.0), ("wb.tint", "Tint", 5.0)] {

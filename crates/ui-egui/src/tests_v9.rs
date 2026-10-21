@@ -397,9 +397,9 @@ fn the_tool_strip_has_labelled_icons_in_three_groups() {
     let order = ["presets", "edit", "crop", "remove", "masking", "redeye", "versions", "activity", "keywords", "info"];
     let rects: Vec<egui::Rect> = order.iter().map(|id| top(&h, id)).collect();
     for (id, r) in order.iter().zip(&rects) {
-        assert_eq!(r.height(), 44.0, "{id} has room for its label");
+        assert_eq!(r.height(), 48.0, "{id} has room for its label");
     }
-    assert!(rects.windows(2).all(|w| w[1].top() - w[0].top() >= 44.0 - 0.1), "{rects:?}");
+    assert!(rects.windows(2).all(|w| w[1].top() - w[0].top() >= 48.0 - 0.1), "{rects:?}");
     // About stays below them, alone
     assert!(top(&h, "more").top() > rects[9].bottom(), "About is below the groups");
     // the behaviour did not change: the same panels open

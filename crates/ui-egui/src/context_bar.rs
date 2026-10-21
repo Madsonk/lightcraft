@@ -177,7 +177,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                         ))
                         .clicked()
                     {
-                        run = Some(("view.beforeAfter", json!({})));
+                        run = Some(("view.showOriginal", json!({})));
                     }
                 }
                 Space::Create => {}
@@ -250,7 +250,12 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             part(&mut job, crate::i18n::tr("Source ").to_string(), sum.source.clone(), false);
             let filter = if sum.filter.is_empty() { crate::i18n::tr("none").to_string() } else { sum.filter.join(" + ") };
             part(&mut job, format!("  ·  {}", crate::i18n::tr("Filter ")), filter, !sum.filter.is_empty());
-            part(&mut job, "  ·  ".to_string(), format!("{sel} selected of {all}", sel = sum.selected, all = sum.visible), sum.selected > 0);
+            part(
+                &mut job,
+                "  ·  ".to_string(),
+                crate::i18n::tr_format!("{sel} selected of {all}", sel = sum.selected, all = sum.visible),
+                sum.selected > 0,
+            );
             if let Some(a) = &sum.active {
                 part(&mut job, format!("  ·  {}", crate::i18n::tr("Photo ")), a.clone(), false);
             }

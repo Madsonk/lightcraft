@@ -37,8 +37,12 @@ fn click(h: &mut Headless, id: &str) {
 /// Frames until the proposal has been planned (it plans a photo per frame).
 fn planned(h: &mut Headless) {
     let t0 = std::time::Instant::now();
-    while !has(h, "check:proposals:camera") && t0.elapsed() < SETTLE {
+    while !has(h, "button:proposalsDetails") && t0.elapsed() < SETTLE {
         h.step();
+    }
+    // the steps are folded under "Details" (v14): unfold them once
+    if has(h, "button:proposalsDetails") && !has(h, "check:proposals:camera") {
+        click(h, "button:proposalsDetails");
     }
     assert!(has(h, "check:proposals:camera"), "the proposal was planned");
 }

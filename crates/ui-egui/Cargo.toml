@@ -30,8 +30,9 @@ log = { workspace = true }
 lightcraft-denoise = { workspace = true, features = ["runtime"] }
 lightcraft-codecs = { workspace = true }
 lightcraft-faces = { workspace = true }
-# the People tests inject faces into the index (no model needed)
-lightcraft-engine = { workspace = true, features = ["people", "places"] }
+# the People tests inject faces into the index (no model needed); the model-setup tests need the
+# denoise runtime the apps build with (`cargo test --workspace` unifies it, `-p lightcraft-ui-egui` did not)
+lightcraft-engine = { workspace = true, features = ["people", "places", "denoise"] }
 
 [build-dependencies]
 serde_json = { workspace = true }

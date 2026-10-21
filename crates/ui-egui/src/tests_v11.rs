@@ -135,7 +135,7 @@ fn ctrl_1_2_3_open_the_spaces_and_each_arranges_the_panels() {
     key(&mut h, "2", true);
     assert_eq!(h.app.workspaces.current, "Retouch");
     assert_eq!(h.app.session.catalog.photo(active).unwrap().rating, rating, "Ctrl+2 opens a space, it does not rate the photo");
-    assert_eq!((h.app.ui.view, h.app.ui.right, h.app.ui.left_panel, h.app.ui.filmstrip), (ViewMode::Detail, RightPanel::Edit, false, true));
+    assert_eq!((h.app.ui.view, h.app.ui.right, h.app.ui.left_panel, h.app.ui.filmstrip), (ViewMode::Detail, RightPanel::Edit, true, true), "v14: Retouch has its left column");
     key(&mut h, "3", true);
     assert_eq!(h.app.workspaces.current, "Create");
     assert!(h.app.ui.left_panel && h.app.ui.right == RightPanel::None);
@@ -417,7 +417,7 @@ fn the_first_run_opens_the_library_arrangement_and_a_later_run_the_space_last_us
     // the Retouch space is the factory one the first time too (not what the window was before)
     pick(&mut h, 2);
     run(&mut h, "workspace.retouch", json!({})).unwrap();
-    assert_eq!((h.app.ui.view, h.app.ui.right, h.app.ui.left_panel, h.app.ui.filmstrip), (ViewMode::Detail, RightPanel::Edit, false, true));
+    assert_eq!((h.app.ui.view, h.app.ui.right, h.app.ui.left_panel, h.app.ui.filmstrip), (ViewMode::Detail, RightPanel::Edit, true, true), "v14: Retouch has its left column");
     run(&mut h, "workspace.library", json!({})).unwrap();
     assert_eq!((h.app.ui.view, h.app.ui.right, h.app.ui.left_panel), (ViewMode::PhotoGrid, RightPanel::Keywords, true));
     let _ = std::fs::remove_dir_all(dir);
