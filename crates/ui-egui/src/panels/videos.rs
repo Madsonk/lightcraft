@@ -449,7 +449,7 @@ pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
     let now = ctx.input(|i| i.time);
     let any = [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]].iter().any(|j| j["running"] == true);
     if now - app.caches.videos.jobs.0 > if any { 0.5 } else { 3.0 } {
-        let v = app.session.execute("video.status", &json!({})).unwrap_or(Value::Null);
+        let v = app.session.execute("video.status", &json!({"jobOnly": true})).unwrap_or(Value::Null);
         let d = app.session.execute("describe.status", &json!({})).unwrap_or(Value::Null);
         let p = if app.session.people.job_running() { app.session.execute("people.status", &json!({})).unwrap_or(Value::Null) } else { Value::Null };
         let was = any;

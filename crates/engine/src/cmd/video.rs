@@ -25,7 +25,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Video Status",
             [],
             None,
-            "{} — whether FFmpeg is there (`ffmpeg`, `ffprobe`: found on PATH, in /opt/homebrew/bin, /usr/local/bin, or LIGHTCRAFT_FFMPEG / LIGHTCRAFT_FFPROBE), the library's videos and how many have their pictures cut, the pictures' folder and its size → {ffmpeg, ffprobe, videos, withFrames, frames, bytes, folder}",
+            "{jobOnly?: bool (only `job`, reads no file: what a window polls)} — whether FFmpeg is there (`ffmpeg`, `ffprobe`: found on PATH, in /opt/homebrew/bin, /usr/local/bin, or LIGHTCRAFT_FFMPEG / LIGHTCRAFT_FFPROBE), the library's videos and how many have their pictures cut, the pictures' folder and its size → {ffmpeg, ffprobe, videos, withFrames, frames, bytes, folder}",
             always,
             status
         ),
@@ -122,18 +122,25 @@ fn import_videocatcher(_: &mut Session, _: &Value) -> Result<Value> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn status(s: &mut Session, _: &Value) -> Result<Value> {
+fn status(s: &mut Session, p: &Value) -> Result<Value> {
     use crate::video::{cache_root, ffmpeg};
+    // `jobOnly`: what a window polls every few seconds — no file read at all (the counts below read
+    // every video's list of pictures, which froze the window on a slow disk)
+    if bool_or(p, "jobOnly", false) {
+        return Ok(json!({"available": true, "job": s.video.job.report(false)}));
+    }
     let root = cache_root(s);
     let videos: Vec<lightcraft_catalog::PhotoId> =
         s.catalog.photos().filter(|p| p.in_library() && p.kind == lightcraft_catalog::MediaKind::Video).map(|p| p.id).collect();
-    let mut with = 0;
-    let mut n = 0;
-    for id in &videos {
-        let f = s.frames_of_video(*id).len();
-        n += f;
-        with += usize::from(f > 0);
+    // counted from the remembered pictures (read once, until the videos or their pictures change)
+    let mut per: std::collections::HashMap<lightcraft_catalog::PhotoId, usize> = std::collections::HashMap::new();
+    for f in s.video_frames().values() {
+        for id in &f.ids {
+            *per.entry(*id).or_default() += 1;
+        }
     }
+    let n: usize = videos.iter().map(|id| per.get(id).copied().unwrap_or(0)).sum();
+    let with = videos.iter().filter(|id| per.get(id).is_some_and(|c| *c > 0)).count();
     Ok(json!({
         "available": true,
         "ffmpeg": ffmpeg::ffmpeg().map(|p| p.display().to_string()), "ffprobe": ffmpeg::ffprobe().map(|p| p.display().to_string()),

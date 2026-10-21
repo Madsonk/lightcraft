@@ -148,6 +148,11 @@ fn pictures_of_a_video_are_cut_cached_keyed_and_resumed() {
     assert_eq!(r["cut"], 3, "{r}");
     let st = s.execute("video.status", &json!({})).unwrap();
     assert_eq!((st["videos"].as_u64(), st["withFrames"].as_u64(), st["frames"].as_u64()), (Some(1), Some(1), Some(3)), "{st}");
+    // what a window polls: the job only, no list of pictures read
+    std::fs::write(vdir.join(crate::video::frames::MANIFEST), b"{oops").unwrap();
+    let st = s.execute("video.status", &json!({"jobOnly": true})).unwrap();
+    assert_eq!(st["job"]["running"], false, "{st}");
+    assert!(st.get("frames").is_none() && st.get("bytes").is_none(), "{st}");
 }
 
 /// `force` cuts LightCraft's own pictures again and never removes nor replaces those brought in
