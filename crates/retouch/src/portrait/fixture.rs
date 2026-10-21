@@ -193,3 +193,51 @@ pub fn portrait(open_mouth: bool) -> (Vec<u8>, Planted) {
     }
     (rgb, Planted { blemish, freckles })
 }
+
+/// The same face with both eyes closed: the eye openings painted over with skin and a lash line.
+pub fn portrait_closed() -> Vec<u8> {
+    let (mut rgb, _) = portrait(true);
+    let skin = lab::lab_to_rgb8(rgb8_to_lab([196, 150, 128]));
+    for ex in [150.0f32, 250.0] {
+        for y in 140..180usize {
+            for x in (ex as usize - 30)..(ex as usize + 30) {
+                let (dx, dy) = ((x as f32 + 0.5 - ex) / 27.0, (y as f32 + 0.5 - 160.0) / 11.0);
+                if dx * dx + dy * dy < 1.0 {
+                    let i = (y * W + x) * 3;
+                    // skin, with a thin dark lash line along the middle
+                    let lash = (y as f32 + 0.5 - 161.0).abs() < 1.3 && dx.abs() < 0.9;
+                    let c = if lash { [60u8, 40, 35] } else { skin };
+                    rgb[i..i + 3].copy_from_slice(&c);
+                }
+            }
+        }
+    }
+    rgb
+}
+
+/// The mesh of [`portrait_closed`]: the eyelid contours collapse onto the lash line.
+pub fn mesh_closed() -> Vec<[f32; 3]> {
+    let mut p = mesh(true);
+    for (idx, cy) in [(&facegeo::LEFT_EYE[..], 160.0f32), (&facegeo::RIGHT_EYE[..], 160.0)] {
+        for &k in idx {
+            p[k][1] = cy + (p[k][1] - cy) * 0.12;
+        }
+    }
+    p
+}
+
+/// A second frame of the same scene: shifted by (`dx`, `dy`) pixels and scaled in brightness by
+/// `gain` (edges clamped), with the mesh moved along.
+pub fn shifted(rgb: &[u8], mesh: &[[f32; 3]], dx: i32, dy: i32, gain: f32) -> (Vec<u8>, Vec<[f32; 3]>) {
+    let mut out = vec![0u8; W * W * 3];
+    for y in 0..W {
+        for x in 0..W {
+            let sx = (x as i32 - dx).clamp(0, W as i32 - 1) as usize;
+            let sy = (y as i32 - dy).clamp(0, W as i32 - 1) as usize;
+            for c in 0..3 {
+                out[(y * W + x) * 3 + c] = (f32::from(rgb[(sy * W + sx) * 3 + c]) * gain).clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+    (out, mesh.iter().map(|p| [p[0] + dx as f32, p[1] + dy as f32, p[2]]).collect())
+}

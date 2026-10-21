@@ -219,6 +219,7 @@ pub(crate) fn preview_with(s: &mut Session, p: &Value, src: &mut Sources) -> Res
         "width": after.width, "height": after.height,
         "faces": o.faces,
         "steps": ps::report_json(&o),
+        "eyes": ps::eyes_json(&o),
         "seconds": {"retouch": (o.seconds * 1000.0).round() / 1000.0, "render": (t.elapsed().as_secs_f64() * 1000.0).round() / 1000.0},
         "stored": false,
     }))
@@ -333,6 +334,15 @@ fn remove(s: &mut Session, p: &Value) -> Result<Value> {
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(
+            "portrait.openEyes",
+            "Open Eyes",
+            ["Photo"],
+            None,
+            "{id?, level?: 1|2|3 (1), source?: photo id of the reference (else the best shot of the same burst where the same person has open eyes), face?: index among the photo's faces (else the first with closed eyes), eyes?: both|left|right, apply?: false, confirmed?: false, edge?: 256..2048 (1024), path?} — put the eyes of the same person from another shot of the series into this photo (level 1: real pixels from a real frame, aligned on the eye corners, light and colour matched, feathered; nothing is invented). Always a preview first (before/after PNGs and the numbers: openBefore/openAfter, seamDeltaE, scale, rotationDeg); `apply: true` + `confirmed: true` stores it as the `open_eyes` step of the portrait stack, only for the pair previewed (one undo; the original is never touched). No usable reference → an error saying so. Level 2 (local generative) is not available: no local model with a permissive licence is good enough; level 3 (online) only prepares the eyes crop and asks for consent: nothing is sent → {id, source, face, before, after, eyes, ...}",
+            has_active,
+            open_eyes_cmd
+        ),
+        cmd!(
             query "portrait.list",
             "Portrait Sliders",
             [],
@@ -422,4 +432,201 @@ fn auto_batch(s: &mut Session, p: &Value) -> Result<Value> {
         o.insert("auto".into(), json!(true));
     }
     batch(s, &q)
+}
+
+// ---- open eyes -------------------------------------------------------------------------------
+
+/// The pair (photo, reference, face) of the last preview: `apply` only accepts what was seen.
+static LAST_EYES_PREVIEW: std::sync::Mutex<Option<(u64, u64, usize)>> = std::sync::Mutex::new(None);
+
+/// Names of the people the People index recognized in a photo, by face box (empty without it).
+#[cfg(feature = "people")]
+fn names_in(s: &mut Session, id: PhotoId) -> Vec<([f32; 2], Option<String>)> {
+    let Ok(v) = crate::people::ops::faces(s, &json!({"id": id.0})) else { return Vec::new() };
+    let Some(list) = v.get("faces").and_then(Value::as_array) else { return Vec::new() };
+    list.iter()
+        .filter_map(|f| {
+            let r = f.get("rect")?.as_array()?;
+            let (x0, y0, x1, y1) = (r.first()?.as_f64()?, r.get(1)?.as_f64()?, r.get(2)?.as_f64()?, r.get(3)?.as_f64()?);
+            Some(([((x0 + x1) / 2.0) as f32, ((y0 + y1) / 2.0) as f32], f.get("name").and_then(Value::as_str).map(str::to_string)))
+        })
+        .collect()
+}
+
+#[cfg(not(feature = "people"))]
+fn names_in(_: &mut Session, _: PhotoId) -> Vec<([f32; 2], Option<String>)> {
+    Vec::new()
+}
+
+fn centre(r: [f32; 4]) -> [f32; 2] {
+    [(r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0]
+}
+
+fn name_at(names: &[([f32; 2], Option<String>)], c: [f32; 2]) -> Option<String> {
+    names
+        .iter()
+        .filter(|(k, _)| (k[0] - c[0]).hypot(k[1] - c[1]) < 0.15)
+        .min_by(|a, b| (a.0[0] - c[0]).hypot(a.0[1] - c[1]).total_cmp(&(b.0[0] - c[0]).hypot(b.0[1] - c[1])))
+        .and_then(|x| x.1.clone())
+}
+
+/// The face of `id` whose eyes are closed (Analyze Faces' numbers), as (index in the analysis, its centre).
+fn closed_face(s: &Session, id: PhotoId) -> Option<(usize, [f32; 2])> {
+    let a = s.catalog.photo(id)?.analysis.as_ref()?;
+    let faces = a.faces.as_ref()?;
+    faces.iter().enumerate().find(|(_, f)| f.eyes_closed()).map(|(i, f)| (i, centre(f.rect)))
+}
+
+/// The best reference for the face at `c` of `id`: a photo of the same burst where a face at about
+/// the same place (and, when People knows them, the same person) has both eyes open.
+fn find_reference(s: &mut Session, id: PhotoId, c: [f32; 2]) -> Option<PhotoId> {
+    use lightcraft_catalog::{EYE_OPEN_FROM, FaceInfo};
+    let group = s.catalog.photo(id)?.analysis.as_ref()?.group?;
+    let mine = names_in(s, id);
+    let who = name_at(&mine, c);
+    let cands: Vec<PhotoId> =
+        s.catalog.photos().filter(|p| p.id != id && p.analysis.as_ref().and_then(|a| a.group) == Some(group)).map(|p| p.id).collect();
+    let mut best: Option<(f32, PhotoId)> = None;
+    for cid in cands {
+        let Some(faces) = s.catalog.photo(cid).and_then(|p| p.analysis.as_ref()).and_then(|a| a.faces.clone()) else { continue };
+        let theirs = names_in(s, cid);
+        for f in faces.iter() {
+            let k = centre(f.rect);
+            if (k[0] - c[0]).hypot(k[1] - c[1]) > 0.2 || !FaceInfo::eyes_judged(f) || f.open[0].min(f.open[1]) < EYE_OPEN_FROM * 0.9 {
+                continue;
+            }
+            // two named people must be the same one
+            if let (Some(a), Some(b)) = (&who, name_at(&theirs, k)) {
+                if *a != b {
+                    continue;
+                }
+            }
+            let q = f.quality();
+            if best.is_none_or(|(bq, _)| q > bq) {
+                best = Some((q, cid));
+            }
+        }
+    }
+    best.map(|b| b.1)
+}
+
+fn open_eyes_cmd(s: &mut Session, p: &Value) -> Result<Value> {
+    let (mut f, mut m) = (real_faces, real_matte);
+    let mut src = real_sources(&mut f, &mut m);
+    open_eyes_with(s, p, &mut src)
+}
+
+pub(crate) fn open_eyes_with(s: &mut Session, p: &Value, src: &mut Sources) -> Result<Value> {
+    const C: &str = "portrait.openEyes";
+    let id = ids_of(s, p).first().copied().ok_or_else(|| bad(C, "no active photo"))?;
+    let level = f64_or(p, "level", 1.0) as u32;
+    match level {
+        1 => {}
+        2 => {
+            return Err(bad(
+                C,
+                "level 2 (local generative repair of the eyes) is not available: no local model with a licence LightCraft can ship draws a given person's open eyes well enough (see docs/portrait-retouch.md, Open eyes). Use level 1 with another shot of the series.",
+            ));
+        }
+        3 => return prepare_online(s, id, p, src),
+        _ => return Err(bad(C, "`level` must be 1, 2 or 3")),
+    }
+    // which face
+    let meshes = (src.faces)(s, id)?;
+    let (face_idx, c) = match p.get("face").and_then(Value::as_u64) {
+        Some(i) => {
+            let m = meshes.get(i as usize).ok_or_else(|| bad(C, format!("no face number {i} (the photo has {})", meshes.len())))?;
+            (i as usize, ps::centre_of(m).unwrap_or([0.5, 0.5]))
+        }
+        None => {
+            let (_, c) = closed_face(s, id)
+                .ok_or_else(|| bad(C, "no face with closed eyes is known for this photo: run photo.analyzeFaces first, or give `face`"))?;
+            let (i, d) = ps::nearest_face(&meshes, c).ok_or_else(|| bad(C, "no face found in this photo"))?;
+            if d > 0.25 {
+                return Err(bad(C, "the closed face of the analysis is not among the faces found now: give `face`"));
+            }
+            (i, c)
+        }
+    };
+    // which reference
+    let source = match p.get("source").and_then(Value::as_u64) {
+        Some(x) => PhotoId(x),
+        None => find_reference(s, id, c).ok_or_else(|| {
+            bad(C, "no reference photo (pas de photo de référence): no other shot of this burst shows this person with both eyes open")
+        })?,
+    };
+    let eyes = str_param(p, "eyes").unwrap_or("both");
+    let step = ps::step_from_json(&json!({"kind": ps::OPEN_EYES, "source": source.0, "face": face_idx, "eyes": eyes}), C)?;
+    let apply = bool_or(p, "apply", false);
+    if apply {
+        let seen = *LAST_EYES_PREVIEW.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !bool_or(p, "confirmed", false) || seen != Some((id.0, source.0, face_idx)) {
+            return Err(bad(
+                C,
+                "open eyes is only applied after a preview of this very photo, reference and face has been looked at: call it without `apply`, look at `before`/`after`, then call again with `apply: true, confirmed: true`",
+            ));
+        }
+        let r = apply_one(s, id, vec![step], false, max_faces_of(p), src)?;
+        return Ok(json!({"id": id.0, "source": source.0, "face": face_idx, "applied": true, "result": r}));
+    }
+    let mut q = json!({"id": id.0, "steps": [{"kind": ps::OPEN_EYES, "source": source.0, "face": face_idx, "eyes": eyes}], "edge": f64_or(p, "edge", 1024.0)});
+    if let Some(path) = str_param(p, "path") {
+        q["path"] = json!(path);
+    }
+    let mut r = preview_with(s, &q, src)?;
+    *LAST_EYES_PREVIEW.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((id.0, source.0, face_idx));
+    if let Some(o) = r.as_object_mut() {
+        o.insert("source".into(), json!(source.0));
+        o.insert("face".into(), json!(face_idx));
+        o.insert("needsConfirmation".into(), json!(true));
+    }
+    Ok(r)
+}
+
+/// Level 3 (online generative repair) is only prepared here: the crop that would leave the Mac is
+/// written for the user to look at, and nothing is sent.
+fn prepare_online(s: &mut Session, id: PhotoId, p: &Value, src: &mut Sources) -> Result<Value> {
+    const C: &str = "portrait.openEyes";
+    let meshes = (src.faces)(s, id)?;
+    let face = p.get("face").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let m = meshes.get(face).ok_or_else(|| bad(C, "no such face"))?;
+    let d = (*s.develop_of(id).ok_or_else(|| bad(C, "no such photo"))?).clone();
+    let job = s.preview_job(id, 2048, 2048, false, &d).ok_or_else(|| bad(C, "no such photo"))?;
+    let img = job.run().rendered.map_err(|e| bad(C, e))?.image;
+    let (w, h) = (img.width, img.height);
+    let eye_pts: Vec<[f32; 2]> = lightcraft_retouch::facegeo::LEFT_EYE
+        .iter()
+        .chain(lightcraft_retouch::facegeo::RIGHT_EYE.iter())
+        .filter_map(|&i| m.get(i))
+        .map(|q| [q[0] * w as f32, q[1] * h as f32])
+        .collect();
+    if eye_pts.is_empty() {
+        return Err(bad(C, "the face mesh has no eyes"));
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for q in &eye_pts {
+        x0 = x0.min(q[0]);
+        y0 = y0.min(q[1]);
+        x1 = x1.max(q[0]);
+        y1 = y1.max(q[1]);
+    }
+    let pad = 0.35 * (x1 - x0).max(1.0);
+    let (cx0, cy0) = (((x0 - pad).max(0.0)) as usize, ((y0 - pad).max(0.0)) as usize);
+    let (cx1, cy1) = (((x1 + pad) as usize).min(w), ((y1 + pad) as usize).min(h));
+    if cx1 <= cx0 + 4 || cy1 <= cy0 + 4 {
+        return Err(bad(C, "the eyes are outside the frame"));
+    }
+    let (cw, ch) = (cx1 - cx0, cy1 - cy0);
+    let data: Vec<[u8; 4]> = (0..ch).flat_map(|y| (0..cw).map(move |x| (x, y))).map(|(x, y)| img.data[(cy0 + y) * w + cx0 + x]).collect();
+    let crop = lightcraft_raster::Rgba8 { width: cw, height: ch, data };
+    let path = std::env::temp_dir().join("lightcraft-portrait").join(format!("{}-eyes-to-send.png", id.0));
+    write_png(&crop, &path, C)?;
+    let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    Ok(json!({
+        "level": 3,
+        "sent": false,
+        "needsConsent": true,
+        "willLeaveTheMac": {"what": "a crop of the eyes region only, no metadata (no EXIF, no GPS, no file name)", "pixels": [cw, ch], "bytes": bytes, "file": path.display().to_string()},
+        "note": "Nothing was sent. Sending a face crop to an online image model needs Madson's explicit yes for this photo, after looking at the file above. This build does not call any online service."
+    }))
 }

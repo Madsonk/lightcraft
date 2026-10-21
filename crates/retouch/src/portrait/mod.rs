@@ -12,6 +12,7 @@
 //! touch keep their full-resolution detail.
 
 pub mod background;
+pub mod eyes;
 pub mod fixture;
 pub mod ops;
 pub mod raster;

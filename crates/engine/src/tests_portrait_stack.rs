@@ -259,3 +259,101 @@ fn the_commands_are_registered() {
     let r = s.execute("portrait.list", &json!({})).unwrap();
     assert_eq!(r["sliders"].as_array().unwrap().len(), 15);
 }
+
+// ---- open eyes -----------------------------------------------------------------------------
+
+use lightcraft_catalog::{Analysis, FaceInfo, Op};
+use lightcraft_retouch::portrait::fixture::{mesh_closed, portrait_closed, shifted};
+
+fn norm(m: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    m.iter().map(|p| [p[0] / W as f32, p[1] / W as f32, p[2] / W as f32]).collect()
+}
+
+fn set_faces(s: &mut Session, id: PhotoId, open: f32, group: Option<u32>) {
+    let face = FaceInfo { rect: [0.25, 0.1, 0.75, 0.9], score: 0.95, open: [open, open], sharp: [80.0, 80.0], turn: 0.0 };
+    let analysis = Analysis { faces: Some(std::sync::Arc::new(vec![face])), sharpness: 50.0, group, ..Default::default() };
+    s.catalog.apply(Op::SetAnalysis { id, analysis: Some(analysis) }).unwrap();
+}
+
+/// `a.png`: the face with closed eyes; `b.png`: the same scene a moment later, open eyes, a bit
+/// shifted and darker; both in the same burst, analyzed.
+fn eyes_session(tag: &str, with_reference: bool) -> (Session, PhotoId, Option<PhotoId>, PathBuf) {
+    let dir = folder(tag);
+    write_png(&dir.join("a.png"), &portrait_closed(), W, W);
+    let (open, _) = portrait(true);
+    let (refimg, _) = shifted(&open, &mesh(true), 9, -6, 0.94);
+    if with_reference {
+        write_png(&dir.join("b.png"), &refimg, W, W);
+    }
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [dir.to_string_lossy()]})).unwrap();
+    let find = |s: &Session, n: &str| s.catalog.photos().find(|p| p.file_name == n).map(|p| p.id);
+    let (a, b) = (find(&s, "a.png").unwrap(), find(&s, "b.png"));
+    set_faces(&mut s, a, 0.02, Some(1));
+    if let Some(b) = b {
+        set_faces(&mut s, b, 0.32, Some(1));
+    }
+    s.selection.ids = vec![a];
+    s.selection.active = Some(a);
+    (s, a, b, dir)
+}
+
+fn eye_meshes(s: &mut Session, id: PhotoId) -> Result<Meshes> {
+    let name = s.catalog.photo(id).unwrap().file_name.clone();
+    let m = if name == "a.png" { mesh_closed() } else { shifted(&portrait(true).0, &mesh(true), 9, -6, 0.94).1 };
+    Ok(vec![norm(&m)])
+}
+
+#[test]
+fn open_eyes_previews_first_applies_only_when_confirmed_and_keeps_the_original() {
+    use crate::cmd::portrait_stack::open_eyes_with;
+    let (mut s, a, b, dir) = eyes_session("eyes", true);
+    let b = b.unwrap();
+    let before_bytes = std::fs::read(dir.join("a.png")).unwrap();
+    let (mut f, mut m) = (eye_meshes, matte_of);
+    let mut src = Sources { faces: &mut f, matte: &mut m };
+    // applying before any preview is refused
+    let e = open_eyes_with(&mut s, &json!({"apply": true, "confirmed": true}), &mut src).unwrap_err().to_string();
+    assert!(e.contains("preview"), "{e}");
+    // the preview finds the reference by itself, writes two pictures, changes nothing
+    let out = dir.join("o").join("e-after.png");
+    let r = open_eyes_with(&mut s, &json!({"edge": 400, "path": out.to_string_lossy()}), &mut src).unwrap();
+    assert_eq!(r["source"], b.0, "{r}");
+    assert_eq!(r["needsConfirmation"], true);
+    assert!(out.is_file() && std::path::Path::new(r["before"].as_str().unwrap()).is_file());
+    let eyes = r["eyes"].as_array().unwrap();
+    assert_eq!(eyes.len(), 2, "{r}");
+    assert!(eyes.iter().all(|e| e["skipped"].is_null() && e["openAfter"].as_f64().unwrap() > 0.3), "{r}");
+    assert!(s.develop_of(a).unwrap().portrait.is_empty(), "a preview stores nothing");
+    // apply without the confirmation: refused
+    let e = open_eyes_with(&mut s, &json!({"apply": true}), &mut src).unwrap_err().to_string();
+    assert!(e.contains("preview"), "{e}");
+    // confirmed: stored as a step, one undo, the file untouched, the iris is there in the render
+    let before = rendered(&mut s, a);
+    open_eyes_with(&mut s, &json!({"apply": true, "confirmed": true}), &mut src).unwrap();
+    let d = s.develop_of(a).unwrap();
+    assert!(d.portrait.step("open_eyes").is_some() && d.portrait.patch.is_some());
+    assert_eq!(std::fs::read(dir.join("a.png")).unwrap(), before_bytes);
+    let after = rendered(&mut s, a);
+    assert!(luma(&before, 150, 154) > luma(&after, 150, 154) + 40.0, "{} -> {}", luma(&before, 150, 154), luma(&after, 150, 154));
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(s.develop_of(a).unwrap().portrait.is_empty());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn without_a_usable_reference_it_says_so_instead_of_inventing_eyes() {
+    use crate::cmd::portrait_stack::open_eyes_with;
+    let (mut s, _, _, dir) = eyes_session("noref", false);
+    let (mut f, mut m) = (eye_meshes, matte_of);
+    let mut src = Sources { faces: &mut f, matte: &mut m };
+    let e = open_eyes_with(&mut s, &json!({}), &mut src).unwrap_err().to_string();
+    assert!(e.contains("no reference photo"), "{e}");
+    let e = open_eyes_with(&mut s, &json!({"level": 2}), &mut src).unwrap_err().to_string();
+    assert!(e.contains("not available"), "{e}");
+    let r = open_eyes_with(&mut s, &json!({"level": 3, "face": 0}), &mut src).unwrap();
+    assert_eq!(r["sent"], false);
+    assert_eq!(r["needsConsent"], true);
+    assert!(std::path::Path::new(r["willLeaveTheMac"]["file"].as_str().unwrap()).is_file());
+    let _ = std::fs::remove_dir_all(dir);
+}

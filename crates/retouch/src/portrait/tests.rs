@@ -208,3 +208,65 @@ fn every_slider_has_a_description_and_a_unique_id() {
     // every kind is listed
     assert_eq!(KINDS.len(), 14);
 }
+
+#[test]
+fn open_eyes_from_another_frame_are_aligned_matched_and_blended() {
+    use super::eyes::{Sides, eye_aspect, transfer};
+    use super::fixture::{mesh_closed, portrait_closed, shifted};
+    use crate::facegeo::Face;
+    let closed = portrait_closed();
+    let cpts = mesh_closed();
+    let (open, _) = portrait(true);
+    // the reference: the open face, moved by (9, -6) pixels and 6 % darker
+    let (refimg, rpts) = shifted(&open, &mesh(true), 9, -6, 0.94);
+    let mut out = closed.clone();
+    let r = transfer(&mut out, W, W, &cpts, &refimg, W, W, &rpts, Sides::Both).expect("outcome");
+    assert_eq!(r.eyes.len(), 2);
+    assert!(r.eyes.iter().all(|e| e.skipped.is_none()), "{:?}", r.eyes);
+    assert!(r.eyes.iter().all(|e| e.open_before < 0.1 && e.open_after > 0.3), "{:?}", r.eyes);
+    // the eyes of the photo now look like the open face's: the white of the eye is white again
+    let white = |rgb: &[u8]| lab_at(rgb, 138, 160)[0];
+    assert!(white(&closed) < 80.0 && white(&out) > 85.0, "closed {} -> {}", white(&closed), white(&out));
+    // and the iris is dark, where the closed photo had skin
+    assert!(lab_at(&out, 150, 154)[0] < 40.0 && lab_at(&closed, 150, 154)[0] > 55.0);
+    // the light was matched: the skin right around the eye keeps the photo's brightness
+    let (a, b) = (lab_at(&closed, 150, 188)[0], lab_at(&out, 150, 188)[0]);
+    assert!((a - b).abs() < 4.0, "skin below the eye: {a} -> {b}");
+    // far from the eyes nothing changed
+    assert_eq!(&closed[(250 * W + 200) * 3..(250 * W + 200) * 3 + 3], &out[(250 * W + 200) * 3..(250 * W + 200) * 3 + 3]);
+    // the mesh of the result is not measured (it is the photo's), but the reference's eye was open
+    assert!(eye_aspect(&Face::new(&rpts).expect("face"), true) > 0.3);
+    assert!(r.eyes.iter().all(|e| e.seam_de < 12.0), "seam {:?}", r.eyes);
+    // one side only
+    let mut one = closed.clone();
+    let r1 = transfer(&mut one, W, W, &cpts, &refimg, W, W, &rpts, Sides::Left).expect("outcome");
+    assert_eq!(r1.eyes.len(), 1);
+    assert_eq!(
+        &closed[(160 * W + 150) * 3..(160 * W + 150) * 3 + 3],
+        &one[(160 * W + 150) * 3..(160 * W + 150) * 3 + 3],
+        "the other eye stays closed"
+    );
+}
+
+#[test]
+fn open_eyes_refuses_a_reference_that_does_not_fit() {
+    use super::eyes::{Sides, transfer};
+    use super::fixture::{mesh_closed, portrait_closed};
+    let closed = portrait_closed();
+    // the reference has closed eyes too
+    let mut out = closed.clone();
+    let r = transfer(&mut out, W, W, &mesh_closed(), &closed, W, W, &mesh_closed(), Sides::Both).expect("outcome");
+    assert!(r.eyes.iter().all(|e| e.skipped == Some("reference eye is not open")), "{:?}", r.eyes);
+    assert_eq!(out, closed);
+    // a head turned the other way
+    let (open, _) = portrait(true);
+    let mut turned = mesh(true);
+    turned[4][0] += 40.0;
+    let r = transfer(&mut out, W, W, &mesh_closed(), &open, W, W, &turned, Sides::Both).expect("outcome");
+    assert!(r.eyes.iter().all(|e| e.skipped == Some("head angle differs too much")), "{:?}", r.eyes);
+    // hostile input: tiny buffers, NaN points
+    assert!(transfer(&mut [0u8; 12], 2, 2, &mesh_closed(), &open, W, W, &mesh(true), Sides::Both).is_none());
+    let mut nan = mesh(true);
+    nan[263] = [f32::NAN; 3];
+    let _ = transfer(&mut out, W, W, &mesh_closed(), &open, W, W, &nan, Sides::Both);
+}

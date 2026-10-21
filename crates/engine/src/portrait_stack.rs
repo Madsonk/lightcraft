@@ -45,6 +45,8 @@ const ORDER: [&str; 14] = [
     "flyaways",
 ];
 pub const BACKGROUND: &str = "background";
+/// The step that takes the eyes of the same person from another shot (see `portrait.openEyes`).
+pub const OPEN_EYES: &str = "open_eyes";
 
 static CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -82,13 +84,15 @@ pub struct Outcome {
     pub reports: Vec<(String, f64, Option<usize>, Option<String>)>,
     pub seconds: f64,
     pub changed_share: f64,
+    /// What the open-eyes step did to each eye (empty without that step).
+    pub eyes: Vec<lightcraft_retouch::portrait::eyes::EyeReport>,
 }
 
 /// A step from JSON: `{kind, amount, enabled?, mode?, color?, shadow?, zoom?, rotate?, edge?, dim?}`.
 pub fn step_from_json(v: &Value, c: &str) -> Result<PortraitStep> {
     let kind = v.get("kind").and_then(Value::as_str).ok_or_else(|| bad(c, "a step needs a `kind`"))?;
-    if kind != BACKGROUND && portrait::info_of(kind).is_none() {
-        let all: Vec<&str> = portrait::KINDS.iter().map(|i| i.id).chain([BACKGROUND]).collect();
+    if kind != BACKGROUND && kind != OPEN_EYES && portrait::info_of(kind).is_none() {
+        let all: Vec<&str> = portrait::KINDS.iter().map(|i| i.id).chain([BACKGROUND, OPEN_EYES]).collect();
         return Err(bad(c, format!("unknown step `{kind}` (one of {})", all.join(", "))));
     }
     let amount = v.get("amount").and_then(Value::as_f64).unwrap_or(40.0);
@@ -98,6 +102,21 @@ pub fn step_from_json(v: &Value, c: &str) -> Result<PortraitStep> {
     let mut step = PortraitStep { kind: kind.to_string(), amount: amount.clamp(0.0, 100.0), ..Default::default() };
     if let Some(e) = v.get("enabled").and_then(Value::as_bool) {
         step.enabled = e;
+    }
+    if kind == OPEN_EYES {
+        // options: source (photo id of the reference), face (index among the photo's faces), eyes (0 both, 1 left, 2 right)
+        let source =
+            v.get("source").and_then(Value::as_u64).ok_or_else(|| bad(c, "`open_eyes` needs `source`: the id of the photo with the open eyes"))?;
+        step.options.push(("source".into(), source as f64));
+        step.options.push(("face".into(), v.get("face").and_then(Value::as_u64).unwrap_or(0).min(15) as f64));
+        let eyes = match v.get("eyes").and_then(Value::as_str) {
+            None | Some("both") => 0.0,
+            Some("left") => 1.0,
+            Some("right") => 2.0,
+            Some(_) => return Err(bad(c, "`eyes` must be both, left or right")),
+        };
+        step.options.push(("eyes".into(), eyes));
+        step.amount = 100.0;
     }
     if kind == BACKGROUND {
         let mode = v.get("mode").and_then(Value::as_str).unwrap_or("blur");
@@ -239,10 +258,20 @@ pub fn render(
     let mut out = base.clone();
     let mut sums: Vec<(Kind, f32, usize, usize, Option<&'static str>)> = face_steps.iter().map(|(k, _)| (*k, 0.0, 0usize, 0usize, None)).collect();
     let (mut faces_done, mut skipped) = (0usize, 0usize);
-    if !face_steps.is_empty() {
+    let eyes_step = on.iter().find(|st| st.kind == OPEN_EYES).copied();
+    let mut eye_reports = Vec::new();
+    let mut eyes_changed = None;
+    if !face_steps.is_empty() || eyes_step.is_some() {
         let meshes = (src.faces)(s, id)?;
+        if let Some(st) = eyes_step {
+            let before = out.clone();
+            let (reports, why) = open_eyes(s, id, &mut out, w, h, &meshes, st, edge, src)?;
+            eye_reports = reports;
+            let moved = (0..w * h).filter(|&i| before[i * 3..i * 3 + 3] != out[i * 3..i * 3 + 3]).count();
+            eyes_changed = Some((moved as f64 / (w * h) as f64, why));
+        }
         skipped = meshes.len().saturating_sub(max_faces);
-        for mesh in meshes.iter().take(max_faces) {
+        for mesh in meshes.iter().take(if face_steps.is_empty() { 0 } else { max_faces }) {
             let pts: Vec<[f32; 3]> = mesh.iter().map(|p| [p[0] * w as f32, p[1] * h as f32, p[2] * w as f32]).collect();
             if pts.len() < 468 {
                 continue;
@@ -310,6 +339,11 @@ pub fn render(
             )
         })
         .collect();
+    if let Some((share, why)) = eyes_changed {
+        let n = eye_reports.iter().filter(|e| e.skipped.is_none()).count();
+        reports.insert(0, (OPEN_EYES.to_string(), share, Some(n), why));
+        faces_done = faces_done.max(1);
+    }
     if let Some(step) = bg_step {
         let matte = (src.matte)(s, id, w, h)?;
         let params = background_params(step);
@@ -355,6 +389,7 @@ pub fn render(
         InpaintPatch::new(rect, pw, ph, rgb, alpha)
     };
     Ok(Outcome {
+        eyes: eye_reports,
         w,
         h,
         faces: faces_done,
@@ -424,4 +459,75 @@ pub fn report_json(o: &Outcome) -> Value {
             .map(|(k, ch, found, why)| json!({"step": k, "changed": (ch * 1000.0).round() / 1000.0, "found": found, "skipped": why}))
             .collect::<Vec<_>>()
     )
+}
+
+pub fn centre_of(mesh: &[[f32; 3]]) -> Option<[f32; 2]> {
+    let pts: Vec<[f32; 3]> = OVAL.iter().filter_map(|&i| mesh.get(i).copied()).filter(|p| p[0].is_finite() && p[1].is_finite()).collect();
+    if pts.is_empty() {
+        return None;
+    }
+    let n = pts.len() as f32;
+    Some([pts.iter().map(|p| p[0]).sum::<f32>() / n, pts.iter().map(|p| p[1]).sum::<f32>() / n])
+}
+
+/// The index of the mesh whose centre is nearest `c` (normalized coordinates) and its distance.
+pub fn nearest_face(meshes: &Meshes, c: [f32; 2]) -> Option<(usize, f32)> {
+    meshes.iter().enumerate().filter_map(|(i, m)| centre_of(m).map(|k| (i, (k[0] - c[0]).hypot(k[1] - c[1])))).min_by(|a, b| a.1.total_cmp(&b.1))
+}
+
+/// The open-eyes step: the eyes of the same person from the reference photo `source` go into the
+/// face `face` of this photo. `(reports, why nothing happened)`.
+#[allow(clippy::too_many_arguments)]
+fn open_eyes(
+    s: &mut Session,
+    id: PhotoId,
+    out: &mut [u8],
+    w: usize,
+    h: usize,
+    meshes: &Meshes,
+    st: &PortraitStep,
+    edge: usize,
+    src: &mut Sources,
+) -> Result<(Vec<lightcraft_retouch::portrait::eyes::EyeReport>, Option<String>)> {
+    const C: &str = "portrait.openEyes";
+    let sid = PhotoId(st.option("source").unwrap_or(0.0) as u64);
+    if sid == id {
+        return Err(bad(C, "the reference must be another photo"));
+    }
+    let face = st.option("face").unwrap_or(0.0) as usize;
+    let sides = match st.option("eyes").unwrap_or(0.0) as u8 {
+        1 => portrait::eyes::Sides::Left,
+        2 => portrait::eyes::Sides::Right,
+        _ => portrait::eyes::Sides::Both,
+    };
+    let Some(target) = meshes.get(face) else { return Ok((Vec::new(), Some(format!("no face number {face} in this photo")))) };
+    let tc = centre_of(target).unwrap_or([0.5, 0.5]);
+    let sd = base_settings(&*s.develop_of(sid).ok_or_else(|| bad(C, "the reference photo does not exist"))?);
+    let (srgb, sw, sh) = linear_rgb(s, sid, &sd, edge, C)?;
+    let smeshes = (src.faces)(s, sid)?;
+    let Some((si, dist)) = nearest_face(&smeshes, tc) else { return Ok((Vec::new(), Some("no face found in the reference photo".into()))) };
+    if dist > 0.25 {
+        return Ok((Vec::new(), Some("the reference's face is not where this one is".into())));
+    }
+    let px =
+        |m: &[[f32; 3]], w: usize, h: usize| -> Vec<[f32; 3]> { m.iter().map(|p| [p[0] * w as f32, p[1] * h as f32, p[2] * w as f32]).collect() };
+    let (dpts, spts) = (px(target, w, h), px(&smeshes[si], sw, sh));
+    let Some(res) = portrait::eyes::transfer(out, w, h, &dpts, &srgb, sw, sh, &spts, sides) else {
+        return Ok((Vec::new(), Some("the faces could not be aligned".into())));
+    };
+    let why =
+        res.eyes.iter().all(|e| e.skipped.is_some()).then(|| res.eyes.iter().filter_map(|e| e.skipped).next().unwrap_or("nothing done").to_string());
+    Ok((res.eyes, why))
+}
+
+pub fn eyes_json(o: &Outcome) -> Value {
+    json!(o
+        .eyes
+        .iter()
+        .map(|e| json!({
+            "side": e.side, "skipped": e.skipped, "scale": (e.scale * 1000.0).round() / 1000.0, "rotationDeg": (e.rotation_deg * 100.0).round() / 100.0,
+            "openBefore": (e.open_before * 1000.0).round() / 1000.0, "openAfter": (e.open_after * 1000.0).round() / 1000.0,
+            "seamDeltaE": (e.seam_de * 100.0).round() / 100.0
+        }))
+        .collect::<Vec<_>>())
 }

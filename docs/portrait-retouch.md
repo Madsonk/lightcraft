@@ -134,6 +134,72 @@ record the exact file hash before embedding**, this session had no network acces
 
 Own weights: not trained yet. The sliders above are the part that does not need any.
 
+## Open eyes (`portrait.openEyes`)
+
+A good photo where one person blinked. Three levels, tried in this order; the user (not the program) moves
+from one to the next.
+
+| Level | What | State |
+|---|---|---|
+| **1** local transfer | the eyes of **the same person** from another shot of the **same burst** (`Analysis.group`), real pixels | **done**, default |
+| **2** local generative | a local model repaints the eyes, guided by the person's identity | **not feasible today** (below) |
+| **3** online generative | an online image model (kie.ai, gpt-image-2, Banana/Gemini) | **consent contract only**: the crop is prepared and shown; **nothing is sent**, this build calls no online service |
+
+**Level 1, how.** The closed face is the first one whose eye aspect ratio is below the "closed" limit of
+Analyze Faces (`photo.analyzeFaces`: the detection is lot A's, it is not duplicated here). The reference is the
+best shot of the burst (`FaceInfo::quality`) where a face at about the same place has both eyes open; when the
+People index knows both faces by name, the names must be equal. Then, per eye
+(`lightcraft_retouch::portrait::eyes`): the reference eye is aligned on the photo's by a similarity fixed by
+the two eye corners; the **light and colour** are matched by a smooth shift measured on a ring of skin around
+the eye; the two are joined by a feathered mask. Guards that fail say why and do nothing (never a bad eye):
+reference eye not open (< 0.2), head angle differs (> 0.12 face widths of nose offset), face size differs
+(×0.4..×2.5), mesh incomplete.
+
+**Always a preview first.** `portrait.openEyes {}` writes `before`/`after` PNGs and the numbers (`openBefore`,
+`openAfter`, `seamDeltaE` = mean colour difference on the join band, `scale`, `rotationDeg`) and changes nothing.
+`{apply: true, confirmed: true}` stores it, **only for the very photo / reference / face that was previewed**
+in this session, as the `open_eyes` step of the portrait stack (one undo, the original untouched, the
+reference photo is read each time the stack is re-run). No usable reference → the error *"no reference photo
+(pas de photo de référence)"*: no eye is ever invented.
+
+**Level 2, why not.** Required: a model that draws *this person's* open eyes, running locally, with a licence
+LightCraft can ship. Looked at (licences as published; verify before relying on them):
+
+| Candidate | Licence | Why it does not do the job |
+|---|---|---|
+| LaMa | Apache-2.0 | generic inpainting: fills an eye region with plausible texture, no identity: not "the same person" |
+| MI-GAN (already used by `inpaint`) | MIT | same: scene inpainting, not identity-guided |
+| Stable Diffusion inpainting family | CreativeML OpenRAIL-M (use restrictions) | several GB, no pure-Rust runtime tuned for it here, and needs an identity adapter on top |
+| IP-Adapter-FaceID / InstantID | built on InsightFace weights: non-commercial | cannot be shipped |
+| GFPGAN / CodeFormer / RestoreFormer | code Apache-2.0 or S-Lab non-commercial; trained on FFHQ | restore a degraded face, do not open closed eyes |
+
+Verdict: **not feasible today** with a model we can ship; `level: 2` returns that message. Revisit when a
+permissive, identity-conditioned inpainting model exists.
+
+**Level 3, the contract.** `portrait.openEyes {level: 3, face}` writes the crop that *would* leave the Mac —
+the eyes region only, no EXIF, no GPS, no file name — and returns `{sent: false, needsConsent: true,
+willLeaveTheMac: {what, pixels, bytes, file}}`. Sending needs Madson's explicit yes **for that photo**, after
+looking at the file, with a clear warning that the face region leaves the Mac. The online call itself is not
+implemented: wiring a key and a script from `infra-capabilities-index` is a deliberate, separate step.
+Preview before/after and a single undo apply to levels 2 and 3 as to level 1.
+
+**Measured (level 1, synthetic pair).** Reference = the same synthetic face shifted by (9, −6) px and 6 % darker
+(the target has both eyes painted closed, eye aspect ratio ≈ 0.04): both eyes are aligned and transferred
+(`openAfter` ≈ 0.36), the sclera goes back to L > 85 and the iris to L < 40, the skin right under the eye keeps
+the photo's brightness within 4 L, nothing changes away from the eyes, a closed reference or a head turned by
+more than the guard are refused with a reason; end to end through `portrait.openEyes`: preview writes two PNGs
+and stores nothing, `apply` without a preview or without `confirmed` is refused, a confirmed apply is one undo
+and the file is byte-identical (`cargo test -p lightcraft-retouch portrait`: 20; `-p lightcraft-engine
+tests_portrait_stack`: 11). **Not measured: resemblance on real faces** (no real portrait available to this
+session, and gaze / angle differences cannot be simulated honestly); the first real burst must be looked at
+by eye before trusting the seam number.
+
+**Limits of level 1** (consigned, to be measured on real faces): a different **gaze** between the two frames
+(the iris looks elsewhere), a different **angle** (the guard stops at ~0.12 face widths; below that the eye
+can still look slightly wrong), **eyelid shadow** and lash shadow on the cheek that belong to the closed pose,
+**glasses** (reflections do not match), makeup or tears that changed, motion blur between frames, and
+the burst having no frame with both eyes open (then: no reference).
+
 ## Measured
 
 On the synthetic portrait (`lightcraft_retouch::portrait::fixture`), release build, Apple Silicon, machine
