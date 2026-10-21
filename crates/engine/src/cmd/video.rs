@@ -10,6 +10,7 @@ use super::{bad, bool_or, f64_or, str_param};
 use crate::{EngineError, Result, Session};
 
 /// Disk the pictures of a library's videos may take by default.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub const DEFAULT_MAX_BYTES: u64 = 4 << 30;
 
 #[allow(dead_code)]
