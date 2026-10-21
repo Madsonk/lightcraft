@@ -71,6 +71,17 @@ Binary `Contents/MacOS/LightCraft` after ad-hoc signing: 68 372 960 bytes, SHA-2
 (`video.status` read every video's list of pictures every 3 s on the window's thread): never install it.
 The first launch of a newly signed binary takes about 6 min on this Mac (system check), not a freeze.
 
+Smoke tests of this bundle (21 Oct, `LIGHTCRAFT_NO_PREFS=1`, French):
+- **Copy of the test library** (`/Volumes/Data/work/lv-smoke/lib2`, APFS clone of lv-e2e3, 355 videos): first launch
+  369 s to the control port (system check of the new binary), first frame 41 s later; the Videos view is in French
+  (`lv-ui-proofs/20-final-videos-fr.png`); `app.quit` closed it in about 28 s. **Its first opening of the Videos view
+  froze the window for about 10 min**: `video.list` read the `frames.json` of each of the 355 videos on the window's
+  thread, on a disk then answering a one-line write in 15 s. Fixed after this bundle: `video.list` takes the remembered
+  lists (one read of each, then nothing until they change) — commit after `889bee37`, not in this bundle.
+- **Blank photo catalog** (`/Volumes/Data/work/lv-smoke/photolib`, 2 JPEG, no `video/` nor `describe/`): port in 13 s,
+  `libraryProblem: null`, no ERROR in the log; the Videos view says « Aucune vidéo dans la bibliothèque » and the grid
+  shows the 2 photos (`lv-ui-proofs/21-…`, `22-…`); opening it created no `video/` nor `describe/` folder.
+
 ## Install / go back (Madson's decision)
 
 ```sh
