@@ -15,6 +15,8 @@ const OPEN_FROM: f32 = 0.24;
 const MEDIAN_MIN: f32 = 30.0;
 /// Lowest score a photo needs to become a highlight.
 const HIGHLIGHT_MIN: f32 = 55.0;
+/// A face is judged when its size is at least this share of the photo's largest face.
+const PROMINENT: f32 = 0.5;
 
 /// Where the photo ends up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -280,8 +282,12 @@ fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
     match &shot.faces {
         None => reasons.push(Reason::FacesNotAnalyzed),
         Some(list) => {
+            // the people the photo is about: the largest faces. Smaller ones (guests, background,
+            // out of the focal plane) are shown in `faces` but never judged.
+            let side = |f: &Face| (f.rect[2] - f.rect[0]).max(f.rect[3] - f.rect[1]);
+            let largest = list.iter().filter(|f| is_key(f, &opts.key_people)).map(side).filter(|v| v.is_finite()).fold(0.0f32, f32::max);
             for f in list {
-                let counted = is_key(f, &opts.key_people);
+                let counted = is_key(f, &opts.key_people) && side(f) >= PROMINENT * largest;
                 let eyes = eye_class(f);
                 let size = (f.rect[2] - f.rect[0]).max(f.rect[3] - f.rect[1]);
                 let eye_sharp = f.sharp[0].min(f.sharp[1]);
@@ -320,7 +326,12 @@ fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
             }
         }
     }
-    reasons.dedup();
+    let mut seen = Vec::new();
+    reasons.retain(|r| {
+        let new = !seen.contains(r);
+        seen.push(*r);
+        new
+    });
     // score
     let face_q = (!counted_quality.is_empty()).then(|| counted_quality.iter().sum::<f32>() / counted_quality.len() as f32);
     let mut score = match face_q {

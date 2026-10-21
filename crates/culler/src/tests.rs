@@ -191,3 +191,20 @@ fn verdict_round_trips_through_json() {
     assert_eq!(Genre::parse("Mariage"), Some(Genre::Wedding));
     assert_eq!(Genre::parse("nope"), None);
 }
+
+#[test]
+fn background_faces_are_shown_but_not_judged() {
+    let mut a = album(1, 3, 5);
+    let faces = a.shots[0].faces.as_mut().unwrap();
+    faces.clear();
+    faces.push(Face { rect: [0.2, 0.2, 0.5, 0.6], open: [0.30, 0.30], sharp: [80.0, 80.0], judged: true, person: None });
+    // a small, blurred, closed-eyed guest behind
+    faces.push(Face { rect: [0.7, 0.3, 0.76, 0.4], open: [0.05, 0.05], sharp: [5.0, 5.0], judged: true, person: None });
+    let v = judge(&a.shots, &Options::for_genre(Genre::Wedding));
+    assert!(!v[0].reasons.contains(&Reason::ClosedEyes) && !v[0].reasons.contains(&Reason::FaceBlurred), "{:?}", v[0].reasons);
+    assert_eq!(v[0].faces.len(), 2);
+    assert!(v[0].faces[0].counted && !v[0].faces[1].counted);
+    let mut seen = v[0].reasons.clone();
+    seen.dedup();
+    assert_eq!(seen.len(), v[0].reasons.len(), "no repeated reason");
+}

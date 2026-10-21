@@ -266,3 +266,28 @@ fn bench() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Judge a real folder and print the table: `LIGHTCRAFT_CULL_DIR=<copy of an album>` (never the
+/// original), optional `LIGHTCRAFT_CULL_GENRE`. `cargo test -p lightcraft-engine tests_cull::real_album -- --ignored --nocapture`.
+#[test]
+#[ignore = "needs LIGHTCRAFT_CULL_DIR"]
+fn real_album() {
+    let Ok(dir) = std::env::var("LIGHTCRAFT_CULL_DIR") else { return };
+    let genre = std::env::var("LIGHTCRAFT_CULL_GENRE").unwrap_or_else(|_| "wedding".into());
+    let mut s = Session::new().with_fs();
+    let r = s.execute("library.import", &json!({"paths": [dir]})).unwrap();
+    eprintln!("imported {} (skipped/duplicates: {})", r["imported"].as_array().map_or(0, Vec::len), r["skipped"]);
+    let st = s.execute("cull.run", &json!({"wait": true, "genre": genre, "faces": std::env::var("LIGHTCRAFT_CULL_FACES").is_ok()})).unwrap();
+    eprintln!("state {} total {} in {} ms = {} photos/s; {}", st["state"], st["total"], st["elapsedMs"], st["photosPerSecond"], st["summary"]);
+    let l = s.execute("cull.list", &json!({"sort": "time"})).unwrap();
+    for p in l["photos"].as_array().unwrap() {
+        let e = s.execute("cull.explain", &json!({"id": p["id"]})).unwrap();
+        eprintln!(
+            "{:<34} {:<9} {}* score {:>5} scene {} group {} rank {} | focus {:>5.1} clip {:.3} mean {:.2} | {}",
+            p["name"].as_str().unwrap_or(""), p["bucket"].as_str().unwrap_or(""), p["stars"], p["score"], p["scene"], p["group"], p["groupRank"],
+            e["measurements"]["sharpness"].as_f64().unwrap_or(0.0), e["measurements"]["clipped"].as_f64().unwrap_or(0.0),
+            e["measurements"]["exposure"]["mean"].as_f64().unwrap_or(0.0), p["reasons"]
+        );
+    }
+    eprintln!("scenes {}", l["scenes"]);
+}
