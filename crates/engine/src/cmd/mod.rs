@@ -136,6 +136,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(library::specs());
         v.extend(develop::specs());
         v.extend(crate::series::specs());
+        v.extend(crate::cull_job::specs());
         v.extend(color::specs());
         v.extend(curves::specs());
         v.extend(masks::specs());

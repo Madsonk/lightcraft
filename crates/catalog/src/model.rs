@@ -371,6 +371,10 @@ pub struct Analysis {
     pub group: Option<u32>,
     /// The best photo of its group.
     pub best: bool,
+    /// The AI culling verdict (`cull.run`): bucket, reasons, proposed stars. Optional and ignored
+    /// by older builds, like `faces`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<Arc<lightcraft_culler::Verdict>>,
 }
 
 impl Photo {

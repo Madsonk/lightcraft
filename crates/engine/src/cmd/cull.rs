@@ -25,9 +25,12 @@ const MEASUREMENT_VERSION: &str = "lightcraft-focus-clipping-thumb-v1";
 /// Bounded, disposable measurements in prefs.json; group membership is always recomputed.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Measurement {
-    sharpness: f32,
-    clipped: f32,
-    signature: Vec<f32>,
+    pub(crate) sharpness: f32,
+    pub(crate) clipped: f32,
+    pub(crate) signature: Vec<f32>,
+    /// `[mean, p5, p95]` luminance; set by `cull.run` (absent from `photo.analyze`'s entries).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) exposure: Option<[f32; 3]>,
 }
 
 impl Measurement {
@@ -41,7 +44,7 @@ impl Measurement {
     }
 }
 
-fn measurement_key(s: &Session, id: PhotoId) -> Option<String> {
+pub(crate) fn measurement_key(s: &Session, id: PhotoId) -> Option<String> {
     let ph = s.catalog.photo(id)?;
     let stamp = match &ph.source {
         lightcraft_catalog::Source::Demo { .. } => "demo".to_string(),
@@ -147,7 +150,7 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
                     if s.culling_cache.len() >= 1024 {
                         s.culling_cache.pop_first();
                     }
-                    s.culling_cache.insert(key, Measurement { sharpness: sharp, clipped: clip, signature: signature.to_vec() });
+                    s.culling_cache.insert(key, Measurement { sharpness: sharp, clipped: clip, signature: signature.to_vec(), exposure: None });
                 }
             }
             Err(e) => failed.push(json!([id.0, e])),
@@ -212,6 +215,7 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
                 group: g,
                 best: is_best,
                 faces: s.catalog.photo(*id).and_then(|p| p.analysis.as_ref()).and_then(|a| a.faces.clone()),
+                verdict: s.catalog.photo(*id).and_then(|p| p.analysis.as_ref()).and_then(|a| a.verdict.clone()),
             }),
         });
         let flag = s.catalog.photo(*id).map(|p| p.flag).unwrap_or_default();

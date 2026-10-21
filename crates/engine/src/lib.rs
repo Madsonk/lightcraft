@@ -67,6 +67,7 @@ pub mod retouch;
 pub mod search;
 pub mod segment;
 pub mod series;
+pub mod cull_job;
 pub mod sidecar;
 pub mod smart;
 pub mod video;
@@ -165,6 +166,8 @@ static LIBRARY_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 
 pub struct Session {
     pub series: series::Workbench,
+    /// AI culling (`cull.*`): the job in progress or the last one, and the user's settings.
+    pub cull: cull_job::Culler,
     library_generation: u64,
     /// Auto Sync: edits to the active photo also change the other selected photos (the settings
     /// that changed, nothing else).
@@ -312,6 +315,7 @@ impl Session {
     pub fn new() -> Session {
         Session {
             series: Default::default(),
+            cull: Default::default(),
             library_generation: LIBRARY_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             auto_sync: false,
             catalog: Catalog::new(),
@@ -1034,6 +1038,8 @@ mod tests_settings_files;
 mod tests_spots;
 #[cfg(all(test, feature = "search"))]
 mod tests_taste;
+#[cfg(test)]
+mod tests_cull;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_video;
 #[cfg(test)]
