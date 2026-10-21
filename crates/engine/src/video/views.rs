@@ -202,17 +202,28 @@ pub fn open(s: &mut Session, p: &Value) -> Result<Value> {
 pub const CLIP_SECONDS: f64 = 8.0;
 const CLIP_MAX_SECONDS: f64 = 30.0;
 
-/// `video.clip {id, ms, seconds?}`: a short clip around the moment (half before, half after), 540
-/// lines, H.264 + AAC, kept in `<library>/video/<key>/clips/` (made once, then reused) — for a
-/// player to show the moment without reading the whole video.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn clip(s: &mut Session, p: &Value) -> Result<Value> {
+/// A clip to make (or reuse): the video, where it goes, from when and how long. Built on the UI
+/// thread (no file is touched), made anywhere ([`ClipJob::run`]).
+#[derive(Clone, Debug)]
+pub struct ClipJob {
+    pub source: std::path::PathBuf,
+    pub out: std::path::PathBuf,
+    pub start_ms: u64,
+    pub len_ms: u64,
+    pub ms: u64,
+}
+
+/// The clip `video.clip {id, ms, seconds?}` asks for.
+pub fn clip_job(s: &Session, p: &Value) -> Result<ClipJob> {
     const C: &str = "video.clip";
     let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or(s.active()).ok_or_else(|| bad(C, "no video: pass `id`"))?;
     let ph = s.catalog.photo(id).ok_or_else(|| bad(C, "no such video"))?;
     let path = super::source_path(ph).ok_or_else(|| bad(C, "this is not a video of the library"))?.to_string();
     let ck = crate::media::content_key(ph);
+    #[cfg(not(target_arch = "wasm32"))]
     let duration_ms = super::ffmpeg::sane_duration(ph.duration).map(|d| (d * 1000.0) as u64);
+    #[cfg(target_arch = "wasm32")]
+    let duration_ms: Option<u64> = None;
     let root = super::cache_root(s).ok_or_else(|| bad(C, "the library is not on disk"))?;
     let ms = p.get("ms").and_then(Value::as_f64).filter(|x| x.is_finite() && *x >= 0.0).map_or(0, |x| x.min(864_000_000.0) as u64);
     let len = (crate::cmd::f64_or(p, "seconds", CLIP_SECONDS).clamp(1.0, CLIP_MAX_SECONDS) * 1000.0) as u64;
@@ -220,19 +231,43 @@ pub fn clip(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(d) = duration_ms {
         start = start.min(d.saturating_sub(len));
     }
-    let dir = super::video_dir(&root, &ck).join("clips");
-    let out = dir.join(format!("c{start:010}-{len}.mp4"));
-    let cached = std::fs::metadata(&out).is_ok_and(|m| m.is_file() && m.len() > 0);
-    if !cached {
-        if !std::path::Path::new(&path).exists() {
-            return Err(bad(C, format!("the video is not there (offline drive?): {path}")));
-        }
-        std::fs::create_dir_all(&dir).map_err(|e| bad(C, format!("{}: {e}", dir.display())))?;
-        super::ffmpeg::extract_clip(std::path::Path::new(&path), start, len, &out).map_err(|e| bad(C, e))?;
+    let out = super::video_dir(&root, &ck).join("clips").join(format!("c{start:010}-{len}.mp4"));
+    Ok(ClipJob { source: path.into(), out, start_ms: start, len_ms: len, ms })
+}
+
+impl ClipJob {
+    /// Already made.
+    pub fn cached(&self) -> bool {
+        std::fs::metadata(&self.out).is_ok_and(|m| m.is_file() && m.len() > 0)
     }
+
+    /// Make the clip unless it is there.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn run(&self) -> std::result::Result<(), String> {
+        if self.cached() {
+            return Ok(());
+        }
+        if !self.source.exists() {
+            return Err(format!("the video is not there (offline drive?): {}", self.source.display()));
+        }
+        if let Some(dir) = self.out.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        super::ffmpeg::extract_clip(&self.source, self.start_ms, self.len_ms, &self.out).map(|_| ())
+    }
+}
+
+/// `video.clip {id, ms, seconds?}`: a short clip around the moment (half before, half after), 540
+/// lines, H.264 + AAC, kept in `<library>/video/<key>/clips/` (made once, then reused) — for a
+/// player to show the moment without reading the whole video.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn clip(s: &mut Session, p: &Value) -> Result<Value> {
+    let job = clip_job(s, p)?;
+    let cached = job.cached();
+    job.run().map_err(|e| bad("video.clip", e))?;
     Ok(json!({
-        "path": out.display().to_string(), "startMs": start, "lengthMs": len, "ms": ms, "cached": cached,
-        "bytes": std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0), "timecode": timecode(ms),
+        "path": job.out.display().to_string(), "startMs": job.start_ms, "lengthMs": job.len_ms, "ms": job.ms, "cached": cached,
+        "bytes": std::fs::metadata(&job.out).map(|m| m.len()).unwrap_or(0), "timecode": timecode(job.ms),
     }))
 }
 

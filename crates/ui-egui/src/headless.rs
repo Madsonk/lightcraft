@@ -273,6 +273,7 @@ impl Headless {
             || self.app.healing.is_some()
             || !self.app.synthetic.is_empty()
             || self.app.caches.videos.frames.pending() > 0
+            || self.app.caches.videos.player.as_ref().is_some_and(|p| p.loading())
             || !self.events.is_empty()
     }
 

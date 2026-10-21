@@ -277,6 +277,44 @@ pub fn extract_clip(video: &Path, start_ms: u64, len_ms: u64, out: &Path) -> Res
     Err(if last.is_empty() { "the clip could not be made".into() } else { format!("the clip could not be made: {last}") })
 }
 
+/// The pictures of a short clip, `fps` a second, at most `edge` pixels on their long side, as JPEG
+/// files' bytes (a preview without sound). At most `max` pictures.
+pub fn clip_pictures(clip: &Path, fps: u32, edge: u32, max: usize) -> Result<Vec<Vec<u8>>, String> {
+    let bin = ffmpeg().ok_or_else(|| missing("ffmpeg", FFMPEG_ENV))?;
+    let mut cmd = Command::new(bin);
+    cmd.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-i"])
+        .arg(file_arg(clip))
+        .args(["-map", "0:v:0", "-an", "-vf"])
+        .arg(format!("fps={},{}", fps.clamp(1, 30), fit_filter(edge)))
+        .args(["-c:v", "mjpeg", "-q:v", "5", "-f", "image2pipe", "-"]);
+    let o = run(cmd, FRAME_TIMEOUT)?;
+    if !o.ok {
+        return Err(if o.stderr.is_empty() { "the clip cannot be read".into() } else { first_line(&o.stderr).to_string() });
+    }
+    Ok(split_jpegs(&o.stdout, max))
+}
+
+/// JPEG files laid end to end (start `FF D8`, end `FF D9`), split.
+pub fn split_jpegs(bytes: &[u8], max: usize) -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut start = None;
+    let mut i = 0;
+    while i + 1 < bytes.len() && out.len() < max {
+        match (bytes.get(i), bytes.get(i + 1)) {
+            (Some(0xFF), Some(0xD8)) if start.is_none() => start = Some(i),
+            (Some(0xFF), Some(0xD9)) => {
+                if let Some(s) = start.take() {
+                    out.push(bytes.get(s..i + 2).unwrap_or(&[]).to_vec());
+                }
+                i += 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    out
+}
+
 /// The JPEG bytes of the picture at `at_ms` (for a poster), without touching the disk.
 pub fn frame_bytes(video: &Path, at_ms: u64, edge: u32) -> Result<Vec<u8>, String> {
     let bin = ffmpeg().ok_or_else(|| missing("ffmpeg", FFMPEG_ENV))?;
@@ -312,6 +350,17 @@ mod tests {
         for d in ["\"NaN\"", "\"inf\"", "-3", "0", "\"\"", "1e300"] {
             let j = format!(r#"{{"streams":[{{"width":64,"height":48}}],"format":{{"duration":{d}}}}}"#);
             assert_eq!(parse_probe(j.as_bytes()).unwrap().duration, None, "{d}");
+        }
+    }
+
+    #[test]
+    fn jpeg_streams_split_and_hostile_bytes_never_panic() {
+        let one = [0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9];
+        let two: Vec<u8> = one.iter().chain(one.iter()).copied().collect();
+        assert_eq!(split_jpegs(&two, 10).len(), 2);
+        assert_eq!(split_jpegs(&two, 1).len(), 1);
+        for bad in [&[][..], &[0xFF], &[0xFF, 0xD8, 0xFF], &[0xFF, 0xD9, 0xFF, 0xD9]] {
+            assert!(split_jpegs(bad, 10).is_empty());
         }
     }
 

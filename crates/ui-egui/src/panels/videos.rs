@@ -129,9 +129,157 @@ impl FrameTextures {
     }
 }
 
+/// Pictures a second of the preview.
+const PREVIEW_FPS: u32 = 8;
+
+/// The silent preview of a moment: an 8 s clip (`video.clip`) shown as successive pictures. The
+/// clip is made and decoded on a worker thread; dropping the player tells it to stop.
+pub struct Player {
+    pub id: u64,
+    /// The moment the clip is around.
+    pub ms: u64,
+    start_ms: u64,
+    len_ms: u64,
+    frames: Vec<egui::TextureHandle>,
+    /// Playback started at this egui time, at this offset (ms into the clip); `None`: paused.
+    playing: Option<(f64, f64)>,
+    paused_at: f64,
+    error: Option<String>,
+    #[cfg(not(target_arch = "wasm32"))]
+    rx: Option<std::sync::mpsc::Receiver<Result<Vec<egui::ColorImage>, String>>>,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for Player {
+    fn drop(&mut self) {
+        self.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl Player {
+    /// Still being made or decoded.
+    pub fn loading(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        return self.rx.is_some();
+        #[cfg(target_arch = "wasm32")]
+        false
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn start(app: &LightcraftApp, id: u64, ms: u64) -> Player {
+        use std::sync::atomic::Ordering;
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut p = Player {
+            id,
+            ms,
+            start_ms: ms,
+            len_ms: 0,
+            frames: Vec::new(),
+            playing: None,
+            paused_at: 0.0,
+            error: None,
+            rx: None,
+            cancel: cancel.clone(),
+        };
+        let job = match lightcraft_engine::video::views::clip_job(&app.session, &json!({"id": id, "ms": ms})) {
+            Ok(j) => j,
+            Err(e) => {
+                p.error = Some(e.to_string());
+                return p;
+            }
+        };
+        p.start_ms = job.start_ms;
+        p.len_ms = job.len_ms;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let work = move || {
+            let r = (|| {
+                job.run()?;
+                if cancel.load(Ordering::Relaxed) {
+                    return Err("stopped".to_string());
+                }
+                let jpegs = lightcraft_engine::video::ffmpeg::clip_pictures(&job.out, PREVIEW_FPS, 480, 400)?;
+                let mut out = Vec::new();
+                for j in jpegs {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Err("stopped".to_string());
+                    }
+                    if let Some((w, h, px)) = lightcraft_engine::video::jpeg_rgba(&j, 480)
+                        && px.len() == w * h * 4
+                    {
+                        out.push(egui::ColorImage::from_rgba_unmultiplied([w, h], &px));
+                    }
+                }
+                if out.is_empty() { Err("no picture in the clip".to_string()) } else { Ok(out) }
+            })();
+            let _ = tx.send(r);
+        };
+        match std::thread::Builder::new().name("lc-video-preview".into()).spawn(move || {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work));
+        }) {
+            Ok(_) => p.rx = Some(rx),
+            Err(e) => p.error = Some(e.to_string()),
+        }
+        p
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn start(_: &LightcraftApp, id: u64, ms: u64) -> Player {
+        Player {
+            id,
+            ms,
+            start_ms: ms,
+            len_ms: 0,
+            frames: Vec::new(),
+            playing: None,
+            paused_at: 0.0,
+            error: Some("no preview in this build".into()),
+            cancel: Default::default(),
+        }
+    }
+
+    fn receive(&mut self, ctx: &egui::Context) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(rx) = &self.rx {
+            match rx.try_recv() {
+                Ok(Ok(images)) => {
+                    self.frames = images
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, im)| ctx.load_texture(format!("video-preview-{}-{}-{i}", self.id, self.start_ms), im, egui::TextureOptions::LINEAR))
+                        .collect();
+                    self.rx = None;
+                    self.playing = Some((ctx.input(|i| i.time), 0.0));
+                }
+                Ok(Err(e)) => {
+                    self.error = Some(e);
+                    self.rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => ctx.request_repaint_after(std::time::Duration::from_millis(100)),
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.error = Some("the preview stopped".into());
+                    self.rx = None;
+                }
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = ctx;
+    }
+
+    /// Milliseconds into the clip now.
+    fn position(&self, now: f64) -> f64 {
+        let len = self.len_ms.max(1) as f64;
+        match self.playing {
+            Some((t0, from)) => ((now - t0) * 1000.0 + from) % len,
+            None => self.paused_at,
+        }
+    }
+}
+
 /// What the view holds between frames.
 #[derive(Default)]
 pub struct VideosUi {
+    /// The preview playing on the sheet, if any.
+    pub player: Option<Player>,
     pub section: Section,
     /// The video (or photo) whose moments are shown.
     pub open: Option<u64>,
@@ -388,7 +536,8 @@ fn list(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         if let Some(s) = c.status {
             p["status"] = json!(s);
         }
-        let v = app.session.execute("video.list", &p).unwrap_or(Value::Null);
+        let mut v = app.session.execute("video.list", &p).unwrap_or(Value::Null);
+        v["unreadable"] = app.session.execute("video.unreadable", &json!({})).map(|u| u["videos"].clone()).unwrap_or(Value::Null);
         app.caches.videos.list = Some((rev, v));
         app.caches.videos.dirty = false;
     }
@@ -435,6 +584,7 @@ fn list(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 ui.add_space(8.0);
                 filters(app, ui, &v);
                 ui.add_space(10.0);
+                unreadable(app, ui, &v["unreadable"]);
                 if rows.is_empty() {
                     let msg = if app.caches.videos.person.is_some() || app.caches.videos.described.is_some() || app.caches.videos.status.is_some() {
                         "No video matches these filters"
@@ -457,6 +607,50 @@ fn list(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             });
         });
     });
+}
+
+/// The videos imports could not read: their cause in plain words and the way to their folder.
+fn unreadable(app: &mut LightcraftApp, ui: &mut egui::Ui, list: &Value) {
+    let rows = list.as_array().cloned().unwrap_or_default();
+    if rows.is_empty() {
+        return;
+    }
+    let t = Tokens::get(ui.ctx());
+    let id = egui::Id::new("videos-unreadable-open");
+    let open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    let label = crate::i18n::tr_format!("Unreadable ({n})", n = rows.len());
+    if text_button(ui, "videosUnreadable", &label, open).on_hover_text(tr("Videos an import could not read")).clicked() {
+        ui.data_mut(|d| d.insert_temp(id, !open));
+    }
+    if !open {
+        ui.add_space(8.0);
+        return;
+    }
+    for (i, r) in rows.iter().enumerate() {
+        let cause = match r["cause"].as_str().unwrap_or("") {
+            "empty" => tr("Empty file (0 bytes)"),
+            "noIndex" => tr("Cut short: the video's index (moov) is missing; it cannot be rebuilt without a sound file from the same camera"),
+            "noPicture" => tr("No picture in this file"),
+            "missing" => tr("The file is no longer there"),
+            _ => tr("The file cannot be read"),
+        };
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(r["name"].as_str().unwrap_or("")).font(t.semibold(12.0)).color(t.text));
+            ui.label(egui::RichText::new(cause).font(t.font(11.5)).color(t.caution)).on_hover_text(r["error"].as_str().unwrap_or(""));
+            if let Some(folder) = r["folder"].as_str()
+                && text_button(ui, &format!("unreadableReveal{i}"), "Open the folder", false).clicked()
+            {
+                let res = match app.services.reveal.as_mut() {
+                    Some(f) => f(r["path"].as_str().unwrap_or(folder)),
+                    None => Err(tr("No file manager here").to_string()),
+                };
+                if let Err(e) = res {
+                    app.ui.status = e;
+                }
+            }
+        });
+    }
+    ui.add_space(8.0);
 }
 
 fn filters(app: &mut LightcraftApp, ui: &mut egui::Ui, v: &Value) {
@@ -651,6 +845,7 @@ fn sheet(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     }
                 });
                 ui.add_space(10.0);
+                preview(app, ui, id);
                 if moments.is_empty() {
                     ui.label(
                         egui::RichText::new(tr(if video { "No moment yet: cut pictures from this video first" } else { "Nothing to show" }))
@@ -674,6 +869,98 @@ fn sheet(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             });
         });
     });
+}
+
+/// The silent preview at the top of the sheet: the pictures of an 8 s clip, a position bar, -5 s /
+/// +5 s, play / pause, the system player, close.
+fn preview(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64) {
+    let t = Tokens::get(ui.ctx());
+    if app.caches.videos.player.as_ref().is_some_and(|p| p.id != id) {
+        app.caches.videos.player = None;
+    }
+    let Some(mut p) = app.caches.videos.player.take() else { return };
+    p.receive(ui.ctx());
+    let now = ui.input(|i| i.time);
+    let (w, h) = (480.0_f32, 270.0_f32);
+    let (r, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click());
+    register(ui.ctx(), "videoPreview", r);
+    ui.painter().rect_filled(r, 4.0, Color32::BLACK);
+    let pos = p.position(now);
+    if let Some(e) = &p.error {
+        ui.painter().text(r.center(), Align2::CENTER_CENTER, format!("{} {e}", tr("No preview:")), t.font(12.0), t.text_dim);
+    } else if p.frames.is_empty() {
+        ui.painter().text(r.center(), Align2::CENTER_CENTER, tr("Preparing the preview…"), t.font(12.0), t.text_dim);
+    } else {
+        let n = p.frames.len();
+        let i = ((pos / p.len_ms.max(1) as f64) * n as f64).floor().clamp(0.0, (n - 1) as f64) as usize;
+        if let Some(tex) = p.frames.get(i) {
+            let [tw, th] = tex.size();
+            let k = (w / tw.max(1) as f32).min(h / th.max(1) as f32);
+            let inner = Rect::from_center_size(r.center(), vec2(tw as f32 * k, th as f32 * k));
+            ui.painter().image(tex.id(), inner, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+        }
+        if p.playing.is_some() {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(1000 / u64::from(PREVIEW_FPS)));
+        }
+    }
+    if resp.clicked() && !p.frames.is_empty() {
+        p.playing = match p.playing {
+            Some(_) => {
+                p.paused_at = pos;
+                None
+            }
+            None => Some((now, p.paused_at)),
+        };
+    }
+    // the position bar: drag to move inside the clip
+    let (bar, bresp) = ui.allocate_exact_size(vec2(w, 10.0), Sense::click_and_drag());
+    register(ui.ctx(), "videoPreviewBar", bar);
+    ui.painter().rect_filled(bar, 3.0, t.track);
+    let frac = (pos / p.len_ms.max(1) as f64) as f32;
+    ui.painter().rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * frac.clamp(0.0, 1.0), bar.height())), 3.0, t.accent);
+    if let Some(x) = bresp.interact_pointer_pos().filter(|_| bresp.dragged() || bresp.clicked()) {
+        let f = ((x.x - bar.left()) / bar.width()).clamp(0.0, 1.0) as f64;
+        p.paused_at = f * p.len_ms as f64;
+        if p.playing.is_some() {
+            p.playing = Some((now, p.paused_at));
+        }
+    }
+    let at = p.start_ms + pos as u64;
+    let mut next: Option<u64> = None;
+    let mut close = false;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(timecode(at)).font(t.semibold(12.0)).color(t.text));
+        ui.label(egui::RichText::new(tr("Preview without sound")).font(t.font(11.0)).color(t.text_dim));
+        if text_button(ui, "previewBack", "-5 s", false).clicked() {
+            next = Some(at.saturating_sub(5000));
+        }
+        let playing = p.playing.is_some();
+        if text_button(ui, "previewPlay", if playing { "Pause" } else { "Play" }, false).clicked() && !p.frames.is_empty() {
+            p.playing = if playing {
+                p.paused_at = pos;
+                None
+            } else {
+                Some((now, p.paused_at))
+            };
+        }
+        if text_button(ui, "previewForward", "+5 s", false).clicked() {
+            next = Some(at + 5000);
+        }
+        if text_button(ui, "previewVlc", "Play in VLC", false).on_hover_text(tr("Opens the video in your video player at this time")).clicked() {
+            act(app, "video.open", json!({"id": id, "ms": at}));
+        }
+        if text_button(ui, "previewClose", "Close", false).clicked() {
+            close = true;
+        }
+    });
+    ui.add_space(10.0);
+    app.caches.videos.player = if close {
+        None
+    } else if let Some(ms) = next {
+        Some(Player::start(app, id, ms))
+    } else {
+        Some(p)
+    };
 }
 
 /// The editor of one moment's description (also the photo's, in the Info panel): the picture (a
@@ -713,6 +1000,13 @@ pub fn moment_card(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64, m: &Valu
     ui.horizontal(|ui| {
         if let Some(ms) = ms {
             ui.label(egui::RichText::new(timecode(ms)).font(t.semibold(12.0)).color(t.text));
+            if video
+                && text_button(ui, &format!("preview:{key}"), "Preview", false)
+                    .on_hover_text(tr("Plays 8 seconds around this moment here, without sound"))
+                    .clicked()
+            {
+                app.caches.videos.player = Some(Player::start(app, id, ms));
+            }
             if video && text_button(ui, &format!("play:{key}"), &crate::i18n::tr_format!("Play at {t}", t = timecode(ms)), false).clicked() {
                 act(app, "video.open", json!({"id": id, "ms": ms}));
             }
