@@ -305,7 +305,12 @@ fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
                     counted_any = true;
                     if p.eyes != EyePolicy::Ignore {
                         match eyes {
-                            EyeClass::Closed => reasons.push(if p.eyes == EyePolicy::Reject { Reason::ClosedEyes } else { Reason::HalfClosedEyes }),
+                            // a wink, or one eye lost in shadow, is for the photographer to look at;
+                            // only both eyes closed rejects
+                            EyeClass::Closed => {
+                                let both = f.open[0].max(f.open[1]) < CLOSED_BELOW;
+                                reasons.push(if p.eyes == EyePolicy::Reject && both { Reason::ClosedEyes } else { Reason::HalfClosedEyes })
+                            }
                             EyeClass::Half => reasons.push(Reason::HalfClosedEyes),
                             _ => {}
                         }
@@ -342,7 +347,7 @@ fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
     if mean.is_finite() {
         score -= 25.0 * (mean - 0.45).abs();
     }
-    if p.eyes != EyePolicy::Ignore && faces.iter().any(|f| f.counted && f.eyes == EyeClass::Closed) {
+    if reasons.contains(&Reason::ClosedEyes) {
         score -= 40.0;
     }
     if let Some(t) = shot.taste.filter(|t| t.is_finite()) {

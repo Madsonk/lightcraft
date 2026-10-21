@@ -289,5 +289,12 @@ fn real_album() {
             e["measurements"]["exposure"]["mean"].as_f64().unwrap_or(0.0), p["reasons"]
         );
     }
+    for p in l["photos"].as_array().unwrap() {
+        let e = s.execute("cull.explain", &json!({"id": p["id"]})).unwrap();
+        for f in e["faces"].as_array().unwrap() {
+            let r = &f["rect"];
+            eprintln!("  face of {:<30} size {:.3} counted {} eyes {} blur {} quality {:.0}", p["name"].as_str().unwrap_or(""), r[2].as_f64().unwrap_or(0.0) - r[0].as_f64().unwrap_or(0.0), f["counted"], f["eyes"], f["blur"], f["quality"].as_f64().unwrap_or(0.0));
+        }
+    }
     eprintln!("scenes {}", l["scenes"]);
 }
