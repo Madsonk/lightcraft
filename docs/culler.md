@@ -131,3 +131,32 @@ unchanged files costs only the judging.
 ## Throughput
 
 See the end of this page.
+
+### Measured (21 Oct 2026)
+
+`cargo test -p lightcraft-engine tests_cull::bench -- --ignored --nocapture` (generated album,
+`LIGHTCRAFT_CULL_BENCH=48`, 3000 × 2000 JPEG, 6 Mpx; byte-identical files are merged at import, so 36 photos).
+Apple Silicon, **test profile (opt-level 1, not release)**, machine shared with other builds:
+
+| Run | Photos | Time | Throughput |
+|---|---|---|---|
+| cold (decode to the 512 px source + measure + judge) | 36 | 1.40 s | **25.8 photos/s** |
+| warm (measurements cached, judge only) | 36 | < 1 ms | > 100 000 photos/s |
+
+Judging alone (scenes, duplicates, verdicts) is negligible next to decoding. A release build should be
+faster; **not measured**. Not measured either: RAW albums (the older notes put a RAW decode at ~0.8 s
+per photo, which would dominate), and runs with `faces: true` (the face model is not installed on the
+test machine).
+
+## Limits
+
+* The look-alike signature is an 8 × 8 luminance grid: it misses duplicates that differ in colour or
+  framing and can group different photos of a similar tonal layout. A learned embedding would do better.
+* Eye and face judgements need Analyze Faces (`faces: true` or `photo.analyzeFaces`) and its model;
+  without it the verdict says `facesNotAnalyzed`. On the test machine this path was exercised with
+  injected face data, not with the real model on real faces.
+* Thresholds are reasoned defaults checked on synthetic and generated albums, **not calibrated on real
+  shoots** by genre. The taste model is not blended in yet.
+* Key people come from named face regions (XMP), not from the People view's recognition.
+* Genre, grouping and key people are kept for the session, not saved to the library prefs.
+* No panel in the app yet (`ui-egui` was out of scope); everything is reachable by command.
