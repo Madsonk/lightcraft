@@ -51,6 +51,16 @@ codesign --force --deep --sign - $B/LightCraft.app && codesign --verify --strict
 LIGHTCRAFT_NO_PREFS=1 $B/LightCraft.app/Contents/MacOS/LightCraft --library /Volumes/Data/work/lv-e2e2/lib --control 18733
 ```
 
+## Git: this folder is its own worktree (fixed 21 Oct 2026)
+
+`lightcraft-videos` was made as a copy of `lightcraft-v14`, `.git` file included, so both folders shared one worktree
+entry (`.git/worktrees/lightcraft-v14` of `/Volumes/studio madson/ArtCraft-build/lightcraft-050`): the
+`checkout videos-v1` of 20 Oct moved **v14's** HEAD too, and v14's `git status` showed the video work. No file of
+`lightcraft-v14` was ever written. Fixed: `lightcraft-videos` has its own entry (`worktrees/lightcraft-videos`), v14's
+HEAD is back on branch `v14` (`ebc08b01`) with its index re-read from it (its 64 uncommitted files are as they were,
+now all unstaged — a staging state from before 20 Oct, if any, could not be recovered). Backup of the admin files:
+`/Volumes/Data/work/lv-gitadmin-backup-202610210608/`. Lesson: copy a worktree with `git worktree add`, never `cp -R`.
+
 ## Install / go back (Madson's decision)
 
 ```sh
