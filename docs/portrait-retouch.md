@@ -234,9 +234,11 @@ next to the originals; the outputs stayed in a scratch folder (client photos: no
 
 * **Speed per photo, face finding included:** preview 0.7–1.3 s, apply 0.6–2.2 s (1 face 0.7–1.6 s, 2 faces
   1.7–2.2 s, 4 faces 2.1 s; a photo with no face 0.6 s), on a machine under load.
-* **Faces:** found on 8 of 12 photos (1, 1, 1, 2, 2, 1, 4 faces…); the 4 without a face are the photos with
-  none (details, flowers, backs). All 4 faces of a group shot were treated, and the difference map (amplified
-  8×) is confined to the faces (eyes, skin, mouth): nothing moves in the background, the dress or the hair.
+* **Faces:** found on 9 of the 12 files (1, 1, 1, 2, 2, 1, 4 faces, and two copies of a single-face
+  photo); the 3 files without a face were not looked at one by one (the model found none: a face turned
+  away, too small or hidden is the likely reason). All 4 faces of a group shot were treated, and the difference
+  map (amplified 8×) is confined to the faces (eyes, skin, mouth): nothing moves in the background, the dress
+  or the hair.
 * **Look:** on a 250 px face the auto recipe is subtle and natural — slightly brighter whites and irises, a
   calmer forehead and cheek highlight, 30–70 marks treated per photo, no plastic skin, no halo. Skin smoothing at
   35 % hardly shows at this size (it is meant to: pores are kept).
