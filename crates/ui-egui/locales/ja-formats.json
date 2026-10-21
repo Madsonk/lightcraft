@@ -236,5 +236,13 @@
   "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher：動画 {m} 本、説明 {a} 件を追加",
   "{n} video{0}{1:.0}": "動画 {n} 本{0:.0}{1:.0}",
   "{n} result{0}{1:.0}": "{n} 件{0:.0}{1:.0}",
-  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "説明済みの場面 {n}{0:.0}{2:.0} · 確認済み {c}{1:.0}"
+  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "説明済みの場面 {n}{0:.0}{2:.0} · 確認済み {c}{1:.0}",
+  "Unreadable ({n})": "読めない動画（{n}）",
+  "{f} faces in {p} photos.": "{p} 枚の写真に {f} 個の顔。",
+  "{n} picked": "{n} 件を選択",
+  "Faces in the selected photo ({name})": "選択した写真の顔（{name}）",
+  "Recognized people ({n})": "認識された人物（{n}）",
+  "Groups to name ({n})": "名前を付けるグループ（{n}）",
+  "{f} faces · {p} photos · drag": "顔 {f} · 写真 {p} · ドラッグ",
+  "{sel} selected of {all}": "{all} 件中 {sel} 件を選択"
 }

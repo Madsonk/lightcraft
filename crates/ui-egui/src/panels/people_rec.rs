@@ -292,13 +292,17 @@ fn section_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let items = [
         (Section::All, "All".to_string()),
-        (Section::ToName, format!("To name {}", ov.groups_total)),
-        (Section::Suggestions, format!("Suggestions {}", ov.suggestions_total)),
-        (Section::Unknown, format!("Unknown {}", ov.unknown_total)),
-        (Section::People, format!("People {}", ov.persons.len())),
+        (Section::ToName, format!("{} {}", crate::i18n::tr("To name"), ov.groups_total)),
+        (Section::Suggestions, format!("{} {}", crate::i18n::tr("Suggestions"), ov.suggestions_total)),
+        (Section::Unknown, format!("{} {}", crate::i18n::tr("Unknown"), ov.unknown_total)),
+        (Section::People, format!("{} {}", crate::i18n::tr("People"), ov.persons.len())),
     ];
     ui.horizontal_wrapped(|ui| {
-        ui.label(egui::RichText::new(format!("{} faces in {} photos.", ov.indexed_faces, ov.indexed_photos)).font(t.font(12.0)).color(t.text_dim));
+        ui.label(
+            egui::RichText::new(crate::i18n::tr_format!("{f} faces in {p} photos.", f = ov.indexed_faces, p = ov.indexed_photos))
+                .font(t.font(12.0))
+                .color(t.text_dim),
+        );
         for (sec, label) in items {
             let on = app.caches.people_rec.section == sec;
             let r = crate::widgets::text_button(ui, &format!("recSection{sec:?}"), &label, on);
@@ -434,7 +438,7 @@ fn controls(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &Value) {
             let mut auto = s["autoTag"].is_number();
             let mut v = s["autoTag"].as_f64().unwrap_or(0.65) as f32;
             let before = (auto, v);
-            ui.checkbox(&mut auto, "Tag automatically above");
+            ui.checkbox(&mut auto, crate::i18n::tr("Tag automatically above"));
             ui.add_enabled(auto, egui::Slider::new(&mut v, 0.5..=0.95).fixed_decimals(2));
             ui.label(egui::RichText::new(crate::i18n::tr("(off: LightCraft only suggests)")).font(t.font(11.0)).color(t.text_dim));
             if (auto, v) != before {
@@ -645,13 +649,13 @@ fn drop_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             let live = app.ui.dragging_faces.is_some();
             ui.painter().rect_filled(r, 4.0, t.inset);
             ui.painter().rect_stroke(r, 4.0, Stroke::new(1.0, if live { t.accent } else { t.divider }), StrokeKind::Inside);
-            ui.painter().text(r.center(), Align2::CENTER_CENTER, label, t.font(12.0), if live { t.text } else { t.text_label });
+            ui.painter().text(r.center(), Align2::CENTER_CENTER, crate::i18n::tr(label), t.font(12.0), if live { t.text } else { t.text_label });
             face_drop(app, ui, r, to, label);
-            resp.on_hover_text(tip);
+            resp.on_hover_text(crate::i18n::tr(tip));
         }
         let n = app.caches.people_rec.selected.len();
         if n > 0 {
-            ui.label(egui::RichText::new(format!("{n} picked")).font(t.font(12.0)).color(t.text));
+            ui.label(egui::RichText::new(crate::i18n::tr_format!("{n} picked", n = n)).font(t.font(12.0)).color(t.text));
             if ui.small_button(crate::i18n::tr("Clear")).clicked() {
                 app.caches.people_rec.selected.clear();
             }
@@ -669,7 +673,7 @@ fn this_photo(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     }
     let t = Tokens::get(ui.ctx());
     let name = app.session.catalog.photo(id).map(|p| p.file_name.clone()).unwrap_or_default();
-    ui.label(egui::RichText::new(format!("Faces in the selected photo ({name})")).font(t.semibold(14.0)).color(t.text));
+    ui.label(egui::RichText::new(crate::i18n::tr_format!("Faces in the selected photo ({name})", name = name)).font(t.semibold(14.0)).color(t.text));
     ui.horizontal_wrapped(|ui| {
         for f in &faces {
             if let Some(th) = thumb_of(id.0, f) {
@@ -725,7 +729,7 @@ fn persons(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         return;
     }
     let t = Tokens::get(ui.ctx());
-    ui.label(egui::RichText::new(format!("Recognized people ({})", ov.persons.len())).font(t.semibold(14.0)).color(t.text));
+    ui.label(egui::RichText::new(crate::i18n::tr_format!("Recognized people ({n})", n = ov.persons.len())).font(t.semibold(14.0)).color(t.text));
     ui.horizontal_wrapped(|ui| {
         for g in &ov.persons {
             person_card(app, ui, g);
@@ -814,17 +818,17 @@ fn bulk_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         .map(|o| o.persons.iter().filter_map(|p| Some((p.id.clone(), p.name.clone()?))).collect())
         .unwrap_or_default();
     ui.horizontal_wrapped(|ui| {
-        ui.label(format!("{} picked", picked.len()));
+        ui.label(crate::i18n::tr_format!("{n} picked", n = picked.len()));
         let on = !picked.is_empty();
         for (id, label, to) in [("recBulkUnknown", "Unknown person", "unknown"), ("recBulkNotFace", "Not a real face", "ignored")] {
-            let b = ui.add_enabled(on, egui::Button::new(label));
+            let b = ui.add_enabled(on, egui::Button::new(crate::i18n::tr(label)));
             register(ui.ctx(), format!("button:{id}"), b.rect);
             if b.clicked() && act(app, "people.move", json!({"faces": picked, "to": to})).is_some() {
                 app.caches.people_rec.selected.clear();
             }
         }
         ui.add_enabled_ui(on && !persons.is_empty(), |ui| {
-            egui::ComboBox::from_id_salt("rec-bulk-person").selected_text("Same person as…").show_ui(ui, |ui| {
+            egui::ComboBox::from_id_salt("rec-bulk-person").selected_text(crate::i18n::tr("Same person as…")).show_ui(ui, |ui| {
                 for (pid, name) in &persons {
                     if ui.selectable_label(false, name).clicked() && act(app, "people.move", json!({"faces": picked, "to": pid})).is_some() {
                         app.caches.people_rec.selected.clear();
@@ -855,7 +859,7 @@ fn name_row(app: &mut LightcraftApp, ui: &mut egui::Ui, gid: &str) {
 }
 
 fn group_button(app: &mut LightcraftApp, ui: &mut egui::Ui, kind: &str, gid: &str, label: &str, tip: &str, cmd: &str, params: Value) {
-    let b = ui.button(label).on_hover_text(tip);
+    let b = ui.button(crate::i18n::tr(label)).on_hover_text(crate::i18n::tr(tip));
     register(ui.ctx(), format!("recBtn:{kind}:{gid}"), b.rect);
     if b.clicked() {
         act(app, cmd, params);
@@ -873,7 +877,7 @@ fn groups(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         }
         return;
     }
-    ui.label(egui::RichText::new(format!("Groups to name ({})", ov.groups_total)).font(t.semibold(14.0)).color(t.text));
+    ui.label(egui::RichText::new(crate::i18n::tr_format!("Groups to name ({n})", n = ov.groups_total)).font(t.semibold(14.0)).color(t.text));
     if ov.stale {
         ui.label(egui::RichText::new(crate::i18n::tr("New faces were found: choose “Group again”.")).font(t.font(12.0)).color(t.caution));
     }
@@ -910,7 +914,7 @@ fn group_card(app: &mut LightcraftApp, ui: &mut egui::Ui, g: &GroupView, unknown
             ui.vertical(|ui| {
                 // the whole group can be dragged by its caption
                 let cap = ui
-                    .add(egui::Label::new(egui::RichText::new(format!("{} faces · {} photos · drag", g.faces, g.photos)).font(t.font(12.0)).color(t.text_label)).sense(Sense::drag()))
+                    .add(egui::Label::new(egui::RichText::new(crate::i18n::tr_format!("{f} faces · {p} photos · drag", f = g.faces, p = g.photos)).font(t.font(12.0)).color(t.text_label)).sense(Sense::drag()))
                     .on_hover_text(crate::i18n::tr("Drag the whole group onto a person (or onto Unknown person / Not a real face)"));
                 register(ui.ctx(), format!("recGroupGrip:{}", g.id), cap.rect);
                 if cap.drag_started()

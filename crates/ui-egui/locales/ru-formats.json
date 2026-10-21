@@ -236,5 +236,13 @@
   "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher: видео — {m}, добавлено описаний — {a}",
   "{n} video{0}{1:.0}": "Видео: {n}{0:.0}{1:.0}",
   "{n} result{0}{1:.0}": "Результатов: {n}{0:.0}{1:.0}",
-  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "Описано моментов: {n}{0:.0}{2:.0} · подтверждено: {c}{1:.0}"
+  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "Описано моментов: {n}{0:.0}{2:.0} · подтверждено: {c}{1:.0}",
+  "Unreadable ({n})": "Нечитаемые ({n})",
+  "{f} faces in {p} photos.": "Лиц: {f}, фото: {p}.",
+  "{n} picked": "Выбрано: {n}",
+  "Faces in the selected photo ({name})": "Лица на выбранном фото ({name})",
+  "Recognized people ({n})": "Узнанные люди ({n})",
+  "Groups to name ({n})": "Группы без имени ({n})",
+  "{f} faces · {p} photos · drag": "Лиц: {f} · фото: {p} · перетащить",
+  "{sel} selected of {all}": "Выбрано {sel} из {all}"
 }

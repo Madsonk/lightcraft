@@ -236,5 +236,13 @@
   "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher：{m} 个视频，添加了 {a} 条描述",
   "{n} video{0}{1:.0}": "{n} 个视频{0:.0}{1:.0}",
   "{n} result{0}{1:.0}": "{n} 个结果{0:.0}{1:.0}",
-  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "已描述 {n} 个时刻{0:.0}{2:.0} · 已确认 {c} 个{1:.0}"
+  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "已描述 {n} 个时刻{0:.0}{2:.0} · 已确认 {c} 个{1:.0}",
+  "Unreadable ({n})": "无法读取（{n}）",
+  "{f} faces in {p} photos.": "{p} 张照片中的 {f} 张脸。",
+  "{n} picked": "已选 {n} 个",
+  "Faces in the selected photo ({name})": "所选照片中的脸（{name}）",
+  "Recognized people ({n})": "已识别的人（{n}）",
+  "Groups to name ({n})": "待命名的组（{n}）",
+  "{f} faces · {p} photos · drag": "{f} 张脸 · {p} 张照片 · 拖动",
+  "{sel} selected of {all}": "已选 {sel} / {all}"
 }

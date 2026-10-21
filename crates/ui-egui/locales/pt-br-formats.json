@@ -236,5 +236,13 @@
   "Video Catcher: {m} videos, {a} descriptions added": "Video Catcher: {m} vídeos, {a} descrições adicionadas",
   "{n} video{0}{1:.0}": "{n} vídeo{0}{1:.0}",
   "{n} result{0}{1:.0}": "{n} resultado{0}{1:.0}",
-  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "{n} momento{0} descrito{0} · confirmados: {c}{1:.0}{2:.0}"
+  "{n} moment{0} described · {c} confirmed{1:.0}{2:.0}": "{n} momento{0} descrito{0} · confirmados: {c}{1:.0}{2:.0}",
+  "Unreadable ({n})": "Ilegíveis ({n})",
+  "{f} faces in {p} photos.": "{f} rostos em {p} fotos.",
+  "{n} picked": "{n} escolhidas",
+  "Faces in the selected photo ({name})": "Rostos da foto selecionada ({name})",
+  "Recognized people ({n})": "Pessoas reconhecidas ({n})",
+  "Groups to name ({n})": "Grupos a nomear ({n})",
+  "{f} faces · {p} photos · drag": "{f} rostos · {p} fotos · arrastar",
+  "{sel} selected of {all}": "{sel} selecionadas de {all}"
 }
