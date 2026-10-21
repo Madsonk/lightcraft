@@ -17,6 +17,8 @@
 pub mod ffmpeg;
 pub mod frames;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod unreadable;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod videocatcher;
 pub mod views;
 
@@ -28,7 +30,7 @@ use lightcraft_catalog::{MediaKind, PhotoId, Source};
 
 /// File extensions LightCraft recognizes as videos (lower case). Folder imports do not pick them up
 /// (yet); a video named explicitly (`library.import {paths: [file]}`) is catalogued.
-pub const EXTENSIONS: &[&str] = &["mp4", "mov", "m4v", "mkv", "avi", "mts", "m2ts", "webm", "3gp", "mpg", "mpeg", "wmv", "insv", "lrv"];
+pub const EXTENSIONS: &[&str] = &["mp4", "mov", "m4v", "mkv", "avi", "mts", "m2ts", "webm", "3gp", "mpg", "mpeg", "wmv", "insv"];
 
 /// Whether `path` names a video by its extension.
 pub fn is_video_path(path: &str) -> bool {
@@ -301,6 +303,14 @@ pub fn probe_for_import(_: &str) -> Result<crate::media::ProbeInfo, String> {
 #[cfg(target_arch = "wasm32")]
 pub fn poster_bytes(_: &str, _: usize) -> Result<Vec<u8>, String> {
     Err("videos are not supported in this build".into())
+}
+
+/// JPEG bytes as sRGB RGBA, at most `max` pixels on the long side: `(width, height, pixels)`.
+pub fn jpeg_rgba(bytes: &[u8], max: u32) -> Option<(usize, usize, Vec<u8>)> {
+    let d =
+        lightcraft_codecs::decode(bytes, lightcraft_codecs::DecodeOptions { max_size: Some((max.max(1), max.max(1))), ..Default::default() }).ok()?;
+    let img = d.to_srgb8();
+    Some((img.width, img.height, img.as_bytes()))
 }
 
 /// A picture of a moment (a JPEG of `<library>/video/`) as sRGB RGBA bytes, at most `max` pixels

@@ -1294,6 +1294,9 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     if !placed.is_empty() {
         finish_moves(s, placed, log0, &mut report);
     }
+    // videos it could not read are listed in the Videos view, with their cause
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::video::unreadable::note_import(s, &report.failed, &report.imported);
     Ok(report)
 }
 

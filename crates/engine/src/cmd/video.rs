@@ -74,6 +74,15 @@ pub fn specs() -> Vec<CommandSpec> {
             clip
         ),
         cmd!(
+            query "video.unreadable",
+            "Unreadable Videos",
+            [],
+            None,
+            "{} — the videos imports could not read, with their cause (`empty`: 0 bytes; `noIndex`: no moov, the file was cut short — not repairable without a sound file of the same camera; `noPicture`; `missing`; `other`) and folder → {videos: [{path, folder, name, cause, error, bytes}], total}",
+            always,
+            unreadable
+        ),
+        cmd!(
             query "video.cancel",
             "Stop Cutting Pictures",
             [],
@@ -220,6 +229,24 @@ fn clip(s: &mut Session, p: &Value) -> Result<Value> {
 #[cfg(target_arch = "wasm32")]
 fn clip(_: &mut Session, _: &Value) -> Result<Value> {
     Err(other("videos are not available in this build"))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn unreadable(s: &mut Session, _: &Value) -> Result<Value> {
+    let list = crate::video::cache_root(s).map(|r| crate::video::unreadable::load(&r)).unwrap_or_default();
+    let rows: Vec<Value> = list
+        .iter()
+        .map(|e| {
+            let p = std::path::Path::new(&e.path);
+            json!({"path": e.path, "folder": p.parent().map(|f| f.display().to_string()), "name": p.file_name().map(|n| n.to_string_lossy().to_string()),
+                   "cause": e.cause, "error": e.error, "bytes": e.bytes, "exists": p.exists()})
+        })
+        .collect();
+    Ok(json!({"total": rows.len(), "videos": rows}))
+}
+#[cfg(target_arch = "wasm32")]
+fn unreadable(_: &mut Session, _: &Value) -> Result<Value> {
+    Ok(json!({"total": 0, "videos": []}))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

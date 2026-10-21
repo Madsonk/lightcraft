@@ -328,3 +328,37 @@ fn the_videos_view_data_lists_people_moments_and_the_player() {
     assert_eq!((c["startMs"].as_u64(), c["lengthMs"].as_u64()), (Some(5000), Some(1000)), "{c}");
     assert!(s.execute("video.clip", &json!({"id": photo.0, "ms": 0})).is_err());
 }
+
+/// Videos an import could not read are listed with their cause; a file that imports later leaves
+/// the list.
+#[test]
+fn unreadable_videos_are_listed_with_their_cause() {
+    if !have_ffmpeg() {
+        return;
+    }
+    let (mut s, dir) = library();
+    let folder = dir.join("shoot");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("empty.mp4"), b"").unwrap();
+    make_video(&folder.join("good.mp4"), 2, true);
+    let good = std::fs::read(folder.join("good.mp4")).unwrap();
+    // a transfer cut short: the start of an MP4 without its index
+    std::fs::write(folder.join("cut.mp4"), &good[..good.len() / 4]).unwrap();
+    s.execute("library.import", &json!({"paths": [folder.to_string_lossy()], "videos": true})).unwrap();
+    let u = s.execute("video.unreadable", &json!({})).unwrap();
+    let causes: std::collections::HashMap<String, String> =
+        u["videos"].as_array().unwrap().iter().map(|v| (v["name"].as_str().unwrap().to_string(), v["cause"].as_str().unwrap().to_string())).collect();
+    assert_eq!(causes.get("empty.mp4").map(String::as_str), Some("empty"), "{u}");
+    assert!(causes.contains_key("cut.mp4") && !causes.contains_key("good.mp4"), "{u}");
+    assert!(u["videos"][0]["folder"].as_str().unwrap().ends_with("shoot"));
+    // the file is repaired (here: replaced by a sound copy) and imported: it leaves the list
+    std::fs::write(folder.join("cut.mp4"), {
+        let mut b = good.clone();
+        b.extend_from_slice(b"different content");
+        b
+    })
+    .unwrap();
+    s.execute("library.import", &json!({"paths": [folder.join("cut.mp4").to_string_lossy()]})).unwrap();
+    let u = s.execute("video.unreadable", &json!({})).unwrap();
+    assert_eq!(u["total"], 1, "{u}");
+}
