@@ -546,10 +546,78 @@ fn fit_box(max_edge: usize) -> lightcraft_codecs::DecodeOptions {
 pub fn fs_preview_loader() -> PreviewLoader {
     Arc::new(|path: &str, max_edge: usize| {
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
+        // most cameras store the preview JPEG within the first megabytes: read only those, not the whole raw
+        if len > PREVIEW_PREFIX * 2
+            && let Some(img) = preview_from_prefix(path, max_edge)
+        {
+            return Some(img);
+        }
         let gate = crate::memory::work_gate();
         let _permit = if crate::memory::is_background() { gate.acquire(len.saturating_mul(2)) } else { gate.acquire_urgent(len.saturating_mul(2)) };
-        embedded_preview_srgb(&std::fs::read(path).ok()?, max_edge)
+        let bytes = std::fs::read(path).ok()?;
+        PREVIEW_BYTES_READ.fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Relaxed);
+        embedded_preview_srgb(&bytes, max_edge)
     })
+}
+
+/// Bytes [`fs_preview_loader`] has read from disk so far (diagnostics and the performance benchmark).
+pub static PREVIEW_BYTES_READ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// How much of the start of a raw file [`fs_preview_loader`] tries first.
+pub const PREVIEW_PREFIX: usize = 3 << 20;
+
+/// Whether `jpeg` is a whole JPEG: its marker segments lead to a start-of-scan, and the last two bytes are the
+/// end-of-image marker (inside entropy-coded data `FF D9` never occurs unstuffed, so a cut-off file can't end with it).
+/// A JPEG cut at the end of a prefix may still hold the EOI of its own EXIF thumbnail, which is why the segments are walked.
+pub fn is_whole_jpeg(jpeg: &[u8]) -> bool {
+    if !jpeg.starts_with(&[0xff, 0xd8]) || !jpeg.ends_with(&[0xff, 0xd9]) {
+        return false;
+    }
+    let mut i = 2;
+    while let (Some(&0xff), Some(&m)) = (jpeg.get(i), jpeg.get(i + 1)) {
+        match m {
+            0xda => return jpeg.len() > i + 4,
+            0xd8 | 0x01 | 0xd0..=0xd7 | 0xff => i += if m == 0xff { 1 } else { 2 },
+            _ => {
+                let (Some(&hi), Some(&lo)) = (jpeg.get(i + 2), jpeg.get(i + 3)) else { return false };
+                let len = usize::from(u16::from_be_bytes([hi, lo]));
+                if len < 2 {
+                    return false;
+                }
+                i = i.saturating_add(2).saturating_add(len);
+            }
+        }
+    }
+    false
+}
+
+/// The embedded preview from the first [`PREVIEW_PREFIX`] bytes of the file, when that is enough: a complete JPEG
+/// of at least `max_edge` pixels (so nothing is lost against the largest preview of the whole file, which may sit
+/// at its end). Nikon files take the full path (their preview colour space is read from a maker note that may lie
+/// further in). `None` = read the whole file.
+pub fn preview_from_prefix(path: &str, max_edge: usize) -> Option<lightcraft_raster::Rgba8> {
+    use std::io::Read;
+    let mut buf = Vec::with_capacity(PREVIEW_PREFIX);
+    std::fs::File::open(path).ok()?.take(PREVIEW_PREFIX as u64).read_to_end(&mut buf).ok()?;
+    PREVIEW_BYTES_READ.fetch_add(buf.len() as u64, std::sync::atomic::Ordering::Relaxed);
+    if matches!(lightcraft_raw::probe(&buf)?, lightcraft_raw::RawFormat::Nef | lightcraft_raw::RawFormat::Nrw) {
+        return None;
+    }
+    let jpeg = lightcraft_raw::embedded_preview(&buf)?;
+    if !is_whole_jpeg(&jpeg) {
+        return None;
+    }
+    let d = lightcraft_codecs::decode(&jpeg, fit_box(max_edge)).ok()?;
+    if (d.source_width.max(d.source_height) as usize) < max_edge {
+        return None;
+    }
+    let o = preview_orientation(&buf, d.orientation);
+    let mut d = d;
+    if d.image.width.max(d.image.height) > max_edge {
+        d.image = fit(&d.image, max_edge, max_edge, Filter::Box);
+        d.alpha = None;
+    }
+    Some(d.to_srgb8().oriented(o))
 }
 
 /// The filesystem-backed [`PairLoader`]: the file is read and decoded once, and developed as usual and from the photo's
