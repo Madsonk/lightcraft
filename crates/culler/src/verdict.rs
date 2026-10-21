@@ -17,6 +17,9 @@ const MEDIAN_MIN: f32 = 30.0;
 const HIGHLIGHT_MIN: f32 = 55.0;
 /// A face is judged when its size is at least this share of the photo's largest face.
 const PROMINENT: f32 = 0.5;
+/// Faces narrower than this share of the long edge are never judged: on a real wedding portfolio
+/// the eye measurements of smaller faces were noise (see docs/culler.md, trial).
+const MIN_JUDGED: f32 = 0.04;
 
 /// Where the photo ends up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -178,8 +181,7 @@ impl Verdict {
         match reason {
             Reason::ClosedEyes | Reason::Blurred | Reason::Underexposed | Reason::Overexposed => Severity::Reject,
             Reason::Duplicate if profile_dup_reject => Severity::Reject,
-            Reason::HalfClosedEyes | Reason::Soft | Reason::FaceSoft | Reason::Clipped | Reason::NoKeyFace | Reason::Duplicate => Severity::Warning,
-            Reason::FaceBlurred => Severity::Reject,
+            Reason::HalfClosedEyes | Reason::Soft | Reason::FaceSoft | Reason::FaceBlurred | Reason::Clipped | Reason::NoKeyFace | Reason::Duplicate => Severity::Warning,
             Reason::BestOfGroup | Reason::FacesNotAnalyzed => Severity::Info,
         }
     }
@@ -287,7 +289,7 @@ fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
             let side = |f: &Face| (f.rect[2] - f.rect[0]).max(f.rect[3] - f.rect[1]);
             let largest = list.iter().filter(|f| is_key(f, &opts.key_people)).map(side).filter(|v| v.is_finite()).fold(0.0f32, f32::max);
             for f in list {
-                let counted = is_key(f, &opts.key_people) && side(f) >= PROMINENT * largest;
+                let counted = is_key(f, &opts.key_people) && side(f) >= PROMINENT * largest && side(f) >= MIN_JUDGED;
                 let eyes = eye_class(f);
                 let size = (f.rect[2] - f.rect[0]).max(f.rect[3] - f.rect[1]);
                 let eye_sharp = f.sharp[0].min(f.sharp[1]);

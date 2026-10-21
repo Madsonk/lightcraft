@@ -24,6 +24,12 @@ fn planted_faults_are_rejected_and_good_shots_are_not() {
     assert!(total > 20 && good > 20, "album too small: {total} {good}");
     assert_eq!(hit, total, "every planted fault is rejected");
     assert_eq!(false_reject, 0, "no good shot is rejected");
+    // a blurred face is evidence, not proof: it sends the photo to review
+    for (p, v) in a.plants.iter().zip(&v) {
+        if *p == Plant::FaceBlurred {
+            assert_eq!(v.bucket, Bucket::Review, "{v:?}");
+        }
+    }
 }
 
 #[test]

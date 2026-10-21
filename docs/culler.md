@@ -39,10 +39,13 @@ group    duplicate group (+ groupRank 0 = best, groupSize)
 faces    per face: eyes open/half/closed/not judged, blur sharp/soft/blurred, quality, person
 ```
 
-A reason has a severity: **reject** (closed eyes in a strict genre, whole-photo blur, a large blurred
-face, too dark / too bright, a worse duplicate when the genre rejects them), **warning** (soft, a
-small blurred face, blinking, clipped, no key person, duplicates in sport) or **info** (best of its
+A reason has a severity: **reject** (**both** eyes closed in a strict genre, whole-photo blur, too dark / too
+bright, a worse duplicate when the genre rejects them), **warning** (soft, a blurred or soft face, a
+wink or half-closed eyes, clipped, no key person, duplicates in sport) or **info** (best of its
 group, faces not analyzed). Any reject → *rejected*; else any warning → *review*; else *selected*.
+Only the photo's **prominent** faces are judged: at least half the size of its largest face and at least
+4 % of the long edge; the others are listed in `faces` (`counted: false`) but never judged. The face
+measurements are evidence, not proof (see the trial below), so a blurred face only sends to review.
 Among the selected, the top `highlightShare` (and at least score 55) become *highlight*.
 
 ### Score
@@ -160,3 +163,24 @@ test machine).
 * Key people come from named face regions (XMP), not from the People view's recognition.
 * Genre, grouping and key people are kept for the session, not saved to the library prefs.
 * No panel in the app yet (`ui-egui` was out of scope); everything is reachable by command.
+
+## Trial on a real album (21 Oct 2026)
+
+A read-only copy of 12 JPEG + 1 PNG from a client wedding portfolio (kept on the internal disk, never the
+originals, never the 736-photo album), imported in a throw-away catalogue, genre *wedding*, with the face model
+(`LIGHTCRAFT_CULL_DIR=… LIGHTCRAFT_CULL_FACES=1 cargo test -p lightcraft-engine tests_cull::real_album -- --ignored --nocapture`).
+13 photos in 0.2 s (test profile; faces were already found by the same run, 7 s in total).
+
+* **Without faces** (focus, exposure, duplicates, scenes): 2 highlights, 8 selected, 1 review (soft), 2 rejected —
+  both rejected are byte-identical re-exports of a better-ranked file in the same duplicate group, which is
+  right. Four scenes from the capture times, two duplicate groups.
+* **With faces**, the first rules rejected 7 of 13. Looking at the images, at least two rejections were wrong
+  (a groom with open eyes rejected for "closed eyes" and "blurred face"; a ceremony photo rejected for out-of-focus
+  guests in the background). Two fixes came out of it: only prominent faces are judged, and a blurred face no
+  longer rejects. What remains: the eye measurements are noisy on small faces of this retouched portfolio (faces are
+  2–10 % of the frame; many read "blurred"), so **closed-eyes rejections on a real shoot must be checked by a
+  person** — they are reported with their reason and nothing is written without `cull.apply`.
+* The dominant risk is therefore the face model's calibration on real faces (it was calibrated in `faces.md`
+  on a few labelled photos), not the culling logic. Not yet compared with Aftershoot's verdicts on the same
+  album: doing so means importing the client's photos into Aftershoot (its own database, possibly its cloud), which
+  was not done without an explicit go.

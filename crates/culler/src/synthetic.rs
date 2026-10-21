@@ -20,7 +20,7 @@ pub enum Plant {
 impl Plant {
     /// Must the cull reject it (with the default genre)?
     pub fn must_reject(self) -> bool {
-        matches!(self, Plant::ClosedEyes | Plant::Blurred | Plant::FaceBlurred | Plant::Dark | Plant::BurstWorse)
+        matches!(self, Plant::ClosedEyes | Plant::Blurred | Plant::Dark | Plant::BurstWorse)
     }
 }
 
