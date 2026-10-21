@@ -12,6 +12,7 @@
 //! - **Status**: `candidate` (written by a program: Video Catcher, a model) or `confirmed` (a
 //!   person said yes). A program never writes `confirmed`.
 
+pub mod glossary;
 pub mod ops;
 pub mod search;
 pub mod suggest;
@@ -194,6 +195,8 @@ pub struct Store {
     path: Option<PathBuf>,
     items: Vec<Annotation>,
     by_slot: HashMap<(String, Option<u64>, String), usize>,
+    /// The slots of each moment `(item, ms)` (every source), for [`Store::effective`].
+    by_moment: HashMap<(String, Option<u64>), Vec<usize>>,
     /// Lines skipped while reading (cut short, unreadable).
     pub skipped: usize,
 }
@@ -230,6 +233,7 @@ impl Store {
             }
             None => {
                 self.by_slot.insert(a.slot(), self.items.len());
+                self.by_moment.entry((a.item.clone(), a.ms)).or_default().push(self.items.len());
                 self.items.push(a);
             }
         }
@@ -260,7 +264,8 @@ impl Store {
 
     /// What the moment shows, every source together ([`Effective`]); `None` when nothing is written.
     pub fn effective(&self, item: &str, ms: Option<u64>) -> Option<Effective> {
-        let all: Vec<&Annotation> = self.items.iter().filter(|a| a.item == item && a.ms == ms && !a.deleted).collect();
+        let all: Vec<&Annotation> =
+            self.by_moment.get(&(item.to_string(), ms)).into_iter().flatten().filter_map(|i| self.items.get(*i)).filter(|a| !a.deleted).collect();
         let first = all.first()?;
         let manual = all.iter().find(|a| a.source == MANUAL);
         let mut proposals: Vec<&Annotation> = all.iter().copied().filter(|a| a.source != MANUAL).collect();

@@ -101,11 +101,22 @@ fn named(_: &mut Session) -> (Vec<(u32, String)>, HashMap<u64, Vec<(u32, String)
     (Vec::new(), HashMap::new())
 }
 
-/// The cosine of each search key with the meaning of `text`; `Err` says why there is none.
+/// The cosine of each search key with the meaning of `texts` (their embeddings averaged); `Err`
+/// says why there is none.
 #[cfg(feature = "search")]
-fn meaning(s: &mut Session, text: &str, keys: &[u64]) -> std::result::Result<(HashMap<u64, f32>, Box<dyn Fn(f32) -> f32>), String> {
+fn meaning(s: &mut Session, texts: &[String], keys: &[u64]) -> std::result::Result<(HashMap<u64, f32>, Box<dyn Fn(f32) -> f32>), String> {
     s.searcher.model_dir()?;
-    let q = s.searcher.embed_texts(&[text])?.pop().ok_or("no embedding")?;
+    let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+    let all = s.searcher.embed_texts(&refs)?;
+    let first = all.first().ok_or("no embedding")?;
+    let mut q = vec![0.0f32; first.len()];
+    for v in &all {
+        for (a, b) in q.iter_mut().zip(v) {
+            *a += b;
+        }
+    }
+    let n = q.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
+    q.iter_mut().for_each(|x| *x /= n);
     let dir = s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.join("search"));
     let vectors = crate::search::vectors_of(&s.searcher, dir, keys)?;
     let cos: HashMap<u64, f32> = vectors.iter().map(|(k, v)| (*k, v.iter().zip(&q).map(|(a, b)| a * b).sum())).collect();
@@ -113,9 +124,17 @@ fn meaning(s: &mut Session, text: &str, keys: &[u64]) -> std::result::Result<(Ha
     Ok((cos, Box::new(move |c| shared.probability(c).unwrap_or(0.0))))
 }
 #[cfg(not(feature = "search"))]
-fn meaning(_: &mut Session, _: &str, _: &[u64]) -> std::result::Result<(HashMap<u64, f32>, Box<dyn Fn(f32) -> f32>), String> {
+fn meaning(_: &mut Session, _: &[String], _: &[u64]) -> std::result::Result<(HashMap<u64, f32>, Box<dyn Fn(f32) -> f32>), String> {
     Err(crate::search::UNAVAILABLE.into())
 }
+
+/// How a French query is put to the semantic model: in French, in English through the
+/// [`super::glossary`], or both (their meanings averaged).
+pub const DEFAULT_LANG: &str = "both";
+/// A picture counts as matching by meaning when it is among this many closest to the query.
+pub const DEFAULT_SEMANTIC_TOP: usize = 20;
+/// Reciprocal rank fusion constant (text rank and meaning rank).
+const RRF_K: f32 = 60.0;
 
 fn row(m: &Moment, e: Option<&Effective>, present: &[(u32, String)], words: &[&str], prob: Option<f32>, cos: Option<f32>) -> Value {
     json!({
@@ -138,6 +157,19 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
     if !matches!(kind, "all" | "photo" | "video") {
         return Err(bad(C, "`kind` is photo, video or all"));
     }
+    let fields: Vec<String> = match p.get("fields").and_then(Value::as_array) {
+        Some(a) => a.iter().filter_map(Value::as_str).filter(|f| matches!(*f, "scene" | "action" | "description")).map(str::to_string).collect(),
+        None => vec!["scene".into(), "action".into(), "description".into()],
+    };
+    let lang = str_param(p, "lang").unwrap_or(DEFAULT_LANG);
+    if !matches!(lang, "fr" | "en" | "both") {
+        return Err(bad(C, "`lang` is fr, en or both"));
+    }
+    let semantic_top = f64_or(p, "semanticTop", DEFAULT_SEMANTIC_TOP as f64).clamp(0.0, 1e9) as usize;
+    let use_min_prob = p.get("minProbability").is_some();
+    let use_text = bool_or(p, "text", true);
+    // every word of the query must be found (the default) or any of them (`textAll: false`)
+    let text_all = bool_or(p, "textAll", true);
     let (people, by_key) = named(s);
     let (mut required, rest) = people_in(&query, &people);
     let mut unknown_people = Vec::new();
@@ -171,9 +203,20 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
         }
         m
     });
+    // the pictures of every video, from the cached map (not one list file read per video)
+    let all_frames = s.video_frames();
+    let mut per_video: HashMap<PhotoId, Vec<(u64, crate::video::FrameAt)>> = HashMap::new();
+    for (k, f) in all_frames.iter() {
+        for id in &f.ids {
+            per_video.entry(*id).or_default().push((*k, f.clone()));
+        }
+    }
+    for v in per_video.values_mut() {
+        v.sort_by_key(|(_, f)| f.ms);
+    }
     for (id, ck, video) in catalog {
         if video && kind != "photo" {
-            let fr = s.frames_of_video(id);
+            let fr = per_video.remove(&id).unwrap_or_default();
             let mut seen = HashSet::new();
             for (k, f) in &fr {
                 seen.insert(f.ms);
@@ -212,20 +255,64 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
     let use_meaning = bool_or(p, "semantic", true) && !terms.is_empty();
     let (cos, prob_of, semantic) = if use_meaning {
         let keys: Vec<u64> = moments.iter().map(|m| m.skey).collect();
-        match meaning(s, &format!("une photo de {rest}"), &keys) {
+        let english = super::glossary::to_english(&terms.join(" "));
+        let texts = match lang {
+            "fr" => vec![format!("une photo de {rest}")],
+            "en" => vec![format!("a photo of {english}")],
+            _ => vec![format!("une photo de {rest}"), format!("a photo of {english}")],
+        };
+        match meaning(s, &texts, &keys) {
             Ok((c, f)) => {
                 let n = c.len();
-                (c, Some(f), json!({"used": true, "indexed": n, "minProbability": min_prob}))
+                let mut v = json!({"used": true, "indexed": n, "lang": lang, "english": english});
+                if use_min_prob {
+                    v["minProbability"] = json!(min_prob);
+                } else {
+                    v["top"] = json!(semantic_top);
+                }
+                (c, Some(f), v)
             }
             Err(e) => (HashMap::new(), None, json!({"used": false, "why": e})),
         }
     } else {
         (HashMap::new(), None, json!({"used": false, "why": if terms.is_empty() { "no words to look for" } else { "semantic: false" }}))
     };
+    // the rank of each picture by meaning (1 = closest)
+    let mut by_cos: Vec<(u64, f32)> = cos.iter().map(|(k, c)| (*k, *c)).collect();
+    by_cos.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let sem_rank: HashMap<u64, usize> = by_cos.iter().enumerate().map(|(i, (k, _))| (*k, i + 1)).collect();
+    // the text score of each moment, then its rank among the moments the words reach
+    let texts: Vec<(Option<Effective>, Vec<&str>)> = moments
+        .iter()
+        .map(|m| {
+            let e = store.effective(&m.item, m.ms);
+            let text = e
+                .as_ref()
+                .filter(|_| use_text)
+                .map(|e| {
+                    let mut t = String::new();
+                    for f in &fields {
+                        t.push_str(match f.as_str() {
+                            "scene" => &e.scene,
+                            "action" => &e.action,
+                            _ => &e.description,
+                        });
+                        t.push(' ');
+                    }
+                    fold(&t)
+                })
+                .unwrap_or_default();
+            let words = matched(&terms, &text);
+            (e, words)
+        })
+        .collect();
+    let mut text_order: Vec<(usize, usize)> = texts.iter().enumerate().filter(|(_, (_, w))| !w.is_empty()).map(|(i, (_, w))| (i, w.len())).collect();
+    text_order.sort_by(|a, b| b.1.cmp(&a.1));
+    let text_rank: HashMap<usize, usize> = text_order.iter().enumerate().map(|(r, (i, _))| (*i, r + 1)).collect();
     let mut results: Vec<(f32, Value)> = Vec::new();
     let mut present_only: Vec<(f32, Value)> = Vec::new();
     let mut what_only: Vec<(f32, Value)> = Vec::new();
-    for m in &moments {
+    for (mi, m) in moments.iter().enumerate() {
         // who is there: the picture's faces, and for a video those within the window
         let mut present: Vec<(u32, String)> = by_key.get(&m.fkey).cloned().unwrap_or_default();
         if let Some(ms) = m.ms {
@@ -240,15 +327,17 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
             }
         }
         let people_ok = required.iter().all(|(r, _)| present.iter().any(|(i, _)| i == r));
-        let e = store.effective(&m.item, m.ms);
-        let text = e.as_ref().map(|e| fold(&format!("{} {} {}", e.scene, e.action, e.description))).unwrap_or_default();
-        let words = matched(&terms, &text);
+        let Some((e, words)) = texts.get(mi).map(|(e, w)| (e.clone(), w.clone())) else { continue };
         // every word must be there: « plongée sous-marine » is not « contre-plongée »
-        let text_ok = !terms.is_empty() && words.len() == terms.len();
+        let text_ok = !terms.is_empty() && if text_all { words.len() == terms.len() } else { !words.is_empty() };
         let prob = cos.get(&m.skey).and_then(|c| prob_of.as_ref().map(|f| f(*c)));
-        let sem_ok = prob.is_some_and(|p| p >= min_prob);
+        let srank = sem_rank.get(&m.skey).copied();
+        // by meaning: among the closest pictures (a rank, not an absolute probability, which SigLIP
+        // keeps very low for French sentences), or above `minProbability` when one is asked for
+        let sem_ok = if use_min_prob { prob.is_some_and(|p| p >= min_prob) } else { srank.is_some_and(|r| r <= semantic_top) };
         let what_ok = terms.is_empty() || text_ok || sem_ok;
-        let score = words.len() as f32 / terms.len().max(1) as f32 + prob.unwrap_or(0.0) + cos.get(&m.skey).copied().unwrap_or(0.0);
+        // reciprocal rank fusion of the two orders
+        let score = text_rank.get(&mi).map_or(0.0, |r| 1.0 / (RRF_K + *r as f32)) + srank.map_or(0.0, |r| 1.0 / (RRF_K + r as f32));
         match (people_ok, what_ok) {
             (true, true) => results.push((score, row(m, e.as_ref(), &present, &words, prob, cos.get(&m.skey).copied()))),
             (true, false) if !required.is_empty() => {
