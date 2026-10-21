@@ -77,6 +77,7 @@ fn lock(j: &Arc<Mutex<Job>>) -> MutexGuard<'_, Job> {
 struct Input {
     id: PhotoId,
     time: Option<i64>,
+    aspect: f32,
     faces: Option<Vec<Face>>,
     source: SourceRef,
     basis: String,
@@ -163,6 +164,7 @@ fn launch(job: Arc<Mutex<Job>>, inputs: Vec<Input>) -> std::result::Result<(), S
                             faces_missing += inp.faces.is_none() as usize;
                             shots.push(Shot {
                                 id: inp.id.0,
+                                aspect: inp.aspect,
                                 time: inp.time,
                                 sharpness: m.sharpness,
                                 clipped: m.clipped,
@@ -386,6 +388,7 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
         let source = s.media.origin_ref(&ph.source, SourceLevel::Thumb.max_edge());
         inputs.push(Input {
             id,
+            aspect: if ph.height > 0 { ph.width as f32 / ph.height as f32 } else { 0.0 },
             time: ph.captured.as_deref().and_then(lightcraft_catalog::dates::iso_seconds),
             faces: faces_of(&ph),
             source,

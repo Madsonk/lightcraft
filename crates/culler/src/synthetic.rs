@@ -100,6 +100,7 @@ pub fn album(scenes: usize, moments: usize, seed: u64) -> Album {
                 let count = 1 + (rng.next() % 2) as usize;
                 shots.push(Shot {
                     id,
+                    aspect: 1.5,
                     time: Some(t + dt),
                     sharpness: sharp,
                     clipped: rng.range(0.0, 0.04),

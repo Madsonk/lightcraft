@@ -50,6 +50,8 @@ pub struct Face {
 pub struct Shot {
     /// The caller's id (a photo id); returned nowhere, only for the caller's bookkeeping.
     pub id: u64,
+    /// Width over height of the photo; 0 = unknown (taken as 1). Face boxes are fractions of each axis.
+    pub aspect: f32,
     /// Capture time in seconds on any monotonic scale; `None` when unknown.
     pub time: Option<i64>,
     /// Focus 0..100 (detail of the sharpest areas).

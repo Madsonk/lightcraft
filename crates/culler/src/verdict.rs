@@ -257,6 +257,9 @@ struct Draft {
 }
 
 fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
+    // face boxes are fractions of each axis: scale to a share of the long edge
+    let aspect = if shot.aspect.is_finite() && shot.aspect > 0.0 { shot.aspect } else { 1.0 };
+    let (kx, ky) = if aspect >= 1.0 { (1.0, 1.0 / aspect) } else { (aspect, 1.0) };
     let p = &opts.profile;
     let mut reasons: Vec<Reason> = Vec::new();
     let sharp = if shot.sharpness.is_finite() { shot.sharpness.clamp(0.0, 100.0) } else { 0.0 };
@@ -286,12 +289,12 @@ fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
         Some(list) => {
             // the people the photo is about: the largest faces. Smaller ones (guests, background,
             // out of the focal plane) are shown in `faces` but never judged.
-            let side = |f: &Face| (f.rect[2] - f.rect[0]).max(f.rect[3] - f.rect[1]);
+            let side = |f: &Face| ((f.rect[2] - f.rect[0]) * kx).max((f.rect[3] - f.rect[1]) * ky);
             let largest = list.iter().filter(|f| is_key(f, &opts.key_people)).map(side).filter(|v| v.is_finite()).fold(0.0f32, f32::max);
             for f in list {
                 let counted = is_key(f, &opts.key_people) && side(f) >= PROMINENT * largest && side(f) >= MIN_JUDGED;
                 let eyes = eye_class(f);
-                let size = (f.rect[2] - f.rect[0]).max(f.rect[3] - f.rect[1]);
+                let size = side(f);
                 let eye_sharp = f.sharp[0].min(f.sharp[1]);
                 let blur = if eyes == EyeClass::NotJudged || !eye_sharp.is_finite() {
                     BlurClass::NotJudged

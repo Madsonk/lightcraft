@@ -214,3 +214,16 @@ fn background_faces_are_shown_but_not_judged() {
     seen.dedup();
     assert_eq!(seen.len(), v[0].reasons.len(), "no repeated reason");
 }
+
+#[test]
+fn face_size_is_a_share_of_the_long_edge() {
+    let mut a = album(1, 3, 6);
+    // 3:1 panorama; a face 0.03 wide but 0.09 tall is 3 % of the long edge: too small to judge
+    a.shots[0].aspect = 3.0;
+    let faces = a.shots[0].faces.as_mut().unwrap();
+    faces.clear();
+    faces.push(Face { rect: [0.2, 0.2, 0.23, 0.29], open: [0.05, 0.05], sharp: [80.0, 80.0], judged: true, person: None });
+    let v = judge(&a.shots, &Options::for_genre(Genre::Wedding));
+    assert!(!v[0].faces[0].counted, "{:?}", v[0].faces);
+    assert!(!v[0].reasons.contains(&Reason::ClosedEyes));
+}
