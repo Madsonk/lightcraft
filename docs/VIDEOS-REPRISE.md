@@ -122,7 +122,7 @@ opening of the Videos view on a fresh copy of the 355-video test library under 5
 
 | Step | State | Proof |
 |---|---|---|
-| build release from `/Volumes/Data/work/lv-final` at `ef8fc47b` (same change as `b021248f`, without other sessions' work) | running | log `/Volumes/Data/work/lv-release-final2.log` (ends `RELEASE EXIT n`); rerun `bash /Volumes/Data/work/lv-release-final2.sh` |
-| bundle `/Volumes/Data/work/lv-bundle-final2/LightCraft.app`, ad-hoc signed, `codesign --verify --strict` | to do | |
+| build release from `/Volumes/Data/work/lv-final` at `ef8fc47b` (same change as `b021248f`, without other sessions' work) | done 18:45 (binary built from lv-final sources only) | log `/Volumes/Data/work/lv-release-final2.log` (ends `RELEASE EXIT n`); rerun `bash /Volumes/Data/work/lv-release-final2.sh` |
+| bundle `/Volumes/Data/work/lv-bundle-final2/LightCraft.app`, ad-hoc signed, `codesign --verify --strict` | done: valid on disk, satisfies its Designated Requirement; binary 68 368 048 bytes, SHA-256 `32f2bdbd79d6f41f9f0c9bd2e8c9da195c9e94c21b852c9ec78f81b42966ff4d`; bundle 69 MB | |
 | smoke: fresh copy of lv-e2e3, time of the first Videos view | to do | |
 | smoke: blank photo catalog | to do | |
