@@ -114,3 +114,15 @@ v16 ignores the new folders (`video/`, `describe/`).
 | 6 | translations | done: Recognition panel, context bar, People sidebar ("943 faces found: name them…" was English in the window), singular/plural of "1 visage · 1 photo" in Recognition | `3f2f859a`, `77124cdf`, + this commit |
 | 7 | this file | written | |
 | 8 | bundle + 3 window captures | bundle rebuilt at `8e5578a8` (release 41 min), signed, `codesign --verify --strict` valid; launched on lv-e2e3 (355 videos in the catalog): list capture `10-v17-liste-videos.png`, list scrolls at ~17 ms a step. Sheet and search captures **not taken**: Madson was using the window (naming people in Recognition), so it was not driven further. The People-sidebar and plural fixes are after this bundle | `/Volumes/Data/work/lv-bundle/LightCraft.app` |
+
+## Avancement bundle final2
+
+Decision 21 Oct: one installation only, with `b021248f` (first opening of the Videos view). Criterion: the first
+opening of the Videos view on a fresh copy of the 355-video test library under 5 s.
+
+| Step | State | Proof |
+|---|---|---|
+| build release from `/Volumes/Data/work/lv-final` at `ef8fc47b` (same change as `b021248f`, without other sessions' work) | running | log `/Volumes/Data/work/lv-release-final2.log` (ends `RELEASE EXIT n`); rerun `bash /Volumes/Data/work/lv-release-final2.sh` |
+| bundle `/Volumes/Data/work/lv-bundle-final2/LightCraft.app`, ad-hoc signed, `codesign --verify --strict` | to do | |
+| smoke: fresh copy of lv-e2e3, time of the first Videos view | to do | |
+| smoke: blank photo catalog | to do | |
