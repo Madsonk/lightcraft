@@ -45,5 +45,8 @@ leaves the user's. Everything stays editable in the Masking panel; `portrait.cle
 retouch. The masks are stored with the photo (a high-resolution patch per face), so rendering never
 needs the model.
 
+For pixel-level retouch by named sliders (blemishes, dark circles, teeth, background…) with a step history,
+see [portrait-retouch.md](portrait-retouch.md) (`portrait.apply`).
+
 Not done: GAN face restoration (GFPGAN / CodeFormer). Smoothing here is the texture slider through a
 mask, which keeps the shapes and the eyes sharp but is not frequency separation.

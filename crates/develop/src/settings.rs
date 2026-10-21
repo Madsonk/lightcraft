@@ -31,6 +31,9 @@ pub struct DevelopSettings {
     pub orientation: Orientation,
     pub masks: Vec<Mask>,
     pub spots: Vec<Spot>,
+    /// Portrait retouch steps (the pixels they made are an inpaint patch placed by a spot).
+    #[serde(skip_serializing_if = "crate::portrait::PortraitStack::is_empty")]
+    pub portrait: crate::portrait::PortraitStack,
     pub red_eye: Vec<RedEye>,
     pub lens_blur: LensBlur,
     pub enhance: Enhance,
@@ -68,6 +71,7 @@ impl Default for DevelopSettings {
             orientation: Orientation::Normal,
             masks: Vec::new(),
             spots: Vec::new(),
+            portrait: crate::portrait::PortraitStack::default(),
             red_eye: Vec::new(),
             lens_blur: LensBlur::default(),
             enhance: Enhance::default(),
