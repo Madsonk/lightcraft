@@ -56,6 +56,7 @@ pub mod originals;
 pub mod people;
 pub mod places;
 pub mod portrait;
+pub mod portrait_stack;
 pub mod preset_import;
 pub mod preset_luminar;
 pub mod presets;
@@ -1026,6 +1027,8 @@ mod tests_people_dnd;
 mod tests_persist;
 #[cfg(all(test, feature = "places"))]
 mod tests_places;
+#[cfg(test)]
+mod tests_portrait_stack;
 #[cfg(test)]
 mod tests_prefs;
 #[cfg(test)]

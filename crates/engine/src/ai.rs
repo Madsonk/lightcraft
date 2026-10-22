@@ -187,13 +187,20 @@ impl Session {
         })
     }
 
+    /// Keep `p` in memory only (a preview's patch: no file is written).
+    pub(crate) fn cache_patch(&mut self, p: InpaintPatch) -> Arc<InpaintPatch> {
+        let p = Arc::new(p);
+        self.ai.patches.insert(p.id, p.clone());
+        p
+    }
+
     #[cfg(test)]
     pub(crate) fn store_patch_for_test(&mut self, p: InpaintPatch) -> Arc<InpaintPatch> {
         self.store_patch(p).unwrap()
     }
 
     #[cfg_attr(not(feature = "inpaint"), allow(dead_code))]
-    fn store_patch(&mut self, p: InpaintPatch) -> Result<Arc<InpaintPatch>> {
+    pub(crate) fn store_patch(&mut self, p: InpaintPatch) -> Result<Arc<InpaintPatch>> {
         if let Some(file) = self.ai_file("inpaint", &format!("{}.lcp", p.hex_id())) {
             write_atomic(&file, &p.to_bytes()).map_err(|e| EngineError::Other(format!("{}: {e}", file.display())))?;
         }

@@ -7,5 +7,6 @@ pub mod facegeo;
 pub mod lab;
 pub mod palette;
 pub mod plane;
+pub mod portrait;
 pub mod qc;
 pub mod skin;
