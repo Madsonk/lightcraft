@@ -9,9 +9,12 @@
 //! Stop button between two photos (the retouch of one photo itself runs on the UI thread, see
 //! `docs/ui-flux.md` → limits).
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 
 use egui::{Align2, RichText, vec2};
+use lightcraft_catalog::PhotoId;
+use lightcraft_engine::portrait_job::{PortraitPreview, PortraitRun};
+use lightcraft_engine::portrait_stack as ps;
 use serde_json::{Value, json};
 
 use crate::LightcraftApp;
@@ -66,7 +69,10 @@ pub struct Portrait {
     pub background_mode: String,
     /// Before / After of the last preview.
     pub pair: Option<Pair>,
-    pub want_preview: bool,
+    /// The preview being made on a worker (the window keeps answering).
+    pub preview: Option<PortraitPreview>,
+    /// Apply / Auto retouch of the active photo being made on a worker; `true` = auto.
+    pub apply: Option<(PortraitRun, bool)>,
     pub want_eyes: bool,
     pub eyes: Option<Pair>,
     /// One line about the last action ("2 faces · 38 % of the face changed").
@@ -101,12 +107,10 @@ pub enum Phase {
 pub struct Job {
     pub one_click: bool,
     pub phase: Phase,
-    pub queue: VecDeque<u64>,
+    /// The retouch itself, on a worker, one photo at a time.
+    pub run: Option<PortraitRun>,
     pub total: usize,
     pub done: usize,
-    pub retouched: usize,
-    pub no_face: usize,
-    pub failed: usize,
     pub undo0: usize,
     pub stop: bool,
     pub judged: Value,
@@ -348,34 +352,75 @@ fn scratch(name: &str) -> String {
     std::env::temp_dir().join(format!("lightcraft-flow-{}-{name}", std::process::id())).to_string_lossy().into_owned()
 }
 
-/// Run the preview the user asked for (the frame after the click, so the "Working…" label shows).
-pub fn run_preview_now(app: &mut LightcraftApp, ctx: &egui::Context) {
-    let Some(id) = app.session.active().map(|i| i.0) else { return };
-    let mut p = portrait_params(app);
-    if p.as_object().is_none_or(|o| o.values().all(|v| v.as_f64() == Some(0.0))) {
-        app.flow.portrait.error = tr("Move a slider first, or press Auto retouch").to_string();
-        return;
-    }
-    let (before, after) = (scratch("before.png"), scratch("after.png"));
-    p["id"] = json!(id);
-    p["edge"] = json!(1024);
-    p["path"] = json!(after);
-    match app.run("portrait.preview", p) {
-        Ok(v) => {
-            let before = v["before"].as_str().map_or(before, str::to_string);
-            let after = v["after"].as_str().map_or(after, str::to_string);
-            let pr = &mut app.flow.portrait;
-            pr.error.clear();
-            match (texture_of(ctx, "portrait-before", &before), texture_of(ctx, "portrait-after", &after)) {
-                (Some((b, size)), Some((a, _))) => {
-                    pr.pair = Some(Pair { id, before: b, after: a, size, info: String::new() });
-                    let faces = v["faces"].as_u64().unwrap_or(0);
-                    pr.note = tr_format!("{faces} face(s) found", faces = faces);
-                }
-                _ => pr.error = tr("The preview could not be read").to_string(),
-            }
+/// The steps the sliders ask for, as the engine takes them.
+fn slider_steps(app: &LightcraftApp) -> Result<Vec<lightcraft_develop::PortraitStep>, String> {
+    let p = portrait_params(app);
+    ps::steps_from_params(&p, "portrait").map_err(|e| e.to_string())
+}
+
+/// Start the Before / After preview of the active photo on a worker: the window keeps answering and
+/// [`tick`] picks the result up.
+pub fn start_preview(app: &mut LightcraftApp) {
+    let Some(id) = app.session.active() else { return };
+    let steps = match slider_steps(app) {
+        Ok(s) if s.iter().any(|st| st.amount > 0.0) => s,
+        Ok(_) => {
+            app.flow.portrait.error = tr("Move a slider first, or press Auto retouch").to_string();
+            return;
         }
-        Err(e) => app.flow.portrait.error = e,
+        Err(e) => {
+            app.flow.portrait.error = e;
+            return;
+        }
+    };
+    app.flow.portrait.error.clear();
+    match PortraitPreview::start(&mut app.session, id, steps, false, 4, ps::PREVIEW_EDGE) {
+        Ok(pv) => app.flow.portrait.preview = Some(pv),
+        Err(e) => app.flow.portrait.error = e.to_string(),
+    }
+}
+
+/// Per frame: the preview and the single-photo apply, if they are on a worker.
+fn pump_portrait(app: &mut LightcraftApp, ctx: &egui::Context) {
+    if let Some(pv) = &mut app.flow.portrait.preview
+        && let Some(r) = pv.pump(&mut app.session)
+    {
+        app.flow.portrait.preview = None;
+        let id = app.session.active().map_or(0, |i| i.0);
+        match r {
+            Ok(d) => {
+                let size = [d.after.width, d.after.height];
+                let opts = egui::TextureOptions::LINEAR;
+                let before = ctx.load_texture("portrait-before", crate::render::color_image(&d.before), opts);
+                let after = ctx.load_texture("portrait-after", crate::render::color_image(&d.after), opts);
+                let pr = &mut app.flow.portrait;
+                pr.pair = Some(Pair { id, before, after, size, info: String::new() });
+                pr.note = tr_format!("{faces} face(s) found", faces = d.faces);
+                pr.error.clear();
+            }
+            Err(e) => app.flow.portrait.error = e.to_string(),
+        }
+    }
+    let finished = match &mut app.flow.portrait.apply {
+        Some((run, _)) => run.pump(&mut app.session),
+        None => false,
+    };
+    if finished && let Some((run, auto)) = app.flow.portrait.apply.take() {
+        let _ = auto;
+        let (retouched, _, failed) = run.counts();
+        if let Some(e) = run.photos.iter().find_map(|p| p["error"].as_str()) {
+            app.flow.portrait.error = e.to_string();
+        } else if retouched == 0 && !run.cancelled {
+            app.flow.portrait.error = tr("No face found in this photo").to_string();
+        } else if retouched > 0 && failed == 0 {
+            let faces = run.photos.first().and_then(|p| p["faces"].as_u64()).unwrap_or(0);
+            app.toast_success(ctx, tr_format!("Portrait retouch applied ({faces} face(s)): one undo step", faces = faces));
+            let key = crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "edit.undo").unwrap_or("Cmd+Z").to_string();
+            tip(app, ctx, "portrait-apply", &key);
+        }
+        app.flow.portrait.loaded_for = None;
+        app.flow.portrait.pair = None;
+        load_portrait(app);
     }
 }
 
@@ -422,29 +467,25 @@ pub fn run_eyes_now(app: &mut LightcraftApp, ctx: &egui::Context) {
     }
 }
 
-/// Store the previewed retouch on the active photo (one undo step).
-pub fn apply_portrait(app: &mut LightcraftApp, ctx: &egui::Context, auto: bool) {
-    let Some(id) = app.session.active().map(|i| i.0) else { return };
-    let mut p = if auto { json!({"auto": true}) } else { portrait_params(app) };
-    p["id"] = json!(id);
-    app.flow.portrait.busy_frames = 0;
-    match app.run("portrait.apply", p) {
-        Ok(v) => {
-            let r = &v["photos"][0];
-            if r["skipped"].is_string() || r["skipped"].as_bool() == Some(true) {
-                app.flow.portrait.error = tr("No face found in this photo").to_string();
+/// Store the sliders' retouch (or the default recipe) on the active photo on a worker; one undo step.
+pub fn apply_portrait(app: &mut LightcraftApp, auto: bool) {
+    let Some(id) = app.session.active() else { return };
+    if app.flow.portrait.apply.is_some() || app.flow.job.is_some() {
+        return;
+    }
+    let steps = if auto {
+        ps::auto_steps()
+    } else {
+        match slider_steps(app) {
+            Ok(s) => s,
+            Err(e) => {
+                app.flow.portrait.error = e;
                 return;
             }
-            let faces = r["faces"].as_u64().unwrap_or(0);
-            app.toast_success(ctx, tr_format!("Portrait retouch applied ({faces} face(s)): one undo step", faces = faces));
-            let key = crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "edit.undo").unwrap_or("Cmd+Z").to_string();
-            tip(app, ctx, "portrait-apply", &key);
-            app.flow.portrait.loaded_for = None;
-            app.flow.portrait.pair = None;
-            load_portrait(app);
         }
-        Err(e) => app.flow.portrait.error = e,
-    }
+    };
+    app.flow.portrait.error.clear();
+    app.flow.portrait.apply = Some((PortraitRun::new(vec![id], steps, false, 4), auto));
 }
 
 pub fn confirm_eyes(app: &mut LightcraftApp, ctx: &egui::Context) {
@@ -465,16 +506,13 @@ pub fn targets(app: &mut LightcraftApp) -> (Vec<u64>, bool) {
     if app.session.selection.ids.len() > 1 { (app.session.selection.ids.iter().map(|i| i.0).collect(), true) } else { (visible_ids(app), false) }
 }
 
-fn new_job(app: &LightcraftApp, one_click: bool, phase: Phase, queue: Vec<u64>) -> Job {
+fn new_job(app: &LightcraftApp, one_click: bool, phase: Phase, run: Option<PortraitRun>) -> Job {
     Job {
         one_click,
         phase,
-        total: queue.len(),
-        queue: queue.into(),
+        total: run.as_ref().map_or(0, |r| r.total),
+        run,
         done: 0,
-        retouched: 0,
-        no_face: 0,
-        failed: 0,
         undo0: app.session.undo.len(),
         stop: false,
         judged: Value::Null,
@@ -483,13 +521,14 @@ fn new_job(app: &LightcraftApp, one_click: bool, phase: Phase, queue: Vec<u64>) 
     }
 }
 
-/// Auto-retouch the photos of `ids`, one per frame.
+/// Auto-retouch the photos of `ids`: one photo at a time on a worker, the window never waits.
 pub fn start_retouch(app: &mut LightcraftApp, ids: Vec<u64>) {
     if app.flow.job.is_some() || ids.is_empty() {
         return;
     }
     app.flow.summary = None;
-    app.flow.job = Some(new_job(app, false, Phase::Retouching, ids));
+    let run = PortraitRun::new(ids.into_iter().map(PhotoId).collect(), ps::auto_steps(), false, 4);
+    app.flow.job = Some(new_job(app, false, Phase::Retouching, Some(run)));
 }
 
 pub fn ask_one_click(app: &mut LightcraftApp) {
@@ -506,7 +545,7 @@ pub fn run_one_click(app: &mut LightcraftApp, ctx: &egui::Context) {
     let (ids, _) = targets(app);
     app.flow.confirm = None;
     app.flow.cull.all_ids = ids.clone();
-    let job = new_job(app, true, Phase::Culling, Vec::new());
+    let job = new_job(app, true, Phase::Culling, None);
     app.flow.job = Some(job);
     if let Err(e) = start_cull(app, ctx) {
         app.flow.job = None;
@@ -516,6 +555,7 @@ pub fn run_one_click(app: &mut LightcraftApp, ctx: &egui::Context) {
 
 fn finish_job(app: &mut LightcraftApp, ctx: &egui::Context, stopped: bool) {
     let Some(job) = app.flow.job.take() else { return };
+    let (retouched, no_face, failed) = job.run.as_ref().map_or((0, 0, 0), |r| r.counts());
     let steps = app.session.undo.len().saturating_sub(job.undo0);
     app.session.merge_undo(steps, if job.one_click { "Cull and retouch in one click" } else { "Portrait retouch" });
     let secs = job.started.elapsed().as_secs_f64();
@@ -537,7 +577,7 @@ fn finish_job(app: &mut LightcraftApp, ctx: &egui::Context, stopped: bool) {
             rejected = job.applied["rejected"].as_u64().unwrap_or(0)
         ));
     }
-    lines.push(tr_format!("{n} photos retouched, {nf} without a face, {fl} failed", n = job.retouched, nf = job.no_face, fl = job.failed));
+    lines.push(tr_format!("{n} photos retouched, {nf} without a face, {fl} failed", n = retouched, nf = no_face, fl = failed));
     lines.push(format!("{secs:.0} s"));
     app.flow.summary = Some(Summary { one_click: job.one_click, lines, undone: false, stopped });
     app.flow.cull.dirty = true;
@@ -590,7 +630,7 @@ pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
         }
     }
     if app.flow.cull.running || app.flow.job.is_some() {
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
     }
     // the list behind the counts, the duplicate groups and the scenes
     if app.flow.cull.dirty && !app.flow.cull.running {
@@ -608,11 +648,18 @@ pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
         }
     }
     step_job(app, ctx);
+    pump_portrait(app, ctx);
+    if app.flow.portrait.preview.is_some() || app.flow.portrait.apply.is_some() {
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
+    }
 }
 
 fn step_job(app: &mut LightcraftApp, ctx: &egui::Context) {
     let Some(job) = &mut app.flow.job else { return };
     if job.stop {
+        if let Some(run) = &mut job.run {
+            run.cancel();
+        }
         finish_job(app, ctx, true);
         return;
     }
@@ -625,10 +672,14 @@ fn step_job(app: &mut LightcraftApp, ctx: &egui::Context) {
             let ids = app.flow.cull.all_ids.clone();
             let applied = app.run("cull.apply", json!({"ids": ids})).unwrap_or(Value::Null);
             let list = app.run("cull.list", json!({"ids": ids, "limit": 50000})).unwrap_or(Value::Null);
-            let picked: Vec<u64> = list["photos"]
+            let picked: Vec<PhotoId> = list["photos"]
                 .as_array()
                 .map(|a| {
-                    a.iter().filter(|r| matches!(r["bucket"].as_str(), Some("highlight" | "selected"))).filter_map(|r| r["id"].as_u64()).collect()
+                    a.iter()
+                        .filter(|r| matches!(r["bucket"].as_str(), Some("highlight" | "selected")))
+                        .filter_map(|r| r["id"].as_u64())
+                        .map(PhotoId)
+                        .collect()
                 })
                 .unwrap_or_default();
             app.flow.cull.list = Some(list.clone());
@@ -636,34 +687,17 @@ fn step_job(app: &mut LightcraftApp, ctx: &egui::Context) {
                 job.applied = applied;
                 job.judged = list;
                 job.total = picked.len();
-                job.queue = picked.into();
+                job.run = Some(PortraitRun::new(picked, ps::auto_steps(), false, 4));
                 job.phase = Phase::Retouching;
             }
         }
         Phase::Retouching => {
-            let Some(id) = job.queue.pop_front() else {
+            let Some(run) = &mut job.run else { return };
+            let finished = run.pump(&mut app.session);
+            job.done = run.done;
+            job.total = run.total;
+            if finished {
                 finish_job(app, ctx, false);
-                return;
-            };
-            let r = app.run("portrait.apply", json!({"id": id, "auto": true}));
-            let Some(job) = &mut app.flow.job else { return };
-            job.done += 1;
-            match r {
-                Ok(v) => {
-                    let p = &v["photos"][0];
-                    if p["skipped"].is_string() || p["skipped"].as_bool() == Some(true) || p["faces"].as_u64() == Some(0) {
-                        job.no_face += 1;
-                    } else {
-                        job.retouched += 1;
-                    }
-                }
-                Err(e) => {
-                    if e.contains("no face") || e.contains("No face") {
-                        job.no_face += 1;
-                    } else {
-                        job.failed += 1;
-                    }
-                }
             }
         }
     }

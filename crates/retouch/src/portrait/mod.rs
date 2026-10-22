@@ -186,6 +186,15 @@ pub struct Crop<'a> {
 /// Apply `steps` (kind, amount 0..1) to `crop` for a face whose mesh `points` are in the crop's
 /// pixel coordinates. Pixels whose Lab colour moved by more than `0.7` are rewritten.
 pub fn retouch_face(crop: Crop, points: &[[f32; 3]], steps: &[(Kind, f32)]) -> Option<FaceResult> {
+    retouch_face_until(crop, points, steps, &|| false)
+}
+
+/// [`retouch_face`] that looks at `cancelled` before the work and between two steps (each step is
+/// 0.05–0.5 s on a real face) and gives up with `None` — the crop is then left as it was — as soon as it says yes.
+pub fn retouch_face_until(crop: Crop, points: &[[f32; 3]], steps: &[(Kind, f32)], cancelled: &dyn Fn() -> bool) -> Option<FaceResult> {
+    if cancelled() {
+        return None;
+    }
     let (w, h) = (crop.w, crop.h);
     if w < 8 || h < 8 || crop.rgb.len() < w * h * 3 {
         return None;
@@ -204,7 +213,13 @@ pub fn retouch_face(crop: Crop, points: &[[f32; 3]], steps: &[(Kind, f32)]) -> O
     let pts: Vec<[f32; 3]> = points.iter().map(|p| [p[0] * sx, p[1] * sy, p[2] * sx]).collect();
     let small_face = Face::new(&pts)?;
     let mut work = ops::Work::new(small, small_face)?;
-    let reports: Vec<StepReport> = steps.iter().filter(|(_, a)| *a > 0.0).map(|(k, a)| work.apply(*k, a.clamp(0.0, 1.0))).collect();
+    let mut reports: Vec<StepReport> = Vec::new();
+    for (k, a) in steps.iter().filter(|(_, a)| *a > 0.0) {
+        if cancelled() {
+            return None;
+        }
+        reports.push(work.apply(*k, a.clamp(0.0, 1.0)));
+    }
     // the change, scaled back up
     let (dl, da, db) = work.delta();
     let (dl, da, db) =

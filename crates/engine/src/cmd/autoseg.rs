@@ -31,12 +31,18 @@ fn kind_of(kind: &str) -> Option<(crate::autoseg::Kind, bool)> {
     })
 }
 
-/// The developed photo, uncropped and without its masks, as the networks see it.
-pub(crate) fn developed(s: &mut Session, id: PhotoId, c: &str) -> Result<lightcraft_raster::Rgba8> {
+/// The job that renders the developed photo, uncropped and without its masks, as the networks see
+/// it: detached from the session, so it can run on a worker.
+pub(crate) fn developed_job(s: &mut Session, id: PhotoId, c: &str) -> Result<crate::media::RenderJob> {
     let mut d = (*s.develop_of(id).ok_or_else(|| bad(c, "no such photo"))?).clone();
     d.masks.clear();
     d.lens_blur.enabled = false;
-    let job = s.preview_job(id, EDGE, EDGE, false, &d).ok_or_else(|| bad(c, "no such photo"))?;
+    s.preview_job(id, EDGE, EDGE, false, &d).ok_or_else(|| bad(c, "no such photo"))
+}
+
+/// The developed photo, uncropped and without its masks, as the networks see it.
+pub(crate) fn developed(s: &mut Session, id: PhotoId, c: &str) -> Result<lightcraft_raster::Rgba8> {
+    let job = developed_job(s, id, c)?;
     Ok(job.run().rendered.map_err(|e| bad(c, e))?.image)
 }
 

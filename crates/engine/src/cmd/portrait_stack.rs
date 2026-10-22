@@ -15,12 +15,11 @@ use crate::{Result, Session};
 
 // ---- the real face finder and subject matte --------------------------------------------------
 
+/// The face meshes of a developed picture, biggest first, normalized to it.
 #[cfg(feature = "faces")]
-pub(crate) fn real_faces(s: &mut Session, id: PhotoId) -> Result<Meshes> {
+pub(crate) fn meshes_of(model: &lightcraft_facemesh::FaceLandmarker, img: &lightcraft_raster::Rgba8) -> Result<Meshes> {
     use lightcraft_facemesh::mediapipe::Frame;
     const C: &str = "portrait.apply";
-    let model = super::portrait::landmarker(s)?;
-    let img = super::autoseg::developed(s, id, C)?;
     let (w, h) = (img.width, img.height);
     let rgb: Vec<[f32; 3]> = img.data.iter().map(|p| [f32::from(p[0]) / 255.0, f32::from(p[1]) / 255.0, f32::from(p[2]) / 255.0]).collect();
     let mut meshes = model.find_all(Frame { rgb: &rgb, w, h }).map_err(|e| bad(C, e))?;
@@ -29,6 +28,14 @@ pub(crate) fn real_faces(s: &mut Session, id: PhotoId) -> Result<Meshes> {
         ((bb[2] - bb[0]) * (bb[3] - bb[1])).total_cmp(&((ba[2] - ba[0]) * (ba[3] - ba[1])))
     });
     Ok(meshes.iter().map(|m| m.points.iter().map(|p| [p[0] / w as f32, p[1] / h as f32, p[2] / w as f32]).collect()).collect())
+}
+
+#[cfg(feature = "faces")]
+pub(crate) fn real_faces(s: &mut Session, id: PhotoId) -> Result<Meshes> {
+    const C: &str = "portrait.apply";
+    let model = super::portrait::landmarker(s)?;
+    let img = super::autoseg::developed(s, id, C)?;
+    meshes_of(&model, &img)
 }
 
 #[cfg(not(feature = "faces"))]
@@ -42,6 +49,25 @@ fn real_matte(s: &mut Session, id: PhotoId, w: usize, h: usize) -> Result<Plane>
     let img = super::autoseg::developed(s, id, C)?;
     let (seg, _) = crate::autoseg::segment(&img, &crate::autoseg::Kind::Subject).map_err(crate::EngineError::Other)?;
     matte_from(&seg, w, h).ok_or_else(|| bad(C, "the subject matte is damaged"))
+}
+
+/// The subject matte of an already developed picture, at `w x h`.
+#[cfg(feature = "autoseg")]
+pub(crate) fn matte_of_image(img: &lightcraft_raster::Rgba8, w: usize, h: usize) -> Result<Plane> {
+    let (seg, _) = crate::autoseg::segment(img, &crate::autoseg::Kind::Subject).map_err(crate::EngineError::Other)?;
+    matte_from(&seg, w, h).ok_or_else(|| bad("portrait.apply", "the subject matte is damaged"))
+}
+
+#[cfg(not(feature = "autoseg"))]
+pub(crate) fn matte_of_image(_: &lightcraft_raster::Rgba8, _: usize, _: usize) -> Result<Plane> {
+    Err(bad("portrait.apply", "the subject model is not available in this build (background steps need it)"))
+}
+
+/// `apply_one` with the real face finder and matte (the part of a run that needs the session all along).
+pub(crate) fn sync_apply(s: &mut Session, id: PhotoId, new: Vec<PortraitStep>, replace: bool, max_faces: usize) -> Result<Value> {
+    let (mut f, mut m) = (real_faces, real_matte);
+    let mut src = real_sources(&mut f, &mut m);
+    apply_one(s, id, new, replace, max_faces, &mut src)
 }
 
 #[cfg(not(feature = "autoseg"))]
@@ -78,6 +104,25 @@ fn label_of(steps: &[PortraitStep]) -> String {
 /// Apply (or re-run) the stack on one photo. Returns the report, or `{skipped}` when there was
 /// nothing to do for this photo.
 pub(crate) fn apply_one(s: &mut Session, id: PhotoId, new: Vec<PortraitStep>, replace: bool, max_faces: usize, src: &mut Sources) -> Result<Value> {
+    let (base, steps) = match prepare(s, id, new, replace)? {
+        Prepared::Early(v) => return Ok(v),
+        Prepared::Go { base, steps } => (base, steps),
+    };
+    let o = ps::render(s, id, &base, &steps, ps::EDGE, max_faces, src)?;
+    finish_apply(s, id, &base, steps, o)
+}
+
+/// What `portrait.apply` has to do for one photo before any pixel is made.
+pub(crate) enum Prepared {
+    /// Nothing to render: the stack is empty (reset, or nothing to do).
+    Early(Value),
+    Go {
+        base: lightcraft_develop::DevelopSettings,
+        steps: Vec<PortraitStep>,
+    },
+}
+
+pub(crate) fn prepare(s: &mut Session, id: PhotoId, new: Vec<PortraitStep>, replace: bool) -> Result<Prepared> {
     const C: &str = "portrait.apply";
     let d = (*s.develop_of(id).ok_or_else(|| bad(C, "no such photo"))?).clone();
     let mut steps = if replace { Vec::new() } else { d.portrait.steps.clone() };
@@ -87,14 +132,24 @@ pub(crate) fn apply_one(s: &mut Session, id: PhotoId, new: Vec<PortraitStep>, re
     let base = ps::base_settings(&d);
     if steps.is_empty() {
         if d.portrait.is_empty() {
-            return Ok(json!({"id": id.0, "skipped": "no steps"}));
+            return Ok(Prepared::Early(json!({"id": id.0, "skipped": "no steps"})));
         }
         let mut nd = base;
         nd.portrait = Default::default();
         s.set_develop(id, nd, "Portrait: reset")?;
-        return Ok(json!({"id": id.0, "reset": true}));
+        return Ok(Prepared::Early(json!({"id": id.0, "reset": true})));
     }
-    let o = ps::render(s, id, &base, &steps, ps::EDGE, max_faces, src)?;
+    Ok(Prepared::Go { base, steps })
+}
+
+/// Store a render's patch and the stack on the photo (one undo step) and report it.
+pub(crate) fn finish_apply(
+    s: &mut Session,
+    id: PhotoId,
+    base: &lightcraft_develop::DevelopSettings,
+    mut steps: Vec<PortraitStep>,
+    o: ps::Outcome,
+) -> Result<Value> {
     if o.faces == 0 && o.patch.is_none() {
         return Ok(json!({"id": id.0, "skipped": "no face found", "seconds": o.seconds}));
     }
@@ -103,7 +158,7 @@ pub(crate) fn apply_one(s: &mut Session, id: PhotoId, new: Vec<PortraitStep>, re
         Some(p) => Some(s.store_patch(p.clone())?),
         None => None,
     };
-    let nd = ps::with_stack(&base, steps.clone(), &o, stored.as_deref());
+    let nd = ps::with_stack(base, steps.clone(), &o, stored.as_deref());
     s.set_develop(id, nd, &label_of(&steps))?;
     Ok(json!({
         "id": id.0,

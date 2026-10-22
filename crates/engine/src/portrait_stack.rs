@@ -44,6 +44,8 @@ const ORDER: [&str; 14] = [
     "eyes",
     "flyaways",
 ];
+/// [`ORDER`] for the other modules.
+pub const ORDER_IDS: [&str; 14] = ORDER;
 pub const BACKGROUND: &str = "background";
 /// The step that takes the eyes of the same person from another shot (see `portrait.openEyes`).
 pub const OPEN_EYES: &str = "open_eyes";
@@ -249,20 +251,15 @@ pub fn render(
     const C: &str = "portrait.apply";
     let t = web_time::Instant::now();
     let on: Vec<&PortraitStep> = steps.iter().filter(|st| st.enabled && st.amount > 0.0).collect();
-    let face_steps: Vec<(Kind, f32)> = ORDER
-        .iter()
-        .filter_map(|k| on.iter().find(|st| st.kind == *k).and_then(|st| kind_of(&st.kind).map(|kk| (kk, (st.amount / 100.0) as f32))))
-        .collect();
-    let bg_step = on.iter().find(|st| st.kind == BACKGROUND).copied();
+    let has_face_steps = ORDER.iter().any(|k| on.iter().any(|st| st.kind == *k));
+    let eyes_step = on.iter().find(|st| st.kind == OPEN_EYES).copied();
     let (base, w, h) = linear_rgb(s, id, d, edge, C)?;
     let mut out = base.clone();
-    let mut sums: Vec<(Kind, f32, usize, usize, Option<&'static str>)> = face_steps.iter().map(|(k, _)| (*k, 0.0, 0usize, 0usize, None)).collect();
-    let (mut faces_done, mut skipped) = (0usize, 0usize);
-    let eyes_step = on.iter().find(|st| st.kind == OPEN_EYES).copied();
     let mut eye_reports = Vec::new();
     let mut eyes_changed = None;
-    if !face_steps.is_empty() || eyes_step.is_some() {
-        let meshes = (src.faces)(s, id)?;
+    let mut meshes: Meshes = Vec::new();
+    if has_face_steps || eyes_step.is_some() {
+        meshes = (src.faces)(s, id)?;
         if let Some(st) = eyes_step {
             let before = out.clone();
             let (reports, why) = open_eyes(s, id, &mut out, w, h, &meshes, st, edge, src)?;
@@ -270,8 +267,57 @@ pub fn render(
             let moved = (0..w * h).filter(|&i| before[i * 3..i * 3 + 3] != out[i * 3..i * 3 + 3]).count();
             eyes_changed = Some((moved as f64 / (w * h) as f64, why));
         }
+    }
+    let input = CoreInput { base, out, w, h, steps, meshes: &meshes, max_faces, eye_reports, eyes_changed, started: t };
+    let mut matte = |mw: usize, mh: usize| (src.matte)(s, id, mw, mh);
+    render_core(input, &mut matte, &|| false)
+}
+
+/// Everything [`render_core`] needs once the photo's picture and faces are in hand.
+pub struct CoreInput<'a> {
+    /// The scene-linear picture as 8-bit sRGB, and the same after the steps that came before the
+    /// face steps (open eyes).
+    pub base: Vec<u8>,
+    pub out: Vec<u8>,
+    pub w: usize,
+    pub h: usize,
+    pub steps: &'a [PortraitStep],
+    pub meshes: &'a Meshes,
+    pub max_faces: usize,
+    pub eye_reports: Vec<lightcraft_retouch::portrait::eyes::EyeReport>,
+    pub eyes_changed: Option<(f64, Option<String>)>,
+    pub started: web_time::Instant,
+}
+
+/// The cancelled outcome of the worker steps: an error nobody shows (the run was stopped).
+pub fn cancelled() -> crate::EngineError {
+    crate::EngineError::Other("cancelled".to_string())
+}
+
+pub fn is_cancelled(e: &crate::EngineError) -> bool {
+    e.to_string().contains("cancelled")
+}
+
+/// The steps on the faces, the background, and the baking of what moved into one patch. Needs no
+/// session: `matte_of` gives the subject matte at `w × h` when the background step is on, and
+/// `cancelled` is looked at before each face and between two steps (the result is then an error).
+pub fn render_core(input: CoreInput, matte_of: &mut dyn FnMut(usize, usize) -> Result<Plane>, cancelled_now: &dyn Fn() -> bool) -> Result<Outcome> {
+    const C: &str = "portrait.apply";
+    let CoreInput { base, mut out, w, h, steps, meshes, max_faces, eye_reports, eyes_changed, started: t } = input;
+    let on: Vec<&PortraitStep> = steps.iter().filter(|st| st.enabled && st.amount > 0.0).collect();
+    let face_steps: Vec<(Kind, f32)> = ORDER
+        .iter()
+        .filter_map(|k| on.iter().find(|st| st.kind == *k).and_then(|st| kind_of(&st.kind).map(|kk| (kk, (st.amount / 100.0) as f32))))
+        .collect();
+    let bg_step = on.iter().find(|st| st.kind == BACKGROUND).copied();
+    let mut sums: Vec<(Kind, f32, usize, usize, Option<&'static str>)> = face_steps.iter().map(|(k, _)| (*k, 0.0, 0usize, 0usize, None)).collect();
+    let (mut faces_done, mut skipped) = (0usize, 0usize);
+    if !face_steps.is_empty() || eyes_changed.is_some() {
         skipped = meshes.len().saturating_sub(max_faces);
         for mesh in meshes.iter().take(if face_steps.is_empty() { 0 } else { max_faces }) {
+            if cancelled_now() {
+                return Err(cancelled());
+            }
             let pts: Vec<[f32; 3]> = mesh.iter().map(|p| [p[0] * w as f32, p[1] * h as f32, p[2] * w as f32]).collect();
             if pts.len() < 468 {
                 continue;
@@ -307,7 +353,10 @@ pub fn render(
                 crop[row * cw * 3..(row + 1) * cw * 3].copy_from_slice(&out[src_row..src_row + cw * 3]);
             }
             let local: Vec<[f32; 3]> = pts.iter().map(|p| [p[0] - cx0 as f32, p[1] - cy0 as f32, p[2]]).collect();
-            let Some(res) = portrait::retouch_face(Crop { w: cw, h: ch, rgb: &mut crop }, &local, &face_steps) else {
+            let Some(res) = portrait::retouch_face_until(Crop { w: cw, h: ch, rgb: &mut crop }, &local, &face_steps, cancelled_now) else {
+                if cancelled_now() {
+                    return Err(cancelled());
+                }
                 skipped += 1;
                 continue;
             };
@@ -345,7 +394,10 @@ pub fn render(
         faces_done = faces_done.max(1);
     }
     if let Some(step) = bg_step {
-        let matte = (src.matte)(s, id, w, h)?;
+        if cancelled_now() {
+            return Err(cancelled());
+        }
+        let matte = matte_of(w, h)?;
         let params = background_params(step);
         let new = background::replace(&out, w, h, &matte, &params).ok_or_else(|| bad(C, "the subject matte does not fit the photo"))?;
         let moved = (0..w * h).filter(|&i| new[i * 3..i * 3 + 3] != out[i * 3..i * 3 + 3]).count();

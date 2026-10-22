@@ -654,7 +654,10 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
             rated += 1;
         }
         // a worse duplicate is not a failure: it gets one star but no Reject flag
-        let failed = v.reasons.iter().any(|r| *r != lightcraft_culler::Reason::Duplicate && Verdict::severity_of(*r, false) == lightcraft_culler::Severity::Reject);
+        let failed = v
+            .reasons
+            .iter()
+            .any(|r| *r != lightcraft_culler::Reason::Duplicate && Verdict::severity_of(*r, false) == lightcraft_culler::Severity::Reject);
         let want = match v.bucket {
             Bucket::Highlight => Flag::Pick,
             Bucket::Rejected if failed => Flag::Reject,

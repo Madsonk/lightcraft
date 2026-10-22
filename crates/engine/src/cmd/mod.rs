@@ -4,7 +4,7 @@
 //! delete), `album.*`, `develop.*` (settings), `crop.*`, `mask.*`, `preset.*`, `version.*`,
 //! `edit.*` (undo/redo), and queries (`catalog.query`, `photo.inspect`, `develop.get`…).
 
-mod autoseg;
+pub(crate) mod autoseg;
 mod before;
 pub(crate) mod browse;
 mod color;

@@ -21,17 +21,6 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     super::right::header(ui, "Portrait retouch");
     register(&ctx, "region:portraitPanel", ui.max_rect());
     flow::load_portrait(app);
-    // the work asked for last frame runs now, after the "Working…" label had a frame on screen
-    if app.flow.portrait.want_preview {
-        if app.flow.portrait.busy_frames == 0 {
-            app.flow.portrait.busy_frames = 1;
-            ctx.request_repaint();
-        } else {
-            app.flow.portrait.want_preview = false;
-            app.flow.portrait.busy_frames = 0;
-            flow::run_preview_now(app, &ctx);
-        }
-    }
     if app.flow.portrait.want_eyes {
         if app.flow.portrait.busy_frames == 0 {
             app.flow.portrait.busy_frames = 1;
@@ -45,14 +34,14 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 0, bottom: 8 }).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
         let busy = app.flow.job.is_some();
-        let working = app.flow.portrait.want_preview || app.flow.portrait.want_eyes;
+        let working = app.flow.portrait.preview.is_some() || app.flow.portrait.apply.is_some() || app.flow.portrait.want_eyes;
         // ---- auto retouch
         ui.horizontal_wrapped(|ui| {
             if crate::context_bar::primary_button(ui, "portraitAuto", tr("Auto retouch"), !busy && !working)
                 .on_hover_text(tr("The prudent default recipe on this photo: one undo step"))
                 .clicked()
             {
-                flow::apply_portrait(app, &ctx, true);
+                flow::apply_portrait(app, true);
             }
             let (ids, with_selection) = flow::targets(app);
             let n = ids.len();
@@ -66,7 +55,19 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             }
         });
         if working {
-            ui.label(RichText::new(tr("Working…")).color(t.accent));
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(tr("Working…")).color(t.accent));
+                if text_button(ui, "portraitStop", "Stop", false).clicked() {
+                    if let Some(pv) = &mut app.flow.portrait.preview {
+                        pv.cancel();
+                    }
+                    app.flow.portrait.preview = None;
+                    if let Some((run, _)) = &mut app.flow.portrait.apply {
+                        run.cancel();
+                    }
+                    app.flow.portrait.apply = None;
+                }
+            });
         }
         if !app.flow.portrait.error.is_empty() {
             ui.label(RichText::new(app.flow.portrait.error.clone()).color(egui::Color32::from_rgb(225, 120, 110)));
@@ -112,11 +113,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         ui.add_space(2.0);
         ui.horizontal_wrapped(|ui| {
             if text_button(ui, "portraitPreview", "Preview", false).on_hover_text(tr("Before / After without storing anything")).clicked() {
-                app.flow.portrait.want_preview = true;
-                app.flow.portrait.error.clear();
+                flow::start_preview(app);
             }
             if text_button(ui, "portraitApply", "Apply", false).on_hover_text(tr("Store this retouch on the photo (original untouched)")).clicked() {
-                flow::apply_portrait(app, &ctx, false);
+                flow::apply_portrait(app, false);
             }
             if text_button(ui, "portraitZero", "Zero the sliders", false).clicked() {
                 for v in app.flow.portrait.amounts.values_mut() {

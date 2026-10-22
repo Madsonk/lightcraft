@@ -154,7 +154,7 @@ fn portrait_panel_shows_groups_sliders_and_explains_a_missing_face() {
     assert!(has(&h, "slider:portrait.blemishes"), "the Skin group is open with its sliders");
     h.app.flow.portrait.amounts.insert("blemishes".into(), 60.0);
     click(&mut h, "button:portraitPreview");
-    assert!(h.step_until(Duration::from_secs(60), |h| !h.app.flow.portrait.want_preview));
+    assert!(h.step_until(Duration::from_secs(60), |h| h.app.flow.portrait.preview.is_none()));
     h.settle(SETTLE);
     // the demo photos are not portraits: either a pair or a reason, never a panic
     assert!(h.app.flow.portrait.pair.is_some() || !h.app.flow.portrait.error.is_empty(), "{}", h.app.flow.portrait.note);

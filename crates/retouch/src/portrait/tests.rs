@@ -280,3 +280,28 @@ fn open_eyes_leaves_an_eye_that_is_already_open() {
     assert!(r.eyes.iter().all(|e| e.skipped == Some("this eye is already open")), "{:?}", r.eyes);
     assert_eq!(out, open);
 }
+
+/// A stopped retouch leaves the crop as it was and answers after at most one step.
+#[test]
+fn retouch_face_until_stops_between_steps_and_leaves_the_crop_untouched() {
+    let (rgb, _) = portrait(true);
+    let pts = mesh(true);
+    let steps = [(Kind::Blemishes, 0.9), (Kind::Smooth, 0.5), (Kind::DarkCircles, 0.7), (Kind::Shine, 0.5)];
+    // asked once per step (and once before the work): the second look says stop
+    let looks = std::cell::Cell::new(0);
+    let mut out = rgb.clone();
+    let r = retouch_face_until(Crop { w: W, h: W, rgb: &mut out }, &pts, &steps, &|| {
+        looks.set(looks.get() + 1);
+        looks.get() > 2
+    });
+    assert!(r.is_none(), "a stopped retouch gives no result");
+    assert_eq!(out, rgb, "and the crop is bit-identical");
+    assert_eq!(looks.get(), 3, "it looked before the work and before each step until it was told to stop");
+    // never stopped: the same as retouch_face
+    let mut a = rgb.clone();
+    let mut b = rgb.clone();
+    let ra = retouch_face_until(Crop { w: W, h: W, rgb: &mut a }, &pts, &steps, &|| false).expect("a face");
+    let rb = retouch_face(Crop { w: W, h: W, rgb: &mut b }, &pts, &steps).expect("a face");
+    assert_eq!(a, b);
+    assert_eq!(ra.reports.len(), rb.reports.len());
+}
