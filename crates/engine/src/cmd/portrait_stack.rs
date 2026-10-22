@@ -106,7 +106,7 @@ fn label_of(steps: &[PortraitStep]) -> String {
 pub(crate) fn apply_one(s: &mut Session, id: PhotoId, new: Vec<PortraitStep>, replace: bool, max_faces: usize, src: &mut Sources) -> Result<Value> {
     let (base, steps) = match prepare(s, id, new, replace)? {
         Prepared::Early(v) => return Ok(v),
-        Prepared::Go { base, steps } => (base, steps),
+        Prepared::Go { base, steps } => (*base, steps),
     };
     let o = ps::render(s, id, &base, &steps, ps::EDGE, max_faces, src)?;
     finish_apply(s, id, &base, steps, o)
@@ -117,7 +117,7 @@ pub(crate) enum Prepared {
     /// Nothing to render: the stack is empty (reset, or nothing to do).
     Early(Value),
     Go {
-        base: lightcraft_develop::DevelopSettings,
+        base: Box<lightcraft_develop::DevelopSettings>,
         steps: Vec<PortraitStep>,
     },
 }
@@ -139,7 +139,7 @@ pub(crate) fn prepare(s: &mut Session, id: PhotoId, new: Vec<PortraitStep>, repl
         s.set_develop(id, nd, "Portrait: reset")?;
         return Ok(Prepared::Early(json!({"id": id.0, "reset": true})));
     }
-    Ok(Prepared::Go { base, steps })
+    Ok(Prepared::Go { base: Box::new(base), steps })
 }
 
 /// Store a render's patch and the stack on the photo (one undo step) and report it.

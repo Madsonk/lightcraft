@@ -51,7 +51,7 @@ pub struct Applier {
 }
 
 pub enum Planned {
-    Work(Box<Work>, Applier),
+    Work(Box<Work>, Box<Applier>),
     /// Nothing to compute: the stack was empty (the result is already reported).
     Done(Value),
     /// A step that needs the session all along (open eyes): use the synchronous path.
@@ -81,7 +81,7 @@ pub fn plan_fixed(
     let settings_key = s.develop_of(id).map_or(0, |d| d.hash64());
     let (base, steps) = match prepare(s, id, new, replace)? {
         Prepared::Early(v) => return Ok(Planned::Done(v)),
-        Prepared::Go { base, steps } => (base, steps),
+        Prepared::Go { base, steps } => (*base, steps),
     };
     plan_steps(s, id, base, steps, max_faces, edge, settings_key, fixed, C)
 }
@@ -124,7 +124,7 @@ pub fn plan_steps(
         max_faces,
         fixed,
     };
-    Ok(Planned::Work(Box::new(work), Applier { id, base, steps, settings_key }))
+    Ok(Planned::Work(Box::new(work), Box::new(Applier { id, base, steps, settings_key })))
 }
 
 /// The worker half: everything that does not need the session. `cancel` is looked at before each
@@ -215,7 +215,7 @@ fn spawn_compute(work: Work, cancel: Arc<AtomicBool>) -> Receiver<Result<Outcome
 
 struct Running {
     id: PhotoId,
-    applier: Applier,
+    applier: Box<Applier>,
     rx: Receiver<Result<Outcome>>,
 }
 
@@ -297,7 +297,7 @@ impl PortraitRun {
                     let Some(r) = self.running.take() else { return false };
                     self.done += 1;
                     match res {
-                        Ok(o) => self.photos.push(finish(s, r.applier, o).unwrap_or_else(|e| json!({"id": r.id.0, "error": e.to_string()}))),
+                        Ok(o) => self.photos.push(finish(s, *r.applier, o).unwrap_or_else(|e| json!({"id": r.id.0, "error": e.to_string()}))),
                         Err(e) if ps::is_cancelled(&e) => {}
                         Err(e) => self.photos.push(json!({"id": r.id.0, "error": e.to_string()})),
                     }
@@ -346,7 +346,7 @@ pub struct PortraitPreview {
 }
 
 enum Stage {
-    Retouch { rx: Receiver<Result<Outcome>>, applier: Applier },
+    Retouch { rx: Receiver<Result<Outcome>>, applier: Box<Applier> },
     Render { rx: Receiver<Result<(Rgba8, Rgba8)>>, faces: usize, report: Value, retouch_seconds: f64 },
     Gone,
 }

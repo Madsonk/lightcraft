@@ -278,7 +278,8 @@ fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
     let relative = album_median >= MEDIAN_MIN && sharp < p.relative_blur * album_median;
     // a whole shoot that is soft (low light, shallow depth of field on a small subject) must not be rejected
     // by absolute numbers made for crisp ones: the thresholds never exceed a share of the album's median
-    let (reject_at, warn_at) = if album_median > 0.0 { (p.blur_reject.min(0.4 * album_median), p.blur_warn.min(0.8 * album_median)) } else { (p.blur_reject, p.blur_warn) };
+    let (reject_at, warn_at) =
+        if album_median > 0.0 { (p.blur_reject.min(0.4 * album_median), p.blur_warn.min(0.8 * album_median)) } else { (p.blur_reject, p.blur_warn) };
     if sharp < reject_at || relative {
         reasons.push(Reason::Blurred);
     } else if sharp < warn_at {
