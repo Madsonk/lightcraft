@@ -450,8 +450,17 @@ fn quick_sort_finds_bursts_and_soft_photos_in_slices_and_writes_nothing_by_itsel
     // the button moved down the sidebar (the AI picks section, lot D, sits above Sorting Help): like a
     // hand, rest the pointer on it for a frame before pressing
     let soft = lightcraft_catalog::PhotoId(soft_id);
-    for _ in 0..4 {
+    let on_screen = |h: &Headless| h.app.widgets.iter().any(|(w, r)| w == "button:quickReject" && r.top() > 120.0 && r.bottom() < 790.0);
+    for _ in 0..40 {
         h.settle(SETTLE);
+        if !on_screen(&h) {
+            // lower than the window shows (the language is global and other tests switch it): scroll the sidebar
+            h.request("ui.move", json!({"x": 1350.0, "y": 500.0}), T);
+            h.request("ui.scroll", json!({"dy": -120.0}), T);
+            h.step();
+            h.step();
+            continue;
+        }
         let hv = h.request("ui.hoverWidget", json!({"id": "button:quickReject"}), T);
         assert_eq!(hv["ok"], true, "{hv}");
         h.step();
