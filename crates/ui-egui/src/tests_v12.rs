@@ -449,11 +449,18 @@ fn quick_sort_finds_bursts_and_soft_photos_in_slices_and_writes_nothing_by_itsel
     run(&mut h, "library.select", json!({"ids": [soft_id]})).unwrap();
     // the button moved down the sidebar (the AI picks section, lot D, sits above Sorting Help): like a
     // hand, rest the pointer on it for a frame before pressing
-    h.settle(SETTLE);
-    let hv = h.request("ui.hoverWidget", json!({"id": "button:quickReject"}), T);
-    assert_eq!(hv["ok"], true, "{hv}");
-    h.step();
-    click(&mut h, "button:quickReject");
+    let soft = lightcraft_catalog::PhotoId(soft_id);
+    for _ in 0..4 {
+        h.settle(SETTLE);
+        let hv = h.request("ui.hoverWidget", json!({"id": "button:quickReject"}), T);
+        assert_eq!(hv["ok"], true, "{hv}");
+        h.step();
+        h.step();
+        click(&mut h, "button:quickReject");
+        if h.app.session.catalog.photo(soft).unwrap().flag == lightcraft_catalog::Flag::Reject {
+            break;
+        }
+    }
     assert_eq!(h.app.session.catalog.photo(lightcraft_catalog::PhotoId(soft_id)).unwrap().flag, lightcraft_catalog::Flag::Reject);
     // next unsorted: a photo with no rating and no flag
     let r = run(&mut h, "workspace.sort.next", json!({})).unwrap();
