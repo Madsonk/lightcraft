@@ -447,13 +447,22 @@ fn quick_sort_finds_bursts_and_soft_photos_in_slices_and_writes_nothing_by_itsel
     assert_eq!(h.app.session.catalog.stacks().count(), 1);
     // the three buttons act on the selection only when clicked
     run(&mut h, "library.select", json!({"ids": [soft_id]})).unwrap();
-    // the AI picks section (lot D) sits above Sorting Help in the sidebar: scroll down to the buttons
-    for _ in 0..3 {
-        h.request("ui.move", json!({"x": 1350.0, "y": 600.0}), T);
-        h.request("ui.scroll", json!({"dy": -400.0}), T);
+    // the AI picks section (lot D) sits above Sorting Help in the sidebar: scroll until the button is on screen
+    for _ in 0..30 {
+        let on_screen = h.app.widgets.iter().any(|(w, r)| w == "button:quickReject" && r.top() > 120.0 && r.bottom() < 790.0);
+        if on_screen {
+            break;
+        }
+        h.request("ui.move", json!({"x": 1350.0, "y": 500.0}), T);
+        h.request("ui.scroll", json!({"dy": -120.0}), T);
         h.step();
         h.step();
     }
+    assert!(
+        h.app.widgets.iter().any(|(w, r)| w == "button:quickReject" && r.top() > 120.0 && r.bottom() < 790.0),
+        "{:?}",
+        h.app.widgets.iter().find(|(w, _)| w == "button:quickReject")
+    );
     click(&mut h, "button:quickReject");
     assert_eq!(h.app.session.catalog.photo(lightcraft_catalog::PhotoId(soft_id)).unwrap().flag, lightcraft_catalog::Flag::Reject);
     // next unsorted: a photo with no rating and no flag
