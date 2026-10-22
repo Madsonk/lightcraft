@@ -89,6 +89,17 @@ const PROPOSALS: Tool = Tool {
     needs_photo: true,
 };
 
+/// Portrait retouch by sliders (lot D): shown with workspaces on.
+const PORTRAIT: Tool = Tool {
+    id: "portrait",
+    icon: Icon::Eye,
+    label: "Portrait",
+    tip: "Portrait retouch: sliders by group, Before / After, auto retouch, open eyes (Shift+T)",
+    command: "panel.portrait",
+    panel: Some(RightPanel::Portrait),
+    needs_photo: true,
+};
+
 const HISTORY: &[Tool] = &[
     Tool {
         id: "versions",
@@ -203,6 +214,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 }
                 if crate::workspaces::enabled(app) {
                     tool(app, ui, &t, &PROPOSALS, has_photo);
+                    tool(app, ui, &t, &PORTRAIT, has_photo);
                 }
                 separator(ui, &t);
                 caption(ui, &t, "History");

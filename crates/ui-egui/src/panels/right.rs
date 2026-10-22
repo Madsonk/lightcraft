@@ -31,6 +31,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 if app.ui.histogram {
                     super::edit::histogram(app, ui, id);
                 }
+                super::cull::show(app, ui);
                 library_batch_tools(app, ui);
                 egui::CollapsingHeader::new(crate::i18n::tr("Keywords")).default_open(true).show(ui, |ui| keywords(app, ui, id));
                 // what the photo (or video) shows: scene, action, description
@@ -51,6 +52,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 RightPanel::Edit if crate::edit_tasks::wants(app) => crate::edit_tasks::show(app, ui, id),
                 RightPanel::Edit => super::edit::show(app, ui, id),
                 RightPanel::Proposals => super::proposals::show(app, ui),
+                RightPanel::Portrait => super::portrait::show(app, ui),
                 RightPanel::Profiles => super::profiles::show(app, ui, id),
                 RightPanel::Crop => crop(app, ui, id),
                 RightPanel::Remove => remove(app, ui, id),

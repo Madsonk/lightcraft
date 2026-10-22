@@ -16,6 +16,7 @@ pub mod create_space;
 pub mod credits;
 pub mod edit_tasks;
 pub mod export_task;
+pub mod flow;
 pub mod headless;
 pub mod heavy;
 pub mod home;
@@ -51,6 +52,8 @@ mod tests_curve;
 mod tests_dnd;
 #[cfg(test)]
 mod tests_filmstrip;
+#[cfg(test)]
+mod tests_flow;
 #[cfg(test)]
 mod tests_grid;
 #[cfg(test)]
@@ -292,6 +295,8 @@ pub struct LightcraftApp {
     pub resume: panels::resume::State,
     /// Workspaces (Library, Retouch, Create) and the Create panel's state.
     pub workspaces: workspaces::Workspaces,
+    /// The cull → retouch flow (lot D): AI picks, portrait retouch, one click, tour.
+    pub flow: flow::Flow,
     /// The look the loupe shows while the pointer rests on a preset or profile (set by the
     /// panels each frame; nothing is committed, no history entry).
     pub hover_preview: Option<HoverPreview>,
@@ -369,6 +374,7 @@ impl LightcraftApp {
             healing: None,
             resume: Default::default(),
             workspaces: Default::default(),
+            flow: Default::default(),
             hover_preview: None,
             palette: Default::default(),
             window_is_fullscreen: false,
@@ -874,6 +880,7 @@ impl LightcraftApp {
         import::tick(self, ctx);
         lightroom_import::tick(self, ctx);
         tasks::poll(self, ctx);
+        flow::tick(self, ctx);
         self.preview_build_status(ctx);
         self.save_status(ctx);
         workspaces::tick(self, now);
@@ -1126,6 +1133,7 @@ impl LightcraftApp {
         lightroom_import::progress(self, &ctx);
         export_task::poll(self, &ctx);
         tasks::show(self, &ctx);
+        flow::overlays(self, &ctx);
         panels::videos::jobs(self, &ctx);
         heavy::pump(self, &ctx);
         panels::resume::show(self, &ctx);

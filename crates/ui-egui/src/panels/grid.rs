@@ -534,6 +534,23 @@ fn cell(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square
             p.text(ph.center(), Align2::CENTER_CENTER, "!", t.semibold(18.0), t.text_dim);
         }
     }
+    // AI culling verdict (lot D): a coloured dot in the corner, the reasons on hover
+    if let Some(v) = photo.analysis.as_ref().and_then(|a| a.verdict.as_ref()) {
+        let dot = pos2(img_rect.right() - 9.0, img_rect.top() + 9.0);
+        ui.painter().circle_filled(dot, 5.5, Color32::from_black_alpha(150));
+        ui.painter().circle_filled(dot, 4.0, super::cull::bucket_colour(v.bucket));
+        register(ui.ctx(), format!("verdict:{}", id.0), Rect::from_center_size(dot, vec2(12.0, 12.0)));
+        let v = v.clone();
+        resp.clone().on_hover_ui(|ui| {
+            ui.label(egui::RichText::new(crate::i18n::tr(super::cull::bucket_label(v.bucket))).strong());
+            for r in super::cull::reasons_text(&v) {
+                ui.label(format!("• {r}"));
+            }
+            if v.reasons.is_empty() {
+                ui.label(crate::i18n::tr("Nothing wrong found"));
+            }
+        });
+    }
     // labels and badges
     if square && app.ui.show_filenames {
         let m = &photo.meta;

@@ -145,6 +145,13 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.secondWindow", "Second Window", Some("Cmd+F11"), "Window"),
     // v14: the proposed retouch as a panel of its own, the command palette, and Window ▸ Panels
     ("panel.proposals", "Proposals", Some("Shift+N"), "Window"),
+    // lot D: the cull → retouch flow
+    ("panel.portrait", "Portrait Retouch", Some("Shift+T"), "Window"),
+    ("flow.cullRun", "AI Culling…", None, "Photo"),
+    ("flow.cullCancel", "Stop AI Culling", None, "Photo"),
+    ("flow.oneClick", "Cull and Retouch in One Click…", None, "Photo"),
+    ("flow.portraitAuto", "Auto Portrait Retouch", None, "Photo"),
+    ("flow.tour", "Guided Tour", None, "Window"),
     ("app.commandPalette", "Command Palette…", Some("Cmd+K"), "Window"),
     ("window.panel.left", "Left Panel", None, "Window>Panels"),
     ("window.panel.right", "Right Panel", None, "Window>Panels"),
@@ -910,6 +917,28 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         }
         "panel.proposals" => {
             panel(app, &ctx, RightPanel::Proposals, "Proposals");
+            Ok(Value::Null)
+        }
+        "panel.portrait" => {
+            panel(app, &ctx, RightPanel::Portrait, "Portrait Retouch");
+            Ok(Value::Null)
+        }
+        "flow.cullRun" => crate::flow::start_cull(app, &ctx).map(|()| Value::Null),
+        "flow.cullCancel" => {
+            crate::flow::cancel_cull(app);
+            Ok(Value::Null)
+        }
+        "flow.oneClick" => {
+            crate::flow::ask_one_click(app);
+            Ok(Value::Null)
+        }
+        "flow.portraitAuto" => {
+            let (ids, _) = crate::flow::targets(app);
+            crate::flow::start_retouch(app, ids);
+            Ok(Value::Null)
+        }
+        "flow.tour" => {
+            crate::flow::start_tour(app);
             Ok(Value::Null)
         }
         "app.commandPalette" => Ok(json!({"open": crate::palette::toggle(app)})),

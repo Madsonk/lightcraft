@@ -43,6 +43,8 @@ pub enum RightPanel {
     Profiles,
     /// The proposed retouch (v14, workspaces on): Before / After, impact, copies.
     Proposals,
+    /// Portrait retouch by sliders (flow, workspaces on): groups, Before / After, auto, open eyes.
+    Portrait,
 }
 
 impl RightPanel {
@@ -528,6 +530,10 @@ pub struct UiState {
     pub toast_kind: ToastKind,
     /// Develop panel by task (Base, Light, Color, Detail, Optics, Local) instead of by type (v14, workspaces on).
     pub edit_by_task: bool,
+    /// The guided tour of the cull / retouch flow has been seen (relaunch: Window ▸ Guided Tour).
+    pub flow_tour_done: bool,
+    /// Ids of the "next time, try the key…" hints already shown (each is shown once).
+    pub flow_tips: Vec<String>,
     /// The Develop panel's search field ("Search a control…").
     #[serde(skip)]
     pub edit_search: String,
@@ -839,6 +845,8 @@ impl Default for UiState {
             toast: None,
             toast_kind: ToastKind::Info,
             edit_by_task: false,
+            flow_tour_done: false,
+            flow_tips: Vec::new(),
             edit_search: String::new(),
             last_find_missing: None,
             status: String::new(),

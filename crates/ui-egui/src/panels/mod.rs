@@ -24,6 +24,8 @@ pub mod person;
 pub mod places;
 pub mod presets;
 pub mod profiles;
+pub mod cull;
+pub mod portrait;
 pub mod proposals;
 pub mod resume;
 pub mod right;
