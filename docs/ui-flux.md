@@ -89,10 +89,17 @@ all the retouch steps were merged into one undo entry) and Close.
 
 * **Cull**: the engine runs it in its own thread; the UI polls `cull.status` ten times a second. A progress
   panel (bottom left, any space) and the section's bar show `done / total`; **Stop** calls `cull.cancel`.
-* **Album retouch and one click**: one photo per frame through `portrait.apply`, with a progress panel and
-  **Stop** between two photos. Stopping keeps what is done (still one undo step).
-* **Preview / apply of one photo**: runs on the UI thread (the engine session is not shared with workers);
-  the window shows "Calcul en cours…" for a frame before it starts. See limits.
+* **Portrait retouch** (since the "off the UI thread" change): `crates/engine/src/portrait_job.rs` splits the
+  work like the gallery and the dust search do. **Plan** on the UI thread (settings, render jobs, the face model:
+  microseconds), **compute** on a worker (decode, face mesh, the steps, baking; checks a stop flag before each
+  stage, each face and each step), **apply** on the UI thread (store the patch and the stack, one undo step per
+  photo; a photo edited meanwhile is skipped, not overwritten). `PortraitRun` drives an album one photo at a time
+  (album retouch, one click, Retouche auto, Appliquer), `PortraitPreview` makes Before / After in two stages
+  (retouch, then the two renders). **Stop** drops the photo in flight at once (nothing is written for it); the
+  worker notices within a step. `portrait.apply` / `.batch` / `.preview` keep their synchronous behaviour for the
+  CLI, MCP and tests.
+* Still on the UI thread: **Open eyes** (needs the burst's analysis and the reference photo through the
+  session) and the phase switch of the one click (`cull.apply` + `cull.list`, about 100 ms).
 
 ## French
 
@@ -114,10 +121,15 @@ duplicate group), the undo key (after writing stars/flags and after a portrait r
 * **AI picks**, from the button: 23 photos judged in about 0.3 s (72 photos/s through the window); 2 best shots, 9
   selected, 0 to review, 12 rejected; 2 duplicate groups (one of 11 photos); 3 scenes. The window answers while it
   runs (the judging is the engine's own thread).
-* **One click** on the same album: 27 s end to end (judge, write stars and flags, retouch the 11 highlights and
-  selected photos: 9 retouched, 2 without a face, 0 failed). **The window is not smooth during the retouch: one photo
-  with a face holds the UI thread about 2.7 s (worst frame 4.1 s)**, because `portrait.apply` needs the session and
-  runs on the UI thread. The progress panel and **Stop** answer between two photos, not during one.
+* **One click** on the same album: 25 s end to end (judge, write stars and flags, retouch the 11 highlights and
+  selected photos: 9 retouched, 2 without a face, 0 failed). Before the change one photo with a face held the UI
+  thread for about 2.7 s (worst frame 4.1 s). **After: worst frame 96–148 ms (the phase switch), every frame of the
+  retouch itself 11 ms or less.** Stop in the middle of an album: the window answered in under 1 ms (harness) / 78 ms
+  (running app, control round trip included) and nothing was written.
+* **Running app**, album retouch of 23 photos (21 with a face, 57 s): 835 control round trips during the run,
+  median 1.7 ms, p95 4.9 ms, 92 fps; the worst single frame of the app's life stayed at about 250 ms (220 ms
+  before the retouch, at import). Evidence: `lot-d-gel-progression-retouche.png` in the session notes (cropped
+  to the progress panel: the originals' faces are not kept).
 * Portrait panel on a real face: Auto retouch gives 10 steps, the sliders then show the stored amounts
   (Skin 35 / 55, …), Preview shows Before / After in the panel (screenshot taken headlessly).
 * Screenshots: the running app (French) for AI picks and the portrait panel; the headless harness for dialogs,
@@ -137,10 +149,8 @@ text for de, es, ja, pt-br, ru, zh; only French is translated.
 
 ## Limits (honest list)
 
-* **The retouch of one photo blocks the window for about 2.7 s** (see above). Fixing it means splitting
-  `portrait.apply` into plan (session) / compute (worker) / apply (session), like dust and the gallery
-  (`heavy.rs`); not done here (it lives in lot C's engine code).
-
+* **Open eyes still runs on the UI thread** (a second or two on a real photo), and the one-click phase switch
+  holds one frame for about 100 ms. Single frames up to about 250 ms were seen in the running app.
 * No separate IMPORT · CULL · EDIT · RETOUCH tab strip in the title bar: the existing spaces (Library with its
   Import / Sort / Classify steps, Develop, Create) are reused as asked. The context bar already has the
   Import and Sort chips.

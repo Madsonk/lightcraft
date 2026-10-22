@@ -107,6 +107,16 @@ teeth 30, eyes 30, eye wrinkles 20, forehead wrinkles 20, smile lines 15, neck s
 be the best look for each face. Freckles, double chin, stray hairs, neck brightness and the background are
 never in it (they change identity or composition).
 
+## Off the interface thread (`portrait_job`)
+
+`portrait.apply` needs the session only at its two ends, so frontends use `lightcraft_engine::portrait_job`:
+`PortraitRun` (an album, one photo at a time) and `PortraitPreview` (Before / After). Plan on the caller's thread,
+compute on a worker thread (decode, face mesh, the steps, baking), apply on the caller's thread. The worker looks at
+a stop flag before each stage, each face and between two steps (`retouch_face_until`), so a stop is heard within
+one step (0.05–0.5 s on a real face; 6 ms in the synthetic test). The caller's longest call is about 0.1 ms on the
+synthetic three-face picture (`tests_portrait_job`, asserts < 50 ms). A photo edited while it was being retouched is
+skipped. The commands themselves stay synchronous (CLI, MCP). Open eyes still needs the session all along.
+
 ## Models, and their licences
 
 Only the **face mesh** is needed for the face sliders (MediaPipe Face Landmarker, Apache-2.0, 3.8 MB,
