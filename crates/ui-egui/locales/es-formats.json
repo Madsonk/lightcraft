@@ -265,5 +265,6 @@
   "{n} photos retouched, {nf} without a face, {fl} failed": "{n} photos retouched, {nf} without a face, {fl} failed",
   "{rated} rated, {picked} picked, {rejected} rejected: one undo step": "{rated} rated, {picked} picked, {rejected} rejected: one undo step",
   "{stars}★ proposed · score {score:.0}": "{stars}★ proposed · score {score:.0}",
-  "Scenes · {n}": "Scenes · {n}"
+  "Scenes · {n}": "Scenes · {n}",
+  "… and {n} more": "… and {n} more"
 }

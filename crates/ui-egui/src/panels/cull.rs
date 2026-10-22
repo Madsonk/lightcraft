@@ -74,6 +74,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 flow::start_tour(app);
             }
         });
+        // ---- one click, first: the way most people will use it
+        if crate::context_bar::primary_button(ui, "oneClick", tr("Cull and retouch in one click"), !busy).clicked() {
+            flow::ask_one_click(app);
+        }
         ui.horizontal(|ui| {
             ui.label(RichText::new(tr("Kind of shoot")).color(t.text_label));
             let current = app.flow.cull.genre.clone();
@@ -149,11 +153,6 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             key_faces(app, ui);
             scenes(app, ui);
         }
-        ui.add_space(4.0);
-        // ---- one click
-        if crate::context_bar::primary_button(ui, "oneClick", tr("Cull and retouch in one click"), !busy).clicked() {
-            flow::ask_one_click(app);
-        }
     });
 }
 
@@ -214,11 +213,12 @@ fn duplicates(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                         let _ = app.run("library.select", serde_json::json!({"ids": ids}));
                     }
                 });
-                for (id, name, rank, score, _) in members {
-                    ui.horizontal(|ui| {
-                        let mark = if *rank == 0 { tr("best") } else { "" };
-                        ui.label(RichText::new(format!("{name}  {score:.0} {mark}")).size(11.0).color(if *rank == 0 { t.text } else { t.text_dim }));
-                        if text_button(ui, &format!("dupKeep-{id}"), "Keep this one", false)
+                for (id, name, rank, score, _) in members.iter().take(8) {
+                    ui.horizontal_wrapped(|ui| {
+                        let mark = if *rank == 0 { format!(" · {}", tr("best")) } else { String::new() };
+                        let short: String = name.chars().take(22).collect();
+                        ui.label(RichText::new(format!("{short}  {score:.0}{mark}")).size(11.0).color(if *rank == 0 { t.text } else { t.text_dim }));
+                        if text_button(ui, &format!("dupKeep-{id}"), "Keep", false)
                             .on_hover_text(tr("Pick this photo and reject the others of the group"))
                             .clicked()
                         {
@@ -226,6 +226,9 @@ fn duplicates(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                             flow::keep_one(app, &ctx, *id, &others);
                         }
                     });
+                }
+                if members.len() > 8 {
+                    ui.label(RichText::new(tr_format!("… and {n} more", n = members.len() - 8)).size(11.0).color(t.text_dim));
                 }
                 let _ = best;
             }

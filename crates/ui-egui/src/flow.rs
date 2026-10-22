@@ -593,11 +593,11 @@ pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
         if !ids.is_empty() {
             let filtered = app.flow.cull.bucket.is_some() || app.flow.cull.scene.is_some();
             // asking must not touch the view's own narrowing
-            if let Ok(l) = app.run("cull.list", json!({"ids": ids, "limit": 50000})) {
-                if l["judged"].as_u64().unwrap_or(0) > 0 || !filtered {
-                    app.flow.cull.list = Some(l);
-                    app.flow.cull.all_ids = ids;
-                }
+            if let Ok(l) = app.run("cull.list", json!({"ids": ids, "limit": 50000}))
+                && (l["judged"].as_u64().unwrap_or(0) > 0 || !filtered)
+            {
+                app.flow.cull.list = Some(l);
+                app.flow.cull.all_ids = ids;
             }
         }
     }

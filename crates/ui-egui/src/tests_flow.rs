@@ -185,3 +185,79 @@ fn the_tour_is_relaunchable_and_the_hint_comes_once() {
     assert!(h.app.ui.toast.is_none(), "once");
     assert!(serde_json::to_string(&h.app.ui).unwrap().contains(r#""flowTips":["t"]"#));
 }
+
+/// The whole flow on a real folder of photos (French): `LIGHTCRAFT_FLOW_DIR=<folder of JPEGs>
+/// LIGHTCRAFT_TEST_SHOTS=<out> cargo test -p lightcraft-ui-egui real_album_flow -- --ignored --nocapture`.
+/// Reads the folder only; the library is in memory.
+#[test]
+#[ignore = "needs LIGHTCRAFT_FLOW_DIR (real photos)"]
+fn real_album_flow() {
+    let Ok(dir) = std::env::var("LIGHTCRAFT_FLOW_DIR") else { return };
+    let mut paths: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("jpg")))
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    paths.sort();
+    let mut s = lightcraft_engine::Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": paths, "mode": "add"})).unwrap();
+    let mut app = LightcraftApp::new(s, services());
+    app.ui.settings.workspaces = true;
+    app.ui.view = ViewMode::PhotoGrid;
+    app.run("app.language.french", json!({})).unwrap();
+    let mut h = Headless::new(app, [1600.0, 950.0], 1.0);
+    h.settle(SETTLE);
+    library_sort(&mut h);
+    click(&mut h, "button:cullRun");
+    assert!(h.step_until(Duration::from_secs(300), |h| !h.app.flow.cull.running && h.app.flow.cull.list.is_some()));
+    h.settle(SETTLE);
+    shot(&mut h, "real-1-tri.png");
+    println!("counts {:?}", crate::flow::counts(&h.app));
+    click(&mut h, "button:cullBucket-rejected");
+    h.settle(SETTLE);
+    shot(&mut h, "real-2-rejetees.png");
+    click(&mut h, "button:cullShowAll");
+    click(&mut h, "button:oneClick");
+    shot(&mut h, "real-3-un-clic-confirmation.png");
+    click(&mut h, "button:oneClickGo");
+    let mut worst = 0u128;
+    let t0 = std::time::Instant::now();
+    let mut shown = false;
+    while h.app.flow.summary.is_none() && t0.elapsed() < Duration::from_secs(600) {
+        let t = std::time::Instant::now();
+        h.step();
+        worst = worst.max(t.elapsed().as_millis());
+        if !shown && h.app.flow.job.as_ref().is_some_and(|j| j.done >= 1) {
+            shot(&mut h, "real-4-un-clic-en-cours.png");
+            shown = true;
+        }
+    }
+    h.settle(SETTLE);
+    println!("one click: {:?} s, worst frame {worst} ms, summary {:?}", t0.elapsed().as_secs(), h.app.flow.summary.as_ref().map(|s| s.lines.clone()));
+    shot(&mut h, "real-5-un-clic-resume.png");
+    click(&mut h, "button:summaryClose");
+    // portrait panel on a face
+    let face = h.app.session.catalog.photos().find(|p| p.file_name.contains("180847")).map(|p| p.id.0).unwrap();
+    run(&mut h, "workspace.retouch", json!({})).unwrap();
+    run(&mut h, "library.select", json!({"ids": [face]})).unwrap();
+    run(&mut h, "panel.portrait", json!({})).unwrap();
+    h.settle(SETTLE);
+    h.app.flow.portrait.amounts.insert("blemishes".into(), 70.0);
+    h.app.flow.portrait.amounts.insert("smooth".into(), 40.0);
+    h.app.flow.portrait.amounts.insert("dark_circles".into(), 50.0);
+    click(&mut h, "button:portraitPreview");
+    assert!(h.step_until(Duration::from_secs(120), |h| h.app.flow.portrait.pair.is_some() || !h.app.flow.portrait.error.is_empty()));
+    h.settle(SETTLE);
+    println!("preview: error {:?} note {:?}", h.app.flow.portrait.error, h.app.flow.portrait.note);
+    shot(&mut h, "real-6-portrait-avant-apres.png");
+    click(&mut h, "button:portraitApply");
+    h.settle(SETTLE);
+    shot(&mut h, "real-7-portrait-applique.png");
+    h.app.flow.portrait.want_eyes = true;
+    h.step_until(Duration::from_secs(120), |h| !h.app.flow.portrait.want_eyes);
+    h.settle(SETTLE);
+    println!("eyes: error {:?} pair {}", h.app.flow.portrait.error, h.app.flow.portrait.eyes.is_some());
+    shot(&mut h, "real-8-yeux.png");
+}
