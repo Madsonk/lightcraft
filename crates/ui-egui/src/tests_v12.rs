@@ -447,29 +447,12 @@ fn quick_sort_finds_bursts_and_soft_photos_in_slices_and_writes_nothing_by_itsel
     assert_eq!(h.app.session.catalog.stacks().count(), 1);
     // the three buttons act on the selection only when clicked
     run(&mut h, "library.select", json!({"ids": [soft_id]})).unwrap();
-    // the AI picks section (lot D) sits above Sorting Help in the sidebar: scroll until the button is on screen
-    for _ in 0..30 {
-        let on_screen = h.app.widgets.iter().any(|(w, r)| w == "button:quickReject" && r.top() > 120.0 && r.bottom() < 790.0);
-        if on_screen {
-            break;
-        }
-        h.request("ui.move", json!({"x": 1350.0, "y": 500.0}), T);
-        h.request("ui.scroll", json!({"dy": -120.0}), T);
-        h.step();
-        h.step();
-    }
-    assert!(
-        h.app.widgets.iter().any(|(w, r)| w == "button:quickReject" && r.top() > 120.0 && r.bottom() < 790.0),
-        "{:?}",
-        h.app.widgets.iter().find(|(w, _)| w == "button:quickReject")
-    );
-    eprintln!("DBG over: {:?}", h.app.widgets.iter().filter(|(_, r)| r.contains(egui::pos2(1306.0, 671.0))).collect::<Vec<_>>());
-    eprintln!("DBG before: soft_id {soft_id} flag {:?} active {:?} view {:?}", h.app.session.catalog.photo(lightcraft_catalog::PhotoId(soft_id)).unwrap().flag, h.app.session.active(), h.app.ui.view);
+    // the button moved down the sidebar (the AI picks section, lot D, sits above Sorting Help): like a
+    // hand, rest the pointer on it for a frame before pressing
     let hv = h.request("ui.hoverWidget", json!({"id": "button:quickReject"}), T);
+    assert_eq!(hv["ok"], true, "{hv}");
     h.step();
-    eprintln!("DBG hover reply {hv}");
     click(&mut h, "button:quickReject");
-    eprintln!("DBG after: sel {:?} status {:?} flag {:?} toast {:?}", h.app.session.selection.ids, h.app.ui.status, h.app.session.catalog.photo(lightcraft_catalog::PhotoId(soft_id)).unwrap().flag, h.app.ui.toast);
     assert_eq!(h.app.session.catalog.photo(lightcraft_catalog::PhotoId(soft_id)).unwrap().flag, lightcraft_catalog::Flag::Reject);
     // next unsorted: a photo with no rating and no flag
     let r = run(&mut h, "workspace.sort.next", json!({})).unwrap();
