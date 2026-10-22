@@ -3520,7 +3520,6 @@ dependencies = [
  "lightcraft-catalog",
  "lightcraft-codecs",
  "lightcraft-color",
- "lightcraft-culler",
  "lightcraft-denoise",
  "lightcraft-develop",
  "lightcraft-engine",
