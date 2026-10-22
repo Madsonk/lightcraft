@@ -23,6 +23,9 @@ fn write_png(path: &Path, rgb: &[u8], w: usize, h: usize) {
     std::fs::write(path, png).unwrap();
 }
 
+/// The cancel flag is one for the whole process: the tests that set or clear it take turns.
+static CANCEL_FLAG: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn folder(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("lc-portrait-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -143,6 +146,7 @@ fn a_step_can_be_removed_and_the_others_run_again() {
 
 #[test]
 fn a_photo_without_a_face_is_skipped_not_failed_and_the_album_goes_on() {
+    let _turn = CANCEL_FLAG.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let (mut s, ids, dir) = session("batch");
     let (mut f, mut m) = (faces_of, matte_of);
     let mut src = Sources { faces: &mut f, matte: &mut m };
@@ -163,6 +167,7 @@ fn a_photo_without_a_face_is_skipped_not_failed_and_the_album_goes_on() {
 
 #[test]
 fn a_batch_stops_between_two_photos_when_cancelled() {
+    let _turn = CANCEL_FLAG.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let (mut s, ids, dir) = session("cancel");
     let (mut f, mut m) = (faces_of, matte_of);
     let mut src = Sources { faces: &mut f, matte: &mut m };
