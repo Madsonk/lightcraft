@@ -204,7 +204,7 @@ fn cancel_keeps_the_catalogue_clean_and_the_limit_protects_big_libraries() {
     }
     let e = s.execute("cull.run", &json!({"ids": all, "limit": 3, "force": true})).unwrap_err().to_string();
     assert!(e.contains("limit"), "{e}");
-    assert!(matches!(s.execute("cull.status", &json!({})).unwrap()["state"].as_str(), Some(_)));
+    assert!(s.execute("cull.status", &json!({})).unwrap()["state"].as_str().is_some());
     assert!(s.execute("cull.explain", &json!({"id": 999_999})).is_err());
     let _: Value = s.execute("cull.status", &json!({})).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
@@ -284,16 +284,32 @@ fn real_album() {
         let e = s.execute("cull.explain", &json!({"id": p["id"]})).unwrap();
         eprintln!(
             "{:<34} {:<9} {}* score {:>5} scene {} group {} rank {} | focus {:>5.1} clip {:.3} mean {:.2} | {}",
-            p["name"].as_str().unwrap_or(""), p["bucket"].as_str().unwrap_or(""), p["stars"], p["score"], p["scene"], p["group"], p["groupRank"],
-            e["measurements"]["sharpness"].as_f64().unwrap_or(0.0), e["measurements"]["clipped"].as_f64().unwrap_or(0.0),
-            e["measurements"]["exposure"]["mean"].as_f64().unwrap_or(0.0), p["reasons"]
+            p["name"].as_str().unwrap_or(""),
+            p["bucket"].as_str().unwrap_or(""),
+            p["stars"],
+            p["score"],
+            p["scene"],
+            p["group"],
+            p["groupRank"],
+            e["measurements"]["sharpness"].as_f64().unwrap_or(0.0),
+            e["measurements"]["clipped"].as_f64().unwrap_or(0.0),
+            e["measurements"]["exposure"]["mean"].as_f64().unwrap_or(0.0),
+            p["reasons"]
         );
     }
     for p in l["photos"].as_array().unwrap() {
         let e = s.execute("cull.explain", &json!({"id": p["id"]})).unwrap();
         for f in e["faces"].as_array().unwrap() {
             let r = &f["rect"];
-            eprintln!("  face of {:<30} size {:.3} counted {} eyes {} blur {} quality {:.0}", p["name"].as_str().unwrap_or(""), r[2].as_f64().unwrap_or(0.0) - r[0].as_f64().unwrap_or(0.0), f["counted"], f["eyes"], f["blur"], f["quality"].as_f64().unwrap_or(0.0));
+            eprintln!(
+                "  face of {:<30} size {:.3} counted {} eyes {} blur {} quality {:.0}",
+                p["name"].as_str().unwrap_or(""),
+                r[2].as_f64().unwrap_or(0.0) - r[0].as_f64().unwrap_or(0.0),
+                f["counted"],
+                f["eyes"],
+                f["blur"],
+                f["quality"].as_f64().unwrap_or(0.0)
+            );
         }
     }
     eprintln!("scenes {}", l["scenes"]);

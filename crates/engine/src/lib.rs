@@ -24,6 +24,7 @@ pub mod cmd;
 pub mod config;
 pub mod crs;
 pub mod crs_masks;
+pub mod cull_job;
 pub mod demo;
 pub mod denoise;
 pub mod describe;
@@ -68,7 +69,6 @@ pub mod retouch;
 pub mod search;
 pub mod segment;
 pub mod series;
-pub mod cull_job;
 pub mod sidecar;
 pub mod smart;
 pub mod video;
@@ -986,6 +986,8 @@ mod tests_autoseg;
 #[cfg(test)]
 mod tests_color;
 #[cfg(test)]
+mod tests_cull;
+#[cfg(test)]
 mod tests_denoise;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_describe;
@@ -1041,8 +1043,6 @@ mod tests_settings_files;
 mod tests_spots;
 #[cfg(all(test, feature = "search"))]
 mod tests_taste;
-#[cfg(test)]
-mod tests_cull;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_video;
 #[cfg(test)]

@@ -181,7 +181,13 @@ impl Verdict {
         match reason {
             Reason::ClosedEyes | Reason::Blurred | Reason::Underexposed | Reason::Overexposed => Severity::Reject,
             Reason::Duplicate if profile_dup_reject => Severity::Reject,
-            Reason::HalfClosedEyes | Reason::Soft | Reason::FaceSoft | Reason::FaceBlurred | Reason::Clipped | Reason::NoKeyFace | Reason::Duplicate => Severity::Warning,
+            Reason::HalfClosedEyes
+            | Reason::Soft
+            | Reason::FaceSoft
+            | Reason::FaceBlurred
+            | Reason::Clipped
+            | Reason::NoKeyFace
+            | Reason::Duplicate => Severity::Warning,
             Reason::BestOfGroup | Reason::FacesNotAnalyzed => Severity::Info,
         }
     }
