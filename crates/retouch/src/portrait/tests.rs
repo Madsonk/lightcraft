@@ -270,3 +270,13 @@ fn open_eyes_refuses_a_reference_that_does_not_fit() {
     nan[263] = [f32::NAN; 3];
     let _ = transfer(&mut out, W, W, &mesh_closed(), &open, W, W, &nan, Sides::Both);
 }
+
+#[test]
+fn open_eyes_leaves_an_eye_that_is_already_open() {
+    use super::eyes::{Sides, transfer};
+    let (open, _) = portrait(true);
+    let mut out = open.clone();
+    let r = transfer(&mut out, W, W, &mesh(true), &open, W, W, &mesh(true), Sides::Both).expect("outcome");
+    assert!(r.eyes.iter().all(|e| e.skipped == Some("this eye is already open")), "{:?}", r.eyes);
+    assert_eq!(out, open);
+}

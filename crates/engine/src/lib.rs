@@ -1029,6 +1029,8 @@ mod tests_people_dnd;
 mod tests_persist;
 #[cfg(all(test, feature = "places"))]
 mod tests_places;
+#[cfg(all(test, feature = "faces"))]
+mod tests_portrait_real;
 #[cfg(test)]
 mod tests_portrait_stack;
 #[cfg(test)]

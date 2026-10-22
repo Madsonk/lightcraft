@@ -152,8 +152,7 @@ People index knows both faces by name, the names must be equal. Then, per eye
 (`lightcraft_retouch::portrait::eyes`): the reference eye is aligned on the photo's by a similarity fixed by
 the two eye corners; the **light and colour** are matched by a smooth shift measured on a ring of skin around
 the eye; the two are joined by a feathered mask. Guards that fail say why and do nothing (never a bad eye):
-reference eye not open (< 0.2), head angle differs (> 0.12 face widths of nose offset), face size differs
-(×0.4..×2.5), mesh incomplete.
+this eye is already open (≥ 0.2), reference eye not open (< 0.2), head angle differs (> 0.12 face widths of nose offset), reference face too different in size (×0.4..×1.6: a reference face much smaller would make a blurry eye), mesh incomplete.
 
 **Always a preview first.** `portrait.openEyes {}` writes `before`/`after` PNGs and the numbers (`openBefore`,
 `openAfter`, `seamDeltaE` = mean colour difference on the join band, `scale`, `rotationDeg`) and changes nothing.
@@ -199,6 +198,51 @@ by eye before trusting the seam number.
 can still look slightly wrong), **eyelid shadow** and lash shadow on the cheek that belong to the closed pose,
 **glasses** (reflections do not match), makeup or tears that changed, motion blur between frames, and
 the burst having no frame with both eyes open (then: no reference).
+
+## Real catalogue, second pass (22/10): 145 phone JPEGs, children by a pool
+
+A read-only copy of one day of a personal catalogue (145 phone JPEGs: families and children in and around a
+pool, sun, wet skin, curly hair), real face model, real pipeline; results looked at one by one (they stay in a
+scratch folder, never in the repository).
+
+* **Faces:** found on 52 of 145 photos; the model finds the big faces and misses small, turned or partly hidden
+  ones (a 5-person selfie gave 1 face). 19 photos have a face with closed eyes (Analyze Faces).
+* **Speed:** analyzing faces of 145 photos 29 s (0.2 s each); burst grouping of 145 photos 1.5 s; retouch
+  preview with all sliders 0.4–2.1 s per photo (1–4 faces), face finding included.
+* **Open eyes, level 1, for real.** 3 of the 19 closed-eyes faces had a usable reference.
+  * *A child squinting*, reference from another frame (head turned 13°, scale ×1.15): both eyes open, lids and
+    lashes aligned, light matched, round footprint, **looks natural at 3× zoom**. This is the case the feature is for.
+  * *A child with eyes shut by the pool*: eyes open but the reference was a squint, and the reference face was
+    ×1.9 smaller (the eye would be upscaled → blurry). That is now **refused** ("reference face too different
+    in size"); before the guard the result showed a double lash line under the new eye.
+  * *A face whose eyes were already open* (the closed face of the analysis was the back of another head): the
+    transfer changed an open eye and left a bluish iris. Fixed: **an eye that is already open is never touched**.
+  * First version had a **pale rectangular patch** around the eye (a square dilation): the footprint is round now.
+  * **16 of 19 closed-eyes faces got "no reference photo"**: their neighbours either did not show the person with
+    both eyes open, or have **no capture time** (photos exported by a gallery app lose it, and the similarity
+    grouping found only 3 bursts in 145 photos). The reference search now also takes any shot within `window`
+    seconds (30) of the photo; without capture times, give `source` yourself.
+  * `seamDeltaE` (10–18 on the good cases) does **not** predict how good a transfer looks (the join band
+    contains the lid, which differs between frames): look at the preview, do not threshold on it.
+* **Stray hairs: a real defect found and fixed.** The first version looked for thin lines in a wide ring
+  around the head and erased the edge of a hand's finger near a head, wet curls and water glints (hundreds of
+  "hairs" per photo). It is now limited to a ring of 0.22 face widths and to **perfectly plain** neighbourhoods
+  (local spread < 4 L); on this catalogue it finds 0–11 things per photo and the difference map shows nothing
+  outside the faces. It remains experimental (not in the auto recipe).
+* **Background blur** with a real matte (IS-Net general-use, Apache-2.0, run through onnxruntime for the
+  test — the product does not load it yet): children and a floating cushion are cut cleanly, soft hair edges
+  survive, the pool and the trees blur plausibly; thin straps of the cushion are mushy. Matte quality, not the
+  compositing, is the limit, so the licence-clean matte (IS-Net/MODNet through an ONNX runner, as `inpaint`
+  already has for MI-GAN) is the next step, not new compositing code.
+* **Teeth:** whitened on the open mouths found (1–3 % of the face), skipped and reported on closed mouths;
+  not judged on close-ups of the teeth themselves.
+* **Skin:** shine at 25 % moves 10–38 % of the face on wet or sunlit skin (most of that is gentle); judge per photo.
+
+**Level 2, what this machine has.** No image-generation or inpainting diffusion model is installed anywhere
+on it (only speech, text and the small models of LightCraft: face landmarker, MI-GAN, depth, SCUNet/SPAN,
+SigLIP), none could be downloaded in this session, and the published licences of the candidates are the
+obstacle anyway (above). Verdict unchanged: **not feasible today**, and level 1 already covers the real case
+(a burst with one good frame).
 
 ## Measured
 

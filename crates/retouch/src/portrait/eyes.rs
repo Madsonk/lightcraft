@@ -6,9 +6,10 @@
 //! measured on a ring around it; the join is a feathered mask. Every guard that fails says why
 //! instead of producing a bad eye (reference eye not open, head turned differently, scale off).
 
-use super::raster::{Poly, fill, max_filter};
+use super::raster::{Poly, fill};
 use crate::facegeo::Face;
 use crate::lab::{lab_to_rgb8, rgb8_to_lab};
+use crate::plane::smoothstep;
 
 /// Which eyes to take (the person's left is the image's right).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,6 +177,11 @@ pub fn transfer(
             out.eyes.push(skip(rep, "mesh incomplete"));
             continue;
         };
+        // an eye that is already open is left alone (the analysis may have flagged another face)
+        if rep.open_before >= 0.2 {
+            out.eyes.push(skip(rep, "this eye is already open"));
+            continue;
+        }
         let src_open = eye_aspect(&sface, left);
         if src_open < 0.2 {
             out.eyes.push(skip(rep, "reference eye is not open"));
@@ -186,8 +192,8 @@ pub fn transfer(
             continue;
         }
         let ratio = dist(dc[0], dc[1]) / dist(sc[0], sc[1]).max(1e-3);
-        if !(0.4..=2.5).contains(&ratio) {
-            out.eyes.push(skip(rep, "face size differs too much"));
+        if !(0.4..=1.6).contains(&ratio) {
+            out.eyes.push(skip(rep, "reference face too different in size (the eye would be blurry)"));
             continue;
         }
         let Some(sim) = Sim::from_pairs(sc, dc) else {
@@ -223,11 +229,12 @@ pub fn transfer(
         let shift = |p: &Poly| -> Poly { p.iter().map(|q| [q[0] - wx0 as f32, q[1] - wy0 as f32]).collect() };
         let (dp, sp) = (shift(&dpoly), shift(&spoly));
         let union = fill(&[&dp, &sp], ww, wh);
-        let grow = ((0.28 * ew).round() as usize).max(1);
-        let core = max_filter(&union, grow);
-        let mask = core.gauss((0.10 * ew).max(0.8));
+        // a round footprint (a square one shows as a pale box): the union blurred wide, then cut
+        let grow = (0.34 * ew).max(1.0);
+        let core = union.gauss(grow * 0.5).zip(&union, |g, u| u.max(smoothstep(0.04, 0.2, g)));
+        let mask = core.gauss((0.08 * ew).max(0.8));
         // the ring: just outside the region, where only skin is
-        let outer = max_filter(&core, ((0.35 * ew).round() as usize).max(2));
+        let outer = union.gauss((0.45 * ew).max(1.0)).map(|v| if v > 0.04 { 1.0 } else { 0.0 });
         let mut ring: Vec<usize> = Vec::new();
         let mut seam: Vec<usize> = Vec::new();
         for i in 0..ww * wh {

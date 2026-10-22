@@ -412,3 +412,14 @@ fn real_faces_preview_and_apply_timings() {
         }
     }
 }
+
+#[test]
+fn capture_times_are_compared_in_seconds_across_days_and_leap_years() {
+    use crate::cmd::portrait_stack::epoch_secs;
+    let d = |a: &str, b: &str| epoch_secs(b).unwrap() - epoch_secs(a).unwrap();
+    assert_eq!(d("2025-06-29T14:15:10", "2025-06-29T14:15:12"), 2.0);
+    assert_eq!(d("2025-06-29T23:59:59", "2025-06-30T00:00:01"), 2.0);
+    assert_eq!(d("2024-02-28T12:00:00", "2024-03-01T12:00:00"), 2.0 * 86_400.0, "2024 is a leap year");
+    assert_eq!(d("2025-02-28 12:00:00", "2025-03-01 12:00:00"), 86_400.0);
+    assert!(epoch_secs("2025-06").is_none() && epoch_secs("garbage garbage garbage").is_none());
+}

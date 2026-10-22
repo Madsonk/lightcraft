@@ -521,14 +521,16 @@ impl Work {
         }
     }
 
-    /// Remove thin hairs that cross smooth background, outside the face.
+    /// Remove thin hairs that cross a plain background (a wall, a sky, a studio backdrop), outside the
+    /// face and close to it. Conservative on purpose: where the neighbourhood has any texture (water,
+    /// curly hair, hands near the head) nothing is touched.
     fn flyaways(&mut self, amt: f32) -> usize {
         let (w, h) = (self.lab.w, self.lab.h);
         let r = ((0.010 * self.fw).round() as usize).max(1);
         // a ring around the head: outside the oval, within about half a face width of it
         let ring = {
             let outside = self.oval.map(|v| 1.0 - v);
-            let near = max_filter(&self.oval, ((0.4 * self.fw) as usize).max(2).min(w.max(h)));
+            let near = max_filter(&self.oval, ((0.22 * self.fw) as usize).max(2).min(w.max(h)));
             outside.zip(&near, |o, n| o * n)
         };
         let l = &self.lab.l;
@@ -553,7 +555,7 @@ impl Work {
         for i in 0..w * h {
             if grown.d[i] > 0.5 {
                 let sd = (m2.d[i] - m1.d[i] * m1.d[i]).max(0.0).sqrt();
-                if sd < 9.0 {
+                if sd < 4.0 {
                     mask.d[i] = 1.0;
                     found.d[i] = flag.d[i];
                 }

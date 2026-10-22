@@ -16,7 +16,7 @@ use crate::{Result, Session};
 // ---- the real face finder and subject matte --------------------------------------------------
 
 #[cfg(feature = "faces")]
-fn real_faces(s: &mut Session, id: PhotoId) -> Result<Meshes> {
+pub(crate) fn real_faces(s: &mut Session, id: PhotoId) -> Result<Meshes> {
     use lightcraft_facemesh::mediapipe::Frame;
     const C: &str = "portrait.apply";
     let model = super::portrait::landmarker(s)?;
@@ -32,7 +32,7 @@ fn real_faces(s: &mut Session, id: PhotoId) -> Result<Meshes> {
 }
 
 #[cfg(not(feature = "faces"))]
-fn real_faces(_: &mut Session, _: PhotoId) -> Result<Meshes> {
+pub(crate) fn real_faces(_: &mut Session, _: PhotoId) -> Result<Meshes> {
     Err(bad("portrait.apply", "face analysis is not available in this build"))
 }
 
@@ -338,7 +338,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Open Eyes",
             ["Photo"],
             None,
-            "{id?, level?: 1|2|3 (1), source?: photo id of the reference (else the best shot of the same burst where the same person has open eyes), face?: index among the photo's faces (else the first with closed eyes), eyes?: both|left|right, apply?: false, confirmed?: false, edge?: 256..2048 (1024), path?} — put the eyes of the same person from another shot of the series into this photo (level 1: real pixels from a real frame, aligned on the eye corners, light and colour matched, feathered; nothing is invented). Always a preview first (before/after PNGs and the numbers: openBefore/openAfter, seamDeltaE, scale, rotationDeg); `apply: true` + `confirmed: true` stores it as the `open_eyes` step of the portrait stack, only for the pair previewed (one undo; the original is never touched). No usable reference → an error saying so. Level 2 (local generative) is not available: no local model with a permissive licence is good enough; level 3 (online) only prepares the eyes crop and asks for consent: nothing is sent → {id, source, face, before, after, eyes, ...}",
+            "{id?, level?: 1|2|3 (1), source?: photo id of the reference (else the best shot of the same burst, or taken within `window` seconds (30), where the same person has open eyes), window?: seconds, face?: index among the photo's faces (else the first with closed eyes), eyes?: both|left|right, apply?: false, confirmed?: false, edge?: 256..2048 (1024), path?} — put the eyes of the same person from another shot of the series into this photo (level 1: real pixels from a real frame, aligned on the eye corners, light and colour matched, feathered; nothing is invented). Always a preview first (before/after PNGs and the numbers: openBefore/openAfter, seamDeltaE, scale, rotationDeg); `apply: true` + `confirmed: true` stores it as the `open_eyes` step of the portrait stack, only for the pair previewed (one undo; the original is never touched). No usable reference → an error saying so. Level 2 (local generative) is not available: no local model with a permissive licence is good enough; level 3 (online) only prepares the eyes crop and asks for consent: nothing is sent → {id, source, face, before, after, eyes, ...}",
             has_active,
             open_eyes_cmd
         ),
@@ -479,15 +479,30 @@ fn closed_face(s: &Session, id: PhotoId) -> Option<(usize, [f32; 2])> {
 
 /// The best reference for the face at `c` of `id`: a photo of the same burst where a face at about
 /// the same place (and, when People knows them, the same person) has both eyes open.
-fn find_reference(s: &mut Session, id: PhotoId, c: [f32; 2]) -> Option<PhotoId> {
+fn find_reference(s: &mut Session, id: PhotoId, c: [f32; 2], window: f64) -> Option<PhotoId> {
     use lightcraft_catalog::{EYE_OPEN_FROM, FaceInfo};
-    let group = s.catalog.photo(id)?.analysis.as_ref()?.group?;
+    let me = s.catalog.photo(id)?;
+    let group = me.analysis.as_ref().and_then(|a| a.group);
+    let t0 = me.captured.as_deref().and_then(epoch_secs);
     let mine = names_in(s, id);
     let who = name_at(&mine, c);
-    let cands: Vec<PhotoId> =
-        s.catalog.photos().filter(|p| p.id != id && p.analysis.as_ref().and_then(|a| a.group) == Some(group)).map(|p| p.id).collect();
-    let mut best: Option<(f32, PhotoId)> = None;
-    for cid in cands {
+    // the same burst, or shot within `window` seconds (a burst the similarity grouping missed)
+    let cands: Vec<(PhotoId, f64)> = s
+        .catalog
+        .photos()
+        .filter(|p| p.id != id)
+        .filter_map(|p| {
+            let dt = match (t0, p.captured.as_deref().and_then(epoch_secs)) {
+                (Some(a), Some(b)) => (a - b).abs(),
+                _ => f64::MAX,
+            };
+            let same_group = group.is_some() && p.analysis.as_ref().and_then(|a| a.group) == group;
+            (same_group || dt <= window).then_some((p.id, if dt == f64::MAX { 0.0 } else { dt }))
+        })
+        .collect();
+    // (quality, - seconds apart): the best-looking open face, the nearest in time on a tie
+    let mut best: Option<((f32, f64), PhotoId)> = None;
+    for (cid, dt) in cands {
         let Some(faces) = s.catalog.photo(cid).and_then(|p| p.analysis.as_ref()).and_then(|a| a.faces.clone()) else { continue };
         let theirs = names_in(s, cid);
         for f in faces.iter() {
@@ -501,13 +516,33 @@ fn find_reference(s: &mut Session, id: PhotoId, c: [f32; 2]) -> Option<PhotoId> 
             {
                 continue;
             }
-            let q = f.quality();
-            if best.is_none_or(|(bq, _)| q > bq) {
-                best = Some((q, cid));
+            // nearer in time counts more than a few points of quality: the pose is likelier the same
+            let score = (f.quality() - 0.5 * dt.min(60.0) as f32, -dt);
+            if best.is_none_or(|(b, _)| score > b) {
+                best = Some((score, cid));
             }
         }
     }
     best.map(|b| b.1)
+}
+
+/// Seconds since 1970 of `YYYY-MM-DDTHH:MM:SS` (or with a space), ignoring any zone: only
+/// differences between photos of one camera matter.
+pub(crate) fn epoch_secs(t: &str) -> Option<f64> {
+    let b = t.as_bytes();
+    if b.len() < 19 {
+        return None;
+    }
+    let num = |a: usize, z: usize| t.get(a..z)?.parse::<i64>().ok();
+    let (y, mo, d, h, mi, se) = (num(0, 4)?, num(5, 7)?, num(8, 10)?, num(11, 13)?, num(14, 16)?, num(17, 19)?);
+    // days from civil (Howard Hinnant)
+    let y2 = if mo <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let doy = (153 * (mo + if mo > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some((days * 86_400 + h * 3600 + mi * 60 + se) as f64)
 }
 
 fn open_eyes_cmd(s: &mut Session, p: &Value) -> Result<Value> {
@@ -551,7 +586,7 @@ pub(crate) fn open_eyes_with(s: &mut Session, p: &Value, src: &mut Sources) -> R
     // which reference
     let source = match p.get("source").and_then(Value::as_u64) {
         Some(x) => PhotoId(x),
-        None => find_reference(s, id, c).ok_or_else(|| {
+        None => find_reference(s, id, c, f64_or(p, "window", 30.0)).ok_or_else(|| {
             bad(C, "no reference photo (pas de photo de référence): no other shot of this burst shows this person with both eyes open")
         })?,
     };
