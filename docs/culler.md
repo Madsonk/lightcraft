@@ -77,8 +77,8 @@ only when some counted face could be judged.
 |---|---|---|---|---|---|
 | closed eyes | warn | **reject** | **reject** | **reject** | ignored |
 | blurred / soft (focus) | 15 / 30 | 15 / 30 | 15 / 30 | 15 / 30 | 10 / 22 |
-| face blurred / soft (eye sharpness) | 20 / 40 | 20 / 40 | 28 / 50 | 20 / 40 | 20 / 40 |
-| duplicate similarity · gap | 0.93 · 20 s | 0.90 · 30 s | 0.92 · 20 s | 0.88 · 60 s | 0.95 · 5 s |
+| face blurred / soft (eye sharpness, faces ≥ 10 % of the long edge) | 15 / 30 | 15 / 30 | 22 / 40 | 15 / 30 | 15 / 30 |
+| duplicate similarity · colour · gap | 0.93 · 0.85 · 20 s | 0.90 · 0.85 · 30 s | 0.92 · 0.85 · 20 s | 0.88 · 0.85 · 60 s | 0.95 · 0.85 · 5 s |
 | duplicates rejected | yes | yes | yes | yes | no (review) |
 | scene gap (min) | 5 min | 10 min | 5 min | 5 min | 2 min |
 | highlights | 15 % | 15 % | 20 % | 10 % | 10 % |
@@ -184,3 +184,70 @@ originals, never the 736-photo album), imported in a throw-away catalogue, genre
   on a few labelled photos), not the culling logic. Not yet compared with Aftershoot's verdicts on the same
   album: doing so means importing the client's photos into Aftershoot (its own database, possibly its cloud), which
   was not done without an explicit go.
+
+## Calibration on real shoots (22 Oct 2026)
+
+Three read-only copies of the maintainer's own shoots, kept on the internal disk and deleted afterwards (nothing
+of them is in the repository or the vault): **72 Canon CR2** of a food shoot (low-key, plates on a black table,
+2024-12-08), **145 JPEG** of a family day (phones, 2025-06-29), **23 JPEG** of 2020-07-12. Genre *general*, face
+model installed, release build. `LIGHTCRAFT_CULL_DIR=… LIGHTCRAFT_CULL_FACES=1 cargo test --release -p lightcraft-engine
+tests_cull::real_album -- --ignored --nocapture` prints the table and the distributions below.
+
+**Throughput (release; three runs each, the machine was shared with other builds, hence the ranges):**
+
+| Shoot | Photos | Time | Photos/s |
+|---|---|---|---|
+| CR2, 26 MB each (decode of the embedded/thumbnail-level source + measure + faces) | 72 | 5.0–7.6 s | **9.5–14.4** |
+| JPEG, phones, 145 | 145 | 0.30–0.49 s | **295–485** |
+| JPEG, 23 | 23 | 0.21–0.39 s | **59–111** |
+
+The RAW rate is bounded by the decode of 26 MB files off an internal disk; judging itself is negligible.
+
+**What the first pass got wrong, seen on the images, and what changed:**
+
+* *Low-key food shoot judged by absolute numbers.* 48 of 72 photos rejected: black table → mean luminance 0.1–0.2
+  ("underexposed"), shallow depth of field on a small plate → low global focus ("blurred"). Now the blur thresholds
+  never exceed 40 % / 80 % of the album's median focus (a soft shoot is judged against itself), "underexposed"
+  needs the 95th-percentile luminance to be dark too (a low-key frame with bright highlights is not underexposed,
+  and symmetrically for overexposed), and the highlight floor never exceeds the album's median score.
+* *Duplicate groups were right* (series of the same plate, 11-frame bursts), but a duplicate is not a failure:
+  `cull.apply` gives it one star and **no Reject flag**; only technical failures (blur, exposure, closed eyes) are
+  flagged. Duplicates also need the **colour layout** (4 × 4 chroma grid) to agree, since two dark shots differ only
+  by colour; that colour gate did not change the groups on these shoots (all groups were true series) and is
+  unproven on look-alike different subjects.
+* *Smiles read as "half-closed eyes".* On the family JPEGs one face in four had an eye aspect ratio under 0.16.
+  Eyes are now *closed* when **both** are under 0.12, *narrowed* when both are under 0.17 or one is under 0.10 (a
+  wink); only closed rejects (strict genres). Narrowed-eye warnings fell from 24 to 14 of the 145 photos.
+* *Face blur.* Eye sharpness depends on the face's size in pixels: it is judged only on faces ≥ 10 % of the long
+  edge, with warn/blurred at 30 / 15 (was 40 / 20). Face-soft warnings fell from 20 to 10 photos. A heavily compressed
+  WhatsApp image (blocky, up-scaled, focus "96" because the block edges count as detail) is still flagged on its
+  faces, correctly; the global focus score is fooled by compression artefacts (limit below).
+
+## Doubtful cases (kept as examples)
+
+1. *CR2 IMG_0052* — rejected "blurred + underexposed" before the fix: a dark but sound frame of a plate; focus 9
+   against an album median of 30 (relative blur still applies: a real doubt, left to a person).
+2. *CR2 IMG_0007/0008* — hands cutting cinnamon, focus 6–10: motion blur, probably intended; rejected "blurred".
+   Sport/action shoots should use the `sport` genre.
+3. *CR2 IMG_0044–0046* — same plantain dish as IMG_0043, tiny garnish changes: duplicates of 0043 (correct), but
+   which one is *best* is decided by focus only; garnish placement is not seen.
+4. *JPEG 20250629_151653* — a smiling woman with narrowed eyes: "half-closed" before the fix.
+5. *JPEG 1000007852* — a WhatsApp re-compression of a family selfie: focus 96, faces visibly soft; the face rule
+   catches it, the global one does not.
+6. *JPEG 20250629_141510 … 141512* — three kids on a float, one squinting with the hands on the cheeks: a burst of
+   look-alikes, ranked by score; the squinting frame is correctly lower.
+7. *JPEG 20200712_180851_0xx* — an 11-frame burst, all focus 99: ranks differ by tenths of a point, so the "best"
+   frame is arbitrary; only the grouping is meaningful.
+8. *JPEG 20200712_180847 / 180850* — two near-identical sharp frames **not** grouped (colour/time differ):
+   both become highlights. Acceptable; the grouping slider (`grouping`) tightens or loosens this.
+9. *CR2 IMG_0036* — 19 % clipped highlights on a bright plate under a lamp: "clipped" warning, correct.
+10. *Wedding portfolio (earlier trial)* — IMG_0053, a groom with open eyes, read "closed" by the face model on a
+    small, turned face: the reason that motivated the prominence and size rules.
+
+## Remaining limits after calibration
+
+* The CR2 judged here are read at thumbnail level of the embedded/decoded source: global focus of a 26 MP RAW is
+  measured on 512 px, so fine focus errors (a plate slightly front- or back-focused) are not seen.
+* Sharpness counts compression block edges as detail; low-resolution up-scaled images can score as crisp.
+* The thresholds above come from three shoots by one photographer (food, family, a few portraits) — a wedding with
+  many people, a school photo day and sport were **not** re-measured; their profiles are still reasoned defaults.

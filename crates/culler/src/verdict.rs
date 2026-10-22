@@ -9,7 +9,12 @@ use crate::{Face, Shot, VERSION, dupes, scene};
 
 /// Eye aspect ratio below which an eye is closed / half closed (calibrated in `docs/faces.md`).
 const CLOSED_BELOW: f32 = 0.15;
-const HALF_BELOW: f32 = 0.20;
+/// Eye classes (eye aspect ratio). Calibrated on real shoots: smiling and squinting in the sun put one in
+/// four faces under 0.16, so only *both* eyes under 0.12 are closed and both under 0.17 narrowed;
+/// a single eye under 0.10 is a wink.
+const BOTH_CLOSED: f32 = 0.12;
+const BOTH_NARROW: f32 = 0.17;
+const WINK: f32 = 0.10;
 const OPEN_FROM: f32 = 0.24;
 /// A trustworthy album median focus.
 const MEDIAN_MIN: f32 = 30.0;
@@ -216,12 +221,12 @@ fn eye_class(face: &Face) -> EyeClass {
     if !face.judged {
         return EyeClass::NotJudged;
     }
-    let open = face.open[0].min(face.open[1]);
-    if !open.is_finite() {
+    let (lo, hi) = (face.open[0].min(face.open[1]), face.open[0].max(face.open[1]));
+    if !lo.is_finite() || !hi.is_finite() {
         EyeClass::NotJudged
-    } else if open < CLOSED_BELOW {
+    } else if hi < BOTH_CLOSED {
         EyeClass::Closed
-    } else if open < HALF_BELOW {
+    } else if hi < BOTH_NARROW || lo < WINK {
         EyeClass::Half
     } else {
         EyeClass::Open
@@ -271,17 +276,20 @@ fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
     let sharp = if shot.sharpness.is_finite() { shot.sharpness.clamp(0.0, 100.0) } else { 0.0 };
     // global focus
     let relative = album_median >= MEDIAN_MIN && sharp < p.relative_blur * album_median;
-    if sharp < p.blur_reject || relative {
+    // a whole shoot that is soft (low light, shallow depth of field on a small subject) must not be rejected
+    // by absolute numbers made for crisp ones: the thresholds never exceed a share of the album's median
+    let (reject_at, warn_at) = if album_median > 0.0 { (p.blur_reject.min(0.4 * album_median), p.blur_warn.min(0.8 * album_median)) } else { (p.blur_reject, p.blur_warn) };
+    if sharp < reject_at || relative {
         reasons.push(Reason::Blurred);
-    } else if sharp < p.blur_warn {
+    } else if sharp < warn_at {
         reasons.push(Reason::Soft);
     }
     // exposure
     let mean = shot.exposure[0];
     let clipped = if shot.clipped.is_finite() { shot.clipped.clamp(0.0, 1.0) } else { 0.0 };
-    if mean < p.dark_below || (clipped > p.clipped_reject && mean < 0.3) {
+    if (mean < p.dark_below && shot.exposure[2] < 0.35) || (clipped > p.clipped_reject && mean < 0.3) {
         reasons.push(Reason::Underexposed);
-    } else if mean > p.bright_above || (clipped > p.clipped_reject && mean > 0.7) {
+    } else if (mean > p.bright_above && shot.exposure[1] > 0.5) || (clipped > p.clipped_reject && mean > 0.7) {
         reasons.push(Reason::Overexposed);
     } else if clipped > p.clipped_warn {
         reasons.push(Reason::Clipped);
@@ -302,7 +310,7 @@ fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
                 let eyes = eye_class(f);
                 let size = side(f);
                 let eye_sharp = f.sharp[0].min(f.sharp[1]);
-                let blur = if eyes == EyeClass::NotJudged || !eye_sharp.is_finite() {
+                let blur = if eyes == EyeClass::NotJudged || !eye_sharp.is_finite() || size < p.face_blur_min_size {
                     BlurClass::NotJudged
                 } else if eye_sharp < p.face_blur_reject {
                     BlurClass::Blurred
@@ -318,17 +326,14 @@ fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
                         match eyes {
                             // a wink, or one eye lost in shadow, is for the photographer to look at;
                             // only both eyes closed rejects
-                            EyeClass::Closed => {
-                                let both = f.open[0].max(f.open[1]) < CLOSED_BELOW;
-                                reasons.push(if p.eyes == EyePolicy::Reject && both { Reason::ClosedEyes } else { Reason::HalfClosedEyes })
-                            }
+                            EyeClass::Closed => reasons.push(if p.eyes == EyePolicy::Reject { Reason::ClosedEyes } else { Reason::HalfClosedEyes }),
                             EyeClass::Half => reasons.push(Reason::HalfClosedEyes),
                             _ => {}
                         }
                     }
                     match blur {
-                        BlurClass::Blurred if size >= p.face_blur_min_size => reasons.push(Reason::FaceBlurred),
-                        BlurClass::Blurred | BlurClass::Soft => reasons.push(Reason::FaceSoft),
+                        BlurClass::Blurred => reasons.push(Reason::FaceBlurred),
+                        BlurClass::Soft => reasons.push(Reason::FaceSoft),
                         _ => {}
                     }
                     if eyes != EyeClass::NotJudged {
@@ -371,7 +376,7 @@ fn draft(shot: &Shot, opts: &Options, album_median: f32) -> Draft {
 pub fn judge(shots: &[Shot], opts: &Options) -> Vec<Verdict> {
     let n = shots.len();
     let scenes = scene::segment(shots, &opts.profile);
-    let groups = dupes::group(shots, &scenes, opts.dup_threshold(), opts.profile.dup_gap_secs);
+    let groups = dupes::group(shots, &scenes, opts.dup_threshold(), opts.dup_color_threshold(), opts.profile.dup_gap_secs);
     let album_median = median(&mut shots.iter().map(|s| s.sharpness).collect());
     let mut drafts: Vec<Draft> = shots.iter().map(|s| draft(s, opts, album_median)).collect();
 
@@ -418,11 +423,13 @@ pub fn judge(shots: &[Shot], opts: &Options) -> Vec<Verdict> {
         })
         .collect();
     // highlights: the top share of the selected photos, above an absolute floor
+    // a shoot that is soft or dark as a whole still has its best frames: the floor never exceeds the album's median score
+    let highlight_floor = HIGHLIGHT_MIN.min(median(&mut drafts.iter().map(|d| d.score).collect()));
     let mut selected: Vec<f32> = buckets.iter().zip(&drafts).filter(|(b, _)| **b == Bucket::Selected).map(|(_, d)| d.score).collect();
     selected.sort_by(|a, b| b.total_cmp(a));
     let keep = ((selected.len() as f32 * opts.profile.highlight_share).ceil() as usize).min(selected.len());
     if let Some(&cut) = keep.checked_sub(1).and_then(|k| selected.get(k)) {
-        let cut = cut.max(HIGHLIGHT_MIN);
+        let cut = cut.max(highlight_floor);
         for (b, d) in buckets.iter_mut().zip(&drafts) {
             if *b == Bucket::Selected && d.score >= cut {
                 *b = Bucket::Highlight;

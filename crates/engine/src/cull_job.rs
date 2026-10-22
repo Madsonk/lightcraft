@@ -92,7 +92,41 @@ fn measure(source: &SourceRef) -> std::result::Result<Measurement, String> {
         clipped: cull::clipped(&img),
         signature: cull::signature(&img).to_vec(),
         exposure: Some(cull::exposure(&img)),
+        color: Some(color_layout(&img)),
     })
+}
+
+/// Chroma (r, g shares) of the mean colour of each cell of a 4 × 4 grid, centred and unit norm: what the
+/// luminance-only signature cannot tell (two dark plates on a black table differ by their colours).
+fn color_layout(img: &lightcraft_raster::Rgb32f) -> Vec<f32> {
+    const N: usize = 4;
+    let (w, h) = (img.width.max(1), img.height.max(1));
+    let mut out = Vec::with_capacity(2 * N * N);
+    for cy in 0..N {
+        for cx in 0..N {
+            let (x0, x1, y0, y1) =
+                (cx * w / N, ((cx + 1) * w / N).max(cx * w / N + 1).min(w), cy * h / N, ((cy + 1) * h / N).max(cy * h / N + 1).min(h));
+            let (mut r, mut g, mut b, mut n) = (0f64, 0f64, 0f64, 0f64);
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    if let Some(c) = img.data.get(y * w + x) {
+                        r += c[0] as f64;
+                        g += c[1] as f64;
+                        b += c[2] as f64;
+                        n += 1.0;
+                    }
+                }
+            }
+            let s = (r + g + b).max(1e-6 * n.max(1.0));
+            out.push((r / s) as f32);
+            out.push((g / s) as f32);
+        }
+    }
+    let mean = out.iter().sum::<f32>() / out.len().max(1) as f32;
+    out.iter_mut().for_each(|v| *v -= mean);
+    let norm = out.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-6);
+    out.iter_mut().for_each(|v| *v /= norm);
+    out
 }
 
 /// The faces of a photo as the culler wants them; a face takes the name of the face region whose
@@ -169,6 +203,7 @@ fn launch(job: Arc<Mutex<Job>>, inputs: Vec<Input>) -> std::result::Result<(), S
                                 sharpness: m.sharpness,
                                 clipped: m.clipped,
                                 exposure: m.exposure.unwrap_or([0.45, 0.1, 0.9]),
+                                color: m.color.unwrap_or_default(),
                                 signature: m.signature,
                                 faces: inp.faces.clone(),
                                 taste: None,
@@ -382,7 +417,7 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
         let Some(ph) = s.catalog.photo(id).cloned() else { continue };
         let basis = measurement_key(s, id).unwrap_or_default();
         let cached = (!force)
-            .then(|| s.culling_cache.get(&basis).filter(|m| m.valid() && m.exposure.is_some()).cloned())
+            .then(|| s.culling_cache.get(&basis).filter(|m| m.valid() && m.exposure.is_some() && m.color.is_some()).cloned())
             .flatten()
             .filter(|_| !basis.is_empty());
         let source = s.media.origin_ref(&ph.source, SourceLevel::Thumb.max_edge());
@@ -618,9 +653,11 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
             ops.push(Op::SetRating { id, rating: v.stars });
             rated += 1;
         }
+        // a worse duplicate is not a failure: it gets one star but no Reject flag
+        let failed = v.reasons.iter().any(|r| *r != lightcraft_culler::Reason::Duplicate && Verdict::severity_of(*r, false) == lightcraft_culler::Severity::Reject);
         let want = match v.bucket {
             Bucket::Highlight => Flag::Pick,
-            Bucket::Rejected => Flag::Reject,
+            Bucket::Rejected if failed => Flag::Reject,
             _ => Flag::None,
         };
         if flags && want != Flag::None && (overwrite || ph.flag == Flag::None) && ph.flag != want {
@@ -667,7 +704,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Apply AI culling",
             [],
             None,
-            "{id?|ids?, bucket?: […], stars?: true, flags?: true, overwrite?: false} — writes the proposed stars (only to unrated photos unless overwrite) and Pick / Reject flags (highlights / rejected, only to unflagged photos unless overwrite); one undo step → {rated, picked, rejected}",
+            "{id?|ids?, bucket?: […], stars?: true, flags?: true, overwrite?: false} — writes the proposed stars (only to unrated photos unless overwrite) and Pick / Reject flags (highlights / rejected for a technical failure — a worse duplicate gets its star but no Reject flag —, only to unflagged photos unless overwrite); one undo step → {rated, picked, rejected}",
             always,
             apply
         ),

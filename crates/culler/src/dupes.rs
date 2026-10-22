@@ -47,7 +47,7 @@ impl Dsu {
 
 /// The duplicate group of every shot (input order): `Some(n)` (numbered from 0 by the first shot
 /// of each group in input order) when it has at least one look-alike, `None` otherwise.
-pub fn group(shots: &[Shot], scenes: &[u32], threshold: f32, gap_secs: i64) -> Vec<Option<u32>> {
+pub fn group(shots: &[Shot], scenes: &[u32], threshold: f32, color_threshold: f32, gap_secs: i64) -> Vec<Option<u32>> {
     let n = shots.len();
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by_key(|&i| (scenes.get(i).copied().unwrap_or(0), shots.get(i).and_then(|s| s.time).unwrap_or(i64::MAX), i));
@@ -69,7 +69,8 @@ pub fn group(shots: &[Shot], scenes: &[u32], threshold: f32, gap_secs: i64) -> V
                 }
                 _ => threshold + UNDATED_EXTRA,
             };
-            if similarity(&a.signature, &b.signature) >= need {
+            let color_ok = a.color.is_empty() || b.color.is_empty() || similarity(&a.color, &b.color) >= color_threshold;
+            if color_ok && similarity(&a.signature, &b.signature) >= need {
                 dsu.union(i, j);
             }
         }

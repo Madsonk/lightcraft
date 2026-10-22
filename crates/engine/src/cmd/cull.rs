@@ -31,6 +31,9 @@ pub(crate) struct Measurement {
     /// `[mean, p5, p95]` luminance; set by `cull.run` (absent from `photo.analyze`'s entries).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) exposure: Option<[f32; 3]>,
+    /// Colour layout for duplicate detection; set by `cull.run`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) color: Option<Vec<f32>>,
 }
 
 impl Measurement {
@@ -150,7 +153,8 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
                     if s.culling_cache.len() >= 1024 {
                         s.culling_cache.pop_first();
                     }
-                    s.culling_cache.insert(key, Measurement { sharpness: sharp, clipped: clip, signature: signature.to_vec(), exposure: None });
+                    s.culling_cache
+                        .insert(key, Measurement { sharpness: sharp, clipped: clip, signature: signature.to_vec(), exposure: None, color: None });
                 }
             }
             Err(e) => failed.push(json!([id.0, e])),

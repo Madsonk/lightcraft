@@ -83,6 +83,8 @@ pub struct Profile {
     pub bright_above: f32,
     /// Signature similarity from which two shots of one scene are duplicates (before `grouping`).
     pub dup_similarity: f32,
+    /// Colour-layout similarity two duplicates also need (when both shots have one).
+    pub dup_color: f32,
     /// Largest gap (seconds) between two shots of one duplicate group.
     pub dup_gap_secs: i64,
     /// Duplicates that are not the best of their group are rejected (otherwise: review).
@@ -102,8 +104,8 @@ impl Profile {
             blur_reject: 15.0,
             blur_warn: 30.0,
             relative_blur: 0.35,
-            face_blur_reject: 20.0,
-            face_blur_warn: 40.0,
+            face_blur_reject: 15.0,
+            face_blur_warn: 30.0,
             face_blur_min_size: 0.10,
             eyes: EyePolicy::Warn,
             clipped_reject: 0.45,
@@ -111,6 +113,7 @@ impl Profile {
             dark_below: 0.10,
             bright_above: 0.90,
             dup_similarity: 0.93,
+            dup_color: 0.85,
             dup_gap_secs: 20,
             dup_reject: true,
             scene_gap_secs: 300,
@@ -124,8 +127,8 @@ impl Profile {
             }
             Genre::Portrait => Profile {
                 eyes: EyePolicy::Reject,
-                face_blur_reject: 28.0,
-                face_blur_warn: 50.0,
+                face_blur_reject: 22.0,
+                face_blur_warn: 40.0,
                 dup_similarity: 0.92,
                 highlight_share: 0.20,
                 face_weight: 0.7,
@@ -175,6 +178,12 @@ impl Default for Options {
 impl Options {
     pub fn for_genre(genre: Genre) -> Options {
         Options { profile: Profile::for_genre(genre), grouping: 0.5, key_people: Vec::new() }
+    }
+
+    /// The colour similarity two duplicates need, with `grouping` applied.
+    pub fn dup_color_threshold(&self) -> f32 {
+        let g = if self.grouping.is_finite() { self.grouping.clamp(0.0, 1.0) } else { 0.5 };
+        (self.profile.dup_color + (0.5 - g) * 0.2).clamp(0.3, 0.99)
     }
 
     /// The similarity two shots need to be duplicates, with `grouping` applied.

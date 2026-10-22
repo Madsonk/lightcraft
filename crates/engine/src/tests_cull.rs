@@ -148,7 +148,8 @@ fn list_explain_apply_and_undo() {
     // nothing was written to ratings / flags by the run
     assert!(s.catalog.photos().all(|p| p.rating == 0 && p.flag == lightcraft_catalog::Flag::None));
     let a = s.execute("cull.apply", &json!({"ids": all})).unwrap();
-    assert!(a["rated"].as_u64().unwrap() >= 6 && a["rejected"].as_u64().unwrap() >= 3, "{a}");
+    assert!(a["rated"].as_u64().unwrap() >= 6 && a["rejected"].as_u64().unwrap() >= 1, "{a}");
+    assert_eq!(s.catalog.photo(id_of(&ids, "a3_burst_softer.png")).unwrap().rating, 1);
     assert_eq!(s.catalog.photo(id_of(&ids, "b3_dark.png")).unwrap().flag, lightcraft_catalog::Flag::Reject);
     s.execute("edit.undo", &json!({})).unwrap();
     assert!(s.catalog.photos().all(|p| p.rating == 0 && p.flag == lightcraft_catalog::Flag::None), "one undo step");
@@ -312,5 +313,30 @@ fn real_album() {
             );
         }
     }
+    // distributions of the face measurements, to calibrate the thresholds on real shoots
+    let (mut open, mut sharp, mut size) = (Vec::new(), Vec::new(), Vec::new());
+    let mut reasons: std::collections::BTreeMap<String, usize> = Default::default();
+    for p in l["photos"].as_array().unwrap() {
+        for r in p["reasons"].as_array().unwrap() {
+            *reasons.entry(r.to_string()).or_default() += 1;
+        }
+        let ph = s.catalog.photo(PhotoId(p["id"].as_u64().unwrap())).unwrap();
+        for f in ph.faces().unwrap_or(&[]) {
+            if f.eyes_judged() {
+                open.push(f.open[0].min(f.open[1]));
+                sharp.push(f.sharp[0].min(f.sharp[1]));
+                size.push((f.rect[2] - f.rect[0]).max(f.rect[3] - f.rect[1]));
+            }
+        }
+    }
+    let pct = |v: &mut Vec<f32>| -> String {
+        v.sort_by(f32::total_cmp);
+        let at = |q: f32| v.get(((v.len().max(1) - 1) as f32 * q).round() as usize).copied().unwrap_or(0.0);
+        format!("n={} p5 {:.2} p25 {:.2} p50 {:.2} p75 {:.2} p95 {:.2}", v.len(), at(0.05), at(0.25), at(0.5), at(0.75), at(0.95))
+    };
+    eprintln!("faces judged: eye openness (EAR) {}", pct(&mut open));
+    eprintln!("faces judged: eye sharpness      {}", pct(&mut sharp));
+    eprintln!("faces judged: size (long edge)   {}", pct(&mut size));
+    eprintln!("reasons {reasons:?}");
     eprintln!("scenes {}", l["scenes"]);
 }

@@ -227,3 +227,41 @@ fn face_size_is_a_share_of_the_long_edge() {
     assert!(!v[0].faces[0].counted, "{:?}", v[0].faces);
     assert!(!v[0].reasons.contains(&Reason::ClosedEyes));
 }
+
+#[test]
+fn same_layout_different_colours_are_not_duplicates() {
+    let mut a = album(1, 3, 8);
+    let sig = a.shots[0].signature.clone();
+    for (i, s) in a.shots.iter_mut().take(2).enumerate() {
+        s.signature = sig.clone();
+        s.time = Some(1_000 + i as i64);
+    }
+    let unit = |k: usize| {
+        let mut v = vec![0.0f32; 32];
+        v[k] = 1.0;
+        v[(k + 7) % 32] = -1.0;
+        v
+    };
+    let o = Options::default();
+    // no colour: grouped on luminance alone
+    assert!(judge(&a.shots, &o)[0].group.is_some());
+    a.shots[0].color = unit(1);
+    a.shots[1].color = unit(1);
+    assert!(judge(&a.shots, &o)[0].group.is_some(), "same colours: duplicates");
+    a.shots[1].color = unit(9);
+    assert!(judge(&a.shots, &o)[0].group.is_none(), "different colours: not duplicates");
+}
+
+#[test]
+fn soft_dark_shoots_are_not_rejected_by_absolute_numbers() {
+    let mut a = album(1, 12, 10);
+    // a whole low-key shoot: every frame reads soft and dark
+    for s in &mut a.shots {
+        s.sharpness = 14.0 + (s.id % 5) as f32;
+        s.exposure = [0.08, 0.01, 0.6];
+        s.faces = Some(Vec::new());
+    }
+    let v = judge(&a.shots, &Options::default());
+    assert!(v.iter().all(|x| !x.reasons.contains(&Reason::Underexposed)), "bright highlights: low-key, not underexposed");
+    assert!(v.iter().all(|x| !x.reasons.contains(&Reason::Blurred)), "a soft shoot is judged against itself");
+}

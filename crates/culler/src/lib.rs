@@ -62,6 +62,9 @@ pub struct Shot {
     pub exposure: [f32; 3],
     /// Look-alike signature ([`SIGNATURE_LEN`] floats); a shorter one just matches nothing.
     pub signature: Vec<f32>,
+    /// Colour layout (chroma on a 4 × 4 grid, centred, unit norm); empty = unknown. Duplicates need both the
+    /// luminance layout and the colour layout to agree: dark low-key shots differ only by colour.
+    pub color: Vec<f32>,
     /// `None`: faces not analyzed yet. `Some(vec![])`: no face.
     pub faces: Option<Vec<Face>>,
     /// The taste model's score 0..100 when there is a trained one, blended in lightly.
