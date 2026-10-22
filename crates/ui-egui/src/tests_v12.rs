@@ -463,7 +463,9 @@ fn quick_sort_finds_bursts_and_soft_photos_in_slices_and_writes_nothing_by_itsel
         "{:?}",
         h.app.widgets.iter().find(|(w, _)| w == "button:quickReject")
     );
+    eprintln!("DBG rect {:?} sel {:?} status {:?}", h.app.widgets.iter().find(|(w, _)| w == "button:quickReject"), h.app.session.selection.ids, h.app.ui.status);
     click(&mut h, "button:quickReject");
+    eprintln!("DBG after: sel {:?} status {:?} flag {:?} toast {:?}", h.app.session.selection.ids, h.app.ui.status, h.app.session.catalog.photo(lightcraft_catalog::PhotoId(soft_id)).unwrap().flag, h.app.ui.toast);
     assert_eq!(h.app.session.catalog.photo(lightcraft_catalog::PhotoId(soft_id)).unwrap().flag, lightcraft_catalog::Flag::Reject);
     // next unsorted: a photo with no rating and no flag
     let r = run(&mut h, "workspace.sort.next", json!({})).unwrap();
