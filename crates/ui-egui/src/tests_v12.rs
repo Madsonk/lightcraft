@@ -449,6 +449,7 @@ fn quick_sort_finds_bursts_and_soft_photos_in_slices_and_writes_nothing_by_itsel
     run(&mut h, "library.select", json!({"ids": [soft_id]})).unwrap();
     // the button moved down the sidebar (the AI picks section, lot D, sits above Sorting Help): like a
     // hand, rest the pointer on it for a frame before pressing
+    h.settle(SETTLE);
     let hv = h.request("ui.hoverWidget", json!({"id": "button:quickReject"}), T);
     assert_eq!(hv["ok"], true, "{hv}");
     h.step();
