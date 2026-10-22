@@ -14,6 +14,7 @@ lightcraft-meta = { workspace = true }
 lightcraft-lens = { workspace = true }
 lightcraft-places = { workspace = true, optional = true }
 lightcraft-geom = { workspace = true }
+lightcraft-culler = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

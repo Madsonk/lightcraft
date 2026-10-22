@@ -1,0 +1,15 @@
+[package]
+name = "lightcraft-culler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LightCraft culler (L1): per-photo AI culling verdicts (selected / highlight / review / rejected, reasons, proposed stars), duplicate groups, shooting scenes and genre profiles. Pure Rust, no I/O"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

@@ -87,6 +87,8 @@ pub const FIELDS: &[(&str, &str, Kind)] = &[
     ("faceCount", "Faces (Analyze Faces)", Kind::Number),
     ("eyesClosed", "Has Closed Eyes", Kind::Bool),
     ("eyesOpen", "All Eyes Open", Kind::Bool),
+    ("cullBucket", "AI Culling Verdict", Kind::Choice(&["highlight", "selected", "review", "rejected"])),
+    ("cullStars", "AI Culling Stars (proposed)", Kind::Number),
 ];
 
 /// The operators for a field kind: (id, label).
@@ -346,6 +348,11 @@ impl Rule {
             "faceCount" => num_op(op, p.faces().map(|f| f.len() as f64), value),
             "eyesClosed" => p.has_closed_eyes() == value.as_bool().unwrap_or(true),
             "eyesOpen" => p.has_open_eyes() == value.as_bool().unwrap_or(true),
+            "cullBucket" => {
+                let bucket = p.analysis.as_ref().and_then(|a| a.verdict.as_ref()).map(|v| v.bucket.name());
+                (bucket == Some(want.as_str())) == (op == "is")
+            }
+            "cullStars" => num_op(op, p.analysis.as_ref().and_then(|a| a.verdict.as_ref()).map(|v| v.stars as f64), value),
             "album" => {
                 let id = number(value).map(|v| crate::AlbumId(v as u64));
                 id.is_some_and(|a| cat.album(a).is_some_and(|al| !al.is_smart()) && cat.album_contains(a, p)) == (op == "is")

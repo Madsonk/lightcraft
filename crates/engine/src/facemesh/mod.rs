@@ -308,7 +308,7 @@ impl Session {
         let faces = Some(std::sync::Arc::new(scan.faces));
         let analysis = match &p.analysis {
             Some(a) => Analysis { faces, ..a.clone() },
-            None => Analysis { faces, sharpness: scan.sharpness, clipped: scan.clipped, group: None, best: false },
+            None => Analysis { faces, sharpness: scan.sharpness, clipped: scan.clipped, group: None, best: false, verdict: None },
         };
         let op = Op::SetAnalysis { id, analysis: Some(analysis) };
         if self.catalog.apply(op.clone()).is_ok() {
