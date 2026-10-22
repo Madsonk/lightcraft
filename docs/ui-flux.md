@@ -109,13 +109,41 @@ and the hints already shown are saved in `ui.json` (`flowTourDone`, `flowTips`).
 action, only when the action was done with the mouse: "La prochaine fois, essayez la touche P" (keep one of a
 duplicate group), the undo key (after writing stars/flags and after a portrait retouch).
 
+## Measured (2026-10-22, 23 phone JPEGs of a family album, debug-optimised build, M4)
+
+* **AI picks**, from the button: 23 photos judged in about 0.3 s (72 photos/s through the window); 2 best shots, 9
+  selected, 0 to review, 12 rejected; 2 duplicate groups (one of 11 photos); 3 scenes. The window answers while it
+  runs (the judging is the engine's own thread).
+* **One click** on the same album: 27 s end to end (judge, write stars and flags, retouch the 11 highlights and
+  selected photos: 9 retouched, 2 without a face, 0 failed). **The window is not smooth during the retouch: one photo
+  with a face holds the UI thread about 2.7 s (worst frame 4.1 s)**, because `portrait.apply` needs the session and
+  runs on the UI thread. The progress panel and **Stop** answer between two photos, not during one.
+* Portrait panel on a real face: Auto retouch gives 10 steps, the sliders then show the stored amounts
+  (Skin 35 / 55, …), Preview shows Before / After in the panel (screenshot taken headlessly).
+* Screenshots: the running app (French) for AI picks and the portrait panel; the headless harness for dialogs,
+  the one-click summary and Before / After (the app's headless snapshot paints user textures white, a windowed
+  one was not available while the display was off). Kept outside the repo (family photos).
+
+## Tests
+
+`tests_flow.rs` (5 + 1 ignored): judging in the background and narrowing the grid, Stop writes nothing, one click
+(confirm → run → summary → Undo everything restores stars and flags), the portrait panel, the tour and the hint.
+`real_album_flow` (ignored) runs the whole flow on `LIGHTCRAFT_FLOW_DIR` and saves screenshots. The French catalog
+test covers the three new files. `cargo test -p lightcraft-ui-egui`: 466 passed. One older test
+(`tests_v12` quick sort) had to scroll the sidebar to its button, now lower in the sidebar.
+
+Other languages: the 21 new format messages are in every `*-formats.json` (the build needs them) with the English
+text for de, es, ja, pt-br, ru, zh; only French is translated.
+
 ## Limits (honest list)
+
+* **The retouch of one photo blocks the window for about 2.7 s** (see above). Fixing it means splitting
+  `portrait.apply` into plan (session) / compute (worker) / apply (session), like dust and the gallery
+  (`heavy.rs`); not done here (it lives in lot C's engine code).
 
 * No separate IMPORT · CULL · EDIT · RETOUCH tab strip in the title bar: the existing spaces (Library with its
   Import / Sort / Classify steps, Develop, Create) are reused as asked. The context bar already has the
   Import and Sort chips.
-* One photo's preview / apply runs on the UI thread: a large raw with several faces can hold the window for a
-  couple of seconds (measured numbers in `portrait-retouch.md`); an album is chunked so Stop answers.
 * Duplicates: "keep this one" uses Pick / Reject flags; there is no side-by-side compare of the group yet
   (use Select, then Survey `N`).
 * Key faces need named people (People view); photos where none of them appears are only flagged at the next
