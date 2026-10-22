@@ -223,21 +223,48 @@ fn real_album_flow() {
     shot(&mut h, "real-3-un-clic-confirmation.png");
     click(&mut h, "button:oneClickGo");
     let mut worst = 0u128;
+    let mut frames: Vec<(u128, String)> = Vec::new();
     let t0 = std::time::Instant::now();
     let mut shown = false;
     while h.app.flow.summary.is_none() && t0.elapsed() < Duration::from_secs(600) {
         let t = std::time::Instant::now();
         h.step();
         worst = worst.max(t.elapsed().as_millis());
+        let phase = h.app.flow.job.as_ref().map_or("-".to_string(), |j| format!("{:?} done {}", j.phase, j.done));
+        frames.push((t.elapsed().as_millis(), phase));
         if !shown && h.app.flow.job.as_ref().is_some_and(|j| j.done >= 1) {
             shot(&mut h, "real-4-un-clic-en-cours.png");
             shown = true;
         }
     }
     h.settle(SETTLE);
+    frames.sort_by_key(|f| std::cmp::Reverse(f.0));
+    println!("slowest frames: {:?}", &frames[..frames.len().min(6)]);
     println!("one click: {:?} s, worst frame {worst} ms, summary {:?}", t0.elapsed().as_secs(), h.app.flow.summary.as_ref().map(|s| s.lines.clone()));
     shot(&mut h, "real-5-un-clic-resume.png");
     click(&mut h, "button:summaryClose");
+    // Stop in the middle of an album retouch: the window answers at once and nothing half-done stays
+    {
+        let ids: Vec<u64> = h.app.session.visible().iter().map(|i| i.0).collect();
+        let undo0 = h.app.session.undo.len();
+        crate::flow::start_retouch(&mut h.app, ids);
+        h.step();
+        h.step();
+        std::thread::sleep(Duration::from_millis(300));
+        h.step();
+        let t = std::time::Instant::now();
+        if let Some(j) = &mut h.app.flow.job {
+            j.stop = true;
+        }
+        h.step();
+        println!(
+            "stop answered in {} ms, summary shown: {}, undo steps added: {}",
+            t.elapsed().as_millis(),
+            h.app.flow.summary.is_some(),
+            h.app.session.undo.len() - undo0
+        );
+        click(&mut h, "button:summaryClose");
+    }
     // portrait panel on a face
     let face = h.app.session.catalog.photos().find(|p| p.file_name.contains("180847")).map(|p| p.id.0).unwrap();
     run(&mut h, "workspace.retouch", json!({})).unwrap();
