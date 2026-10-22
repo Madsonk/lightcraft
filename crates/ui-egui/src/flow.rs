@@ -340,8 +340,7 @@ fn texture_of(ctx: &egui::Context, name: &str, path: &str) -> Option<(egui::Text
     let bytes = std::fs::read(path).ok()?;
     let t = lightcraft_codecs::decode_thumbnail(&bytes, 1024).ok()?;
     let (w, h) = (t.image.width as usize, t.image.height as usize);
-    let bytes: Vec<u8> = t.image.data.iter().flatten().copied().collect();
-    let color = egui::ColorImage::from_rgba_unmultiplied([w, h], &bytes);
+    let color = crate::render::color_image(&t.image);
     Some((ctx.load_texture(name, color, egui::TextureOptions::LINEAR), [w, h]))
 }
 
@@ -383,7 +382,17 @@ pub fn run_preview_now(app: &mut LightcraftApp, ctx: &egui::Context) {
 pub fn run_eyes_now(app: &mut LightcraftApp, ctx: &egui::Context) {
     let Some(id) = app.session.active().map(|i| i.0) else { return };
     let after = scratch("eyes-after.png");
-    match app.run("portrait.openEyes", json!({"id": id, "edge": 1024, "path": after})) {
+    let params = json!({"id": id, "edge": 1024, "path": after});
+    let mut result = app.run("portrait.openEyes", params.clone());
+    // the faces of the burst must have been analysed (eye openness): do it once, then ask again
+    if let Err(e) = &result
+        && e.contains("analyzeFaces")
+    {
+        let ids: Vec<u64> = visible_ids(app).into_iter().take(60).collect();
+        let _ = app.run("photo.analyzeFaces", json!({"ids": ids}));
+        result = app.run("portrait.openEyes", params);
+    }
+    match result {
         Ok(v) => {
             let before = v["before"].as_str().map(str::to_string).unwrap_or_default();
             let after = v["after"].as_str().map(str::to_string).unwrap_or(after);
@@ -447,11 +456,7 @@ pub fn confirm_eyes(app: &mut LightcraftApp, ctx: &egui::Context) {
 
 /// Photos a retouch run would touch: the selection when several are selected, else the view.
 pub fn targets(app: &mut LightcraftApp) -> (Vec<u64>, bool) {
-    if app.session.selection.ids.len() > 1 {
-        (app.session.selection.ids.iter().map(|i| i.0).collect(), true)
-    } else {
-        (visible_ids(app), false)
-    }
+    if app.session.selection.ids.len() > 1 { (app.session.selection.ids.iter().map(|i| i.0).collect(), true) } else { (visible_ids(app), false) }
 }
 
 fn new_job(app: &LightcraftApp, one_click: bool, phase: Phase, queue: Vec<u64>) -> Job {
@@ -526,12 +531,7 @@ fn finish_job(app: &mut LightcraftApp, ctx: &egui::Context, stopped: bool) {
             rejected = job.applied["rejected"].as_u64().unwrap_or(0)
         ));
     }
-    lines.push(tr_format!(
-        "{n} photos retouched, {nf} without a face, {fl} failed",
-        n = job.retouched,
-        nf = job.no_face,
-        fl = job.failed
-    ));
+    lines.push(tr_format!("{n} photos retouched, {nf} without a face, {fl} failed", n = job.retouched, nf = job.no_face, fl = job.failed));
     lines.push(format!("{secs:.0} s"));
     app.flow.summary = Some(Summary { one_click: job.one_click, lines, undone: false, stopped });
     app.flow.cull.dirty = true;
@@ -622,10 +622,7 @@ fn step_job(app: &mut LightcraftApp, ctx: &egui::Context) {
             let picked: Vec<u64> = list["photos"]
                 .as_array()
                 .map(|a| {
-                    a.iter()
-                        .filter(|r| matches!(r["bucket"].as_str(), Some("highlight" | "selected")))
-                        .filter_map(|r| r["id"].as_u64())
-                        .collect()
+                    a.iter().filter(|r| matches!(r["bucket"].as_str(), Some("highlight" | "selected"))).filter_map(|r| r["id"].as_u64()).collect()
                 })
                 .unwrap_or_default();
             app.flow.cull.list = Some(list.clone());
@@ -715,9 +712,7 @@ pub fn overlays(app: &mut LightcraftApp, ctx: &egui::Context) {
                 }
                 ui.add_space(6.0);
                 ui.label(
-                    RichText::new(tr("Originals are never touched. Everything can be undone in one step afterwards."))
-                        .size(11.5)
-                        .color(t.text_dim),
+                    RichText::new(tr("Originals are never touched. Everything can be undone in one step afterwards.")).size(11.5).color(t.text_dim),
                 );
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
@@ -783,7 +778,7 @@ pub fn overlays(app: &mut LightcraftApp, ctx: &egui::Context) {
 const TOUR: &[(&str, &str)] = &[
     ("1 · Import", "Bring a card or a folder in from the Library ▸ Import step. The photos open in Sort."),
     ("2 · Cull", "In Sort, the AI picks section judges the whole album: nothing is written until you apply it."),
-    ("3 · Read the verdicts", "Click Highlights, Selected, To review or Rejected to narrow the grid. Hover a photo to see why."),
+    ("3 · Read the verdicts", "Click Best shots, Selected, To review or Rejected to narrow the grid. Hover a photo to see why."),
     ("4 · Duplicates", "Look-alikes are grouped: keep the best one in a click, the others are rejected (one undo)."),
     ("5 · Edit", "Develop active photo opens the Develop space. The filmstrip stays, the selection stays."),
     ("6 · Retouch", "Portrait retouch: sliders by group, Before / After, Auto retouch, open closed eyes."),

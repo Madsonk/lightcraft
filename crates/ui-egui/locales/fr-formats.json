@@ -257,7 +257,6 @@
   "Retouch the album ({n})": "Retoucher l’album ({n})",
   "Retouch the selection ({n})": "Retoucher la sélection ({n})",
   "Scene {n} · {count} photos · {hi}/{sel}/{rev}/{rej}": "Scène {n} · {count} photos · {hi}/{sel}/{rev}/{rej}",
-  "Scenes (smart shooting time) · {n}": "Scènes (temps de prise de vue intelligent) · {n}",
   "Stars and flags written: {rated} rated, {picked} picked, {rejected} rejected": "Notes et drapeaux écrits : {rated} notées, {picked} retenues, {rejected} rejetées",
   "{d} of {n} photos judged": "{d} photos jugées sur {n}",
   "{faces} face(s) found": "{faces} visage(s) trouvé(s)",
@@ -265,5 +264,6 @@
   "{n} photos judged: {hi} highlights, {sel} selected, {rev} to review, {rej} rejected": "{n} photos jugées : {hi} points forts, {sel} sélectionnées, {rev} à réviser, {rej} rejetées",
   "{n} photos retouched, {nf} without a face, {fl} failed": "{n} photos retouchées, {nf} sans visage, {fl} en échec",
   "{rated} rated, {picked} picked, {rejected} rejected: one undo step": "{rated} notées, {picked} retenues, {rejected} rejetées : une seule étape d’annulation",
-  "{stars}★ proposed · score {score:.0}": "{stars}★ proposées · score {score:.0}"
+  "{stars}★ proposed · score {score:.0}": "{stars}★ proposées · score {score:.0}",
+  "Scenes · {n}": "Scènes · {n}"
 }

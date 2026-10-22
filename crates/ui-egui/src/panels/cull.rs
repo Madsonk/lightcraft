@@ -12,8 +12,7 @@ use crate::i18n::{tr, tr_format};
 use crate::theme::Tokens;
 use crate::widgets::{register, text_button};
 
-pub const BUCKETS: [(&str, &str); 4] =
-    [("highlight", "Highlights"), ("selected", "Selected"), ("review", "To review"), ("rejected", "Rejected")];
+pub const BUCKETS: [(&str, &str); 4] = [("highlight", "Best shots"), ("selected", "Selected"), ("review", "To review"), ("rejected", "Rejected")];
 
 pub fn bucket_colour(bucket: Bucket) -> Color32 {
     match bucket {
@@ -40,7 +39,7 @@ pub fn reasons_text(v: &lightcraft_culler::Verdict) -> Vec<String> {
 
 pub fn bucket_label(b: Bucket) -> &'static str {
     match b {
-        Bucket::Highlight => "Highlights",
+        Bucket::Highlight => "Best shots",
         Bucket::Selected => "Selected",
         Bucket::Review => "To review",
         Bucket::Rejected => "Rejected",
@@ -119,14 +118,14 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     };
                     ui.painter().rect_filled(r, 5.0, fill);
                     ui.painter().circle_filled(r.left_center() + vec2(14.0, 0.0), 5.0, colour_of(key));
+                    ui.painter().text(r.left_center() + vec2(28.0, 0.0), egui::Align2::LEFT_CENTER, tr(label), t.semibold(12.0), t.text);
                     ui.painter().text(
-                        r.left_center() + vec2(28.0, 0.0),
-                        egui::Align2::LEFT_CENTER,
-                        tr(label),
+                        r.right_center() - vec2(10.0, 0.0),
+                        egui::Align2::RIGHT_CENTER,
+                        c[i].to_string(),
                         t.semibold(12.0),
-                        t.text,
+                        t.text_label,
                     );
-                    ui.painter().text(r.right_center() - vec2(10.0, 0.0), egui::Align2::RIGHT_CENTER, c[i].to_string(), t.semibold(12.0), t.text_label);
                     if resp.on_hover_text(tr("Show only these photos (click again to show all)")).clicked() {
                         flow::set_filter(app, if on { None } else { Some(key) }, None);
                     }
@@ -196,40 +195,41 @@ fn duplicates(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let groups = flow::duplicate_groups(app);
     let ctx = ui.ctx().clone();
     let head = tr_format!("Duplicates · {n} groups", n = groups.len());
-    let open = egui::CollapsingHeader::new(RichText::new(head).font(t.semibold(12.0))).id_salt("cullDup").default_open(false).show(ui, |ui| {
-        if groups.is_empty() {
-            ui.label(RichText::new(tr("No look-alike photos found")).color(t.text_dim));
-        }
-        let active = app.session.active().map(|i| i.0);
-        // the active photo's group first, then the others
-        let mut keys: Vec<_> = groups.keys().copied().collect();
-        keys.sort_by_key(|k| !groups[k].iter().any(|m| Some(m.0) == active));
-        for (n, key) in keys.into_iter().take(40).enumerate() {
-            let members = &groups[&key];
-            let best = members.first().map(|m| m.0);
-            ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(tr_format!("Group {n}: {k} photos", n = n + 1, k = members.len())).font(t.semibold(11.5)).color(t.text));
-                if text_button(ui, &format!("dupSelect-{}-{}", key.0, key.1), "Select", false).clicked() {
-                    let ids: Vec<u64> = members.iter().map(|m| m.0).collect();
-                    let _ = app.run("library.select", serde_json::json!({"ids": ids}));
-                }
-            });
-            for (id, name, rank, score, _) in members {
-                ui.horizontal(|ui| {
-                    let mark = if *rank == 0 { tr("best") } else { "" };
-                    ui.label(RichText::new(format!("{name}  {score:.0} {mark}")).size(11.0).color(if *rank == 0 { t.text } else { t.text_dim }));
-                    if text_button(ui, &format!("dupKeep-{id}"), "Keep this one", false)
-                        .on_hover_text(tr("Pick this photo and reject the others of the group"))
-                        .clicked()
-                    {
-                        let others: Vec<u64> = members.iter().map(|m| m.0).filter(|x| x != id).collect();
-                        flow::keep_one(app, &ctx, *id, &others);
+    let open =
+        egui::CollapsingHeader::new(RichText::new(head).font(t.semibold(12.0))).id_salt("cullDup").default_open(!groups.is_empty()).show(ui, |ui| {
+            if groups.is_empty() {
+                ui.label(RichText::new(tr("No look-alike photos found")).color(t.text_dim));
+            }
+            let active = app.session.active().map(|i| i.0);
+            // the active photo's group first, then the others
+            let mut keys: Vec<_> = groups.keys().copied().collect();
+            keys.sort_by_key(|k| !groups[k].iter().any(|m| Some(m.0) == active));
+            for (n, key) in keys.into_iter().take(40).enumerate() {
+                let members = &groups[&key];
+                let best = members.first().map(|m| m.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new(tr_format!("Group {n}: {k} photos", n = n + 1, k = members.len())).font(t.semibold(11.5)).color(t.text));
+                    if text_button(ui, &format!("dupSelect-{}-{}", key.0, key.1), "Select", false).clicked() {
+                        let ids: Vec<u64> = members.iter().map(|m| m.0).collect();
+                        let _ = app.run("library.select", serde_json::json!({"ids": ids}));
                     }
                 });
+                for (id, name, rank, score, _) in members {
+                    ui.horizontal(|ui| {
+                        let mark = if *rank == 0 { tr("best") } else { "" };
+                        ui.label(RichText::new(format!("{name}  {score:.0} {mark}")).size(11.0).color(if *rank == 0 { t.text } else { t.text_dim }));
+                        if text_button(ui, &format!("dupKeep-{id}"), "Keep this one", false)
+                            .on_hover_text(tr("Pick this photo and reject the others of the group"))
+                            .clicked()
+                        {
+                            let others: Vec<u64> = members.iter().map(|m| m.0).filter(|x| x != id).collect();
+                            flow::keep_one(app, &ctx, *id, &others);
+                        }
+                    });
+                }
+                let _ = best;
             }
-            let _ = best;
-        }
-    });
+        });
     let _ = open;
 }
 
@@ -276,7 +276,7 @@ fn scenes(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 .collect()
         })
         .unwrap_or_default();
-    let head = tr_format!("Scenes (smart shooting time) · {n}", n = rows.len());
+    let head = tr_format!("Scenes · {n}", n = rows.len());
     egui::CollapsingHeader::new(RichText::new(head).font(t.semibold(12.0))).id_salt("cullScenes").default_open(false).show(ui, |ui| {
         for (scene, count, b) in rows.into_iter().take(60) {
             let on = app.flow.cull.scene == Some(scene);
@@ -289,7 +289,8 @@ fn scenes(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 rev = b[2],
                 rej = b[3]
             );
-            if text_button(ui, &format!("cullScene-{scene}"), &label, on).on_hover_text(tr("Highlights / selected / to review / rejected")).clicked() {
+            if text_button(ui, &format!("cullScene-{scene}"), &label, on).on_hover_text(tr("Best shots / selected / to review / rejected")).clicked()
+            {
                 flow::set_filter(app, None, if on { None } else { Some(scene) });
             }
         }

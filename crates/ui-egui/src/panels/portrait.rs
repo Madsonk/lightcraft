@@ -68,6 +68,13 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         if working {
             ui.label(RichText::new(tr("Working…")).color(t.accent));
         }
+        if !app.flow.portrait.error.is_empty() {
+            ui.label(RichText::new(app.flow.portrait.error.clone()).color(egui::Color32::from_rgb(225, 120, 110)));
+        }
+        if let Some(pair) = &app.flow.portrait.pair {
+            ui.label(RichText::new(app.flow.portrait.note.clone()).size(11.0).color(t.text_dim));
+            before_after(ui, pair, "portraitPair");
+        }
         // ---- the groups
         let sliders = app.flow.portrait.sliders.clone();
         for group in GROUPS {
@@ -77,9 +84,11 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             }
             let touched = members.iter().filter(|s| app.flow.portrait.amounts.get(&s.id).copied().unwrap_or(0.0) > 0.0).count();
             let head = if touched > 0 { format!("{} · {touched}", tr(group)) } else { tr(group).to_string() };
-            egui::CollapsingHeader::new(RichText::new(head).font(t.semibold(12.0))).id_salt(("portraitGroup", group)).default_open(group == "Skin").show(
-                ui,
-                |ui| {
+            egui::CollapsingHeader::new(RichText::new(head).font(t.semibold(12.0)))
+                .id_salt(("portraitGroup", group))
+                .default_open(group == "Skin")
+                .show(ui, |ui| {
+                    ui.spacing_mut().slider_width = (ui.available_width() - 150.0).max(60.0);
                     for s in members {
                         let mut v = app.flow.portrait.amounts.get(&s.id).copied().unwrap_or(0.0);
                         let resp = ui.add(egui::Slider::new(&mut v, 0.0..=100.0).text(tr(&s.label)).integer());
@@ -97,8 +106,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                             });
                         }
                     }
-                },
-            );
+                });
         }
         // ---- preview / apply / undo
         ui.add_space(2.0);
@@ -127,50 +135,47 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 let _ = app.run("edit.redo", serde_json::json!({}));
                 app.flow.portrait.loaded_for = None;
             }
-            if text_button(ui, "portraitReset", "Remove the retouch", false).on_hover_text(tr("Back to the photo without portrait retouch")).clicked() {
+            if text_button(ui, "portraitReset", "Remove the retouch", false).on_hover_text(tr("Back to the photo without portrait retouch")).clicked()
+            {
                 if let Some(id) = app.session.active() {
                     let _ = app.run("portrait.reset", serde_json::json!({"id": id.0}));
                 }
                 app.flow.portrait.loaded_for = None;
             }
         });
-        if !app.flow.portrait.error.is_empty() {
-            ui.label(RichText::new(app.flow.portrait.error.clone()).color(egui::Color32::from_rgb(225, 120, 110)));
-        }
-        if !app.flow.portrait.note.is_empty() {
-            ui.label(RichText::new(app.flow.portrait.note.clone()).size(11.0).color(t.text_dim));
-        }
-        if let Some(pair) = &app.flow.portrait.pair {
-            before_after(ui, pair, "portraitPair");
-        }
         // ---- open eyes
         ui.add_space(4.0);
-        egui::CollapsingHeader::new(RichText::new(tr("Open eyes")).font(t.semibold(12.0))).id_salt("portraitEyes").default_open(false).show(ui, |ui| {
-            ui.label(
-                RichText::new(tr("Takes the eyes of the same person from another shot of the burst. Always a preview first; nothing is invented."))
+        egui::CollapsingHeader::new(RichText::new(tr("Open eyes")).font(t.semibold(12.0))).id_salt("portraitEyes").default_open(false).show(
+            ui,
+            |ui| {
+                ui.label(
+                    RichText::new(tr(
+                        "Takes the eyes of the same person from another shot of the burst. Always a preview first; nothing is invented.",
+                    ))
                     .size(11.0)
                     .color(t.text_dim),
-            );
-            if text_button(ui, "eyesPreview", "Preview the eyes", false).clicked() {
-                app.flow.portrait.want_eyes = true;
-                app.flow.portrait.error.clear();
-            }
-            if let Some(pair) = &app.flow.portrait.eyes {
-                before_after(ui, pair, "eyesPair");
-                let mut accept = false;
-                let mut reject = false;
-                ui.horizontal(|ui| {
-                    accept = crate::context_bar::primary_button(ui, "eyesAccept", tr("Accept"), true).clicked();
-                    reject = text_button(ui, "eyesReject", "Discard", false).clicked();
-                });
-                if accept {
-                    flow::confirm_eyes(app, &ctx);
+                );
+                if text_button(ui, "eyesPreview", "Preview the eyes", false).clicked() {
+                    app.flow.portrait.want_eyes = true;
+                    app.flow.portrait.error.clear();
                 }
-                if reject {
-                    app.flow.portrait.eyes = None;
+                if let Some(pair) = &app.flow.portrait.eyes {
+                    before_after(ui, pair, "eyesPair");
+                    let mut accept = false;
+                    let mut reject = false;
+                    ui.horizontal(|ui| {
+                        accept = crate::context_bar::primary_button(ui, "eyesAccept", tr("Accept"), true).clicked();
+                        reject = text_button(ui, "eyesReject", "Discard", false).clicked();
+                    });
+                    if accept {
+                        flow::confirm_eyes(app, &ctx);
+                    }
+                    if reject {
+                        app.flow.portrait.eyes = None;
+                    }
                 }
-            }
-        });
+            },
+        );
     });
 }
 

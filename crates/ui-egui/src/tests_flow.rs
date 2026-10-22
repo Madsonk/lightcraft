@@ -12,8 +12,19 @@ use crate::state::{RightPanel, ViewMode};
 const T: Duration = Duration::from_secs(30);
 const SETTLE: Duration = Duration::from_secs(120);
 
+fn services() -> crate::Services {
+    let png = |img: &lightcraft_raster::Rgba8| {
+        lightcraft_codecs::encode_png(&lightcraft_codecs::EncodeImage::rgba8(img), &lightcraft_codecs::EncodeMeta::default()).unwrap_or_default()
+    };
+    crate::Services {
+        png: Some(Box::new(png)),
+        write: Some(Box::new(|p: &str, b: &[u8]| std::fs::write(p, b).map_err(|e| e.to_string()))),
+        ..Default::default()
+    }
+}
+
 fn demo() -> Headless {
-    let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Default::default());
+    let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), services());
     app.ui.settings.workspaces = true;
     app.ui.view = ViewMode::PhotoGrid;
     let mut h = Headless::new(app, [1500.0, 950.0], 1.0);
@@ -105,14 +116,8 @@ fn ai_picks_can_be_stopped() {
 fn one_click_confirms_runs_summarises_and_undoes_in_one_step() {
     let mut h = demo();
     library_sort(&mut h);
-    let before: Vec<_> = h
-        .app
-        .session
-        .visible()
-        .to_vec()
-        .iter()
-        .filter_map(|id| h.app.session.catalog.photo(*id).map(|p| (p.rating, p.flag)))
-        .collect();
+    let before: Vec<_> =
+        h.app.session.visible().to_vec().iter().filter_map(|id| h.app.session.catalog.photo(*id).map(|p| (p.rating, p.flag))).collect();
     click(&mut h, "button:oneClick");
     assert!(h.app.flow.confirm.is_some(), "asks first");
     assert!(has(&h, "button:oneClickGo") && has(&h, "button:oneClickCancel"));
@@ -128,14 +133,8 @@ fn one_click_confirms_runs_summarises_and_undoes_in_one_step() {
     shot(&mut h, "flux-4-one-click-summary.png");
     assert!(has(&h, "button:summaryUndo"));
     click(&mut h, "button:summaryUndo");
-    let after: Vec<_> = h
-        .app
-        .session
-        .visible()
-        .to_vec()
-        .iter()
-        .filter_map(|id| h.app.session.catalog.photo(*id).map(|p| (p.rating, p.flag)))
-        .collect();
+    let after: Vec<_> =
+        h.app.session.visible().to_vec().iter().filter_map(|id| h.app.session.catalog.photo(*id).map(|p| (p.rating, p.flag))).collect();
     assert_eq!(before, after, "one undo took the stars and flags back");
     click(&mut h, "button:summaryClose");
     assert!(h.app.flow.summary.is_none());

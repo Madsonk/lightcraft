@@ -257,7 +257,6 @@
   "Retouch the album ({n})": "Retouch the album ({n})",
   "Retouch the selection ({n})": "Retouch the selection ({n})",
   "Scene {n} · {count} photos · {hi}/{sel}/{rev}/{rej}": "Scene {n} · {count} photos · {hi}/{sel}/{rev}/{rej}",
-  "Scenes (smart shooting time) · {n}": "Scenes (smart shooting time) · {n}",
   "Stars and flags written: {rated} rated, {picked} picked, {rejected} rejected": "Stars and flags written: {rated} rated, {picked} picked, {rejected} rejected",
   "{d} of {n} photos judged": "{d} of {n} photos judged",
   "{faces} face(s) found": "{faces} face(s) found",
@@ -265,5 +264,6 @@
   "{n} photos judged: {hi} highlights, {sel} selected, {rev} to review, {rej} rejected": "{n} photos judged: {hi} highlights, {sel} selected, {rev} to review, {rej} rejected",
   "{n} photos retouched, {nf} without a face, {fl} failed": "{n} photos retouched, {nf} without a face, {fl} failed",
   "{rated} rated, {picked} picked, {rejected} rejected: one undo step": "{rated} rated, {picked} picked, {rejected} rejected: one undo step",
-  "{stars}★ proposed · score {score:.0}": "{stars}★ proposed · score {score:.0}"
+  "{stars}★ proposed · score {score:.0}": "{stars}★ proposed · score {score:.0}",
+  "Scenes · {n}": "Scenes · {n}"
 }

@@ -15,7 +15,7 @@ hooks in `lib.rs`, `panels/right.rs`, `panels/strip.rs`, `panels/grid.rs`, `menu
 |---|---|---|---|
 | IMPORT | bring a card / a folder in | Library ▸ **Import** step (existing home) | `file.addPhotos`, `workspace.home.*` |
 | CULL | judge the album | Library ▸ **Sort** step, right sidebar, top: **AI picks** (new section) | `cull.run`, `cull.status`, `cull.cancel` |
-| | read the four buckets | the same section: Highlights / Selected / To review / Rejected, each with its count; a click narrows the grid | `cull.list {bucket, filter}` |
+| | read the four buckets | the same section: Best shots / Selected / To review / Rejected, each with its count; a click narrows the grid | `cull.list {bucket, filter}` |
 | | why this verdict | a coloured dot on every judged thumbnail, reasons on hover; the section shows the active photo's verdict and reasons | `Analysis.verdict`, `cull.explain` |
 | | duplicates | section **Duplicates · N groups**: groups, best first, **Keep this one** (Pick it, Reject the others, one undo), **Select** | `cull.list`, `photo.flag`, `library.select` |
 | | key faces | section **Key faces**: tick the people who matter (used by the next run), or show only one person | `people.list`, `people.photos {filter}`, `cull.run {keyPeople}` |
