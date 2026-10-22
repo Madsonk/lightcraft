@@ -411,7 +411,13 @@ pub fn run_eyes_now(app: &mut LightcraftApp, ctx: &egui::Context) {
         }
         Err(e) => {
             app.flow.portrait.eyes = None;
-            app.flow.portrait.error = e;
+            app.flow.portrait.error = if e.contains("no face with closed eyes") {
+                tr("No closed eyes found in this photo").to_string()
+            } else if e.contains("no reference photo") {
+                tr("No other shot of the burst has this person's eyes open").to_string()
+            } else {
+                e
+            };
         }
     }
 }

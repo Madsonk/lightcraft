@@ -88,7 +88,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 .id_salt(("portraitGroup", group))
                 .default_open(group == "Skin")
                 .show(ui, |ui| {
-                    ui.spacing_mut().slider_width = (ui.available_width() - 150.0).max(60.0);
+                    ui.spacing_mut().slider_width = (ui.available_width() - 215.0).max(50.0);
                     for s in members {
                         let mut v = app.flow.portrait.amounts.get(&s.id).copied().unwrap_or(0.0);
                         let resp = ui.add(egui::Slider::new(&mut v, 0.0..=100.0).text(tr(&s.label)).integer());
