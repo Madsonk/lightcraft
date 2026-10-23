@@ -57,6 +57,10 @@ fn rect(h: &Headless, id: &str) -> egui::Rect {
 }
 
 fn click(h: &mut Headless, id: &str) {
+    // like a hand: rest the pointer on the button for a frame, then press (a button that has just
+    // moved, or appeared, takes the click only once the pointer was over it)
+    h.request("ui.hoverWidget", json!({"id": id}), T);
+    h.step();
     let r = h.request("ui.clickWidget", json!({"id": id}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();

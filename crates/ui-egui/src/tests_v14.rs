@@ -450,6 +450,8 @@ fn series_ui_preview_does_not_edit_and_apply_is_explicit() {
     assert!(has(&h, "image:proposalsBefore"));
     assert!(has(&h, "image:proposalsAfter"));
     assert_eq!(h.app.session.active(), Some(ids[0]));
+    h.request("ui.hoverWidget", json!({"id":"button:seriesApply"}), T);
+    h.step();
     let click = h.request("ui.clickWidget", json!({"id":"button:seriesApply"}), T);
     assert_eq!(click["ok"], true);
     h.step();
