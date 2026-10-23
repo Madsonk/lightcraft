@@ -816,11 +816,11 @@ pub fn overlays(app: &mut LightcraftApp, ctx: &egui::Context) {
 // -------------------------------------------------------------------------------------------- tour
 
 const TOUR: &[(&str, &str)] = &[
-    ("1 · Import", "Bring a card or a folder in from the Library ▸ Import step. The photos open in Sort."),
+    ("1 · Import", "Step 1 of the journey bar: bring a card or a folder in. The photos open in Sort."),
     ("2 · Cull", "In Sort, the AI picks section judges the whole album: nothing is written until you apply it."),
     ("3 · Read the verdicts", "Click Best shots, Selected, To review or Rejected to narrow the grid. Hover a photo to see why."),
     ("4 · Duplicates", "Look-alikes are grouped: keep the best one in a click, the others are rejected (one undo)."),
-    ("5 · Edit", "Develop active photo opens the Develop space. The filmstrip stays, the selection stays."),
+    ("5 · Edit", "The journey bar offers the next step: Retouch the picks opens the Develop space. The filmstrip stays, the selection stays."),
     ("6 · Retouch", "Portrait retouch: sliders by group, Before / After, Auto retouch, open closed eyes."),
     ("7 · One click", "Cull and retouch in one click does steps 2 to 6 on the album, and one Undo takes it all back."),
 ];

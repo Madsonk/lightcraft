@@ -21,7 +21,7 @@ hooks in `lib.rs`, `panels/right.rs`, `panels/strip.rs`, `panels/grid.rs`, `menu
 | | key faces | section **Key faces**: tick the people who matter (used by the next run), or show only one person | `people.list`, `people.photos {filter}`, `cull.run {keyPeople}` |
 | | sort by scene | section **Scenes**: each scene with its four counts, a click narrows the grid to it | `cull.list {scene, filter}` |
 | | stars, flags | **Write the proposed stars and flags** (one undo step); the grid, the keys 1–5, P, X stay as they were | `cull.apply` |
-| EDIT | open the photo | context bar **Develop active photo →** (existing), Ctrl+2 | `workspace.retouchSelection` |
+| EDIT | open the photo | the journey bar's next action (**Retouch the N picks →**) or step 3, Ctrl+2 | `workspace.retouchSelection` |
 | RETOUCH | sliders by group | tool strip ▸ **Portrait** (Shift+T) in the Develop space: Skin, Wrinkles, Face, Mouth and eyes, Hair, Neck, Background | `portrait.list`, `portrait.apply` |
 | | before / after | **Preview** (stores nothing) shows two pictures side by side in the panel | `portrait.preview` |
 | | undo / redo | **Undo**, **Redo** buttons (Cmd+Z / Cmd+Shift+Z work as ever); **Remove the retouch** | `edit.undo`, `edit.redo`, `portrait.reset` |

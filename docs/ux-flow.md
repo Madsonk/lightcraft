@@ -77,3 +77,41 @@ One accent (blue); three button kinds (primary: once per screen, secondary, quie
 radii 4 / 6 / 10; type 11 / 12.5 / 14 / 16; five states (ok, warning, error, info, busy) with colour and glyph;
 buttons 26 pt high, registered as `button:{id}`. Screens touched by the refonte use it; older screens keep
 `widgets::text_button`, which draws the same secondary look.
+
+## Before / after (same 30-photo CR2 library, same window, measured on the running app)
+
+| | Before | After |
+|---|---:|---:|
+| Navigation levels / places (title bar spaces + Library chips + "Develop active photo") | 2 levels, 6 places, 3 ways to change space | **1 bar, 4 steps** (+ "Archive", one quiet button) |
+| Menus / items / submenus (unchanged: nothing removed) | 6 / 263 / 20 | 6 / 263 / 20 |
+| Tool-strip tools | 12 (Retouch space: 12) | 11 (Retouch space: **9**: History, Versions, Proposals are in the left column / a button of Portrait) |
+| Primary (blue) buttons on the Sort screen | 3 | **1** (the bar's next action) |
+| Visible buttons + icons: Import / Sort / Classify | 39 / 61 / 38 | 34 / **49** / 36 (+6 when "More tools" is open) |
+| Visible buttons + icons: Develop / Develop ▸ Crop / Create | 83 / 99 / 29 | 74 / 90 / 29 |
+| Right sidebar of Sort, closed by default | AI picks + Batch processing + Sorting help + Quick Develop + People recognition + Keywords + Description + Metadata | AI picks; everything else under **More tools** |
+| "Help me sort" places | 5 | 1 main (AI picks), 4 shortcuts |
+| Portrait places / engines | 5 / 2 | 1 main (Portrait) + 1 button to the recipe / 2 |
+| UI clicks, shoot → sorted → retouched → exported | **9** (+5 dialog/key actions) | **8**: import 2 (+2 dialog), then **4 on the same button at the same place** (*Sort the photos →*, *Judge the photos*, *Retouch the 10 picks →*, *Export →*), then 1 (*Create the web gallery*) (+1 folder dialog) |
+| Screens that say what to do next | 0 | every step |
+| English strings seen on the Import / Sort / Export screens (French UI) | ~25 | 0 on those three screens |
+| Button looks on the touched screens | 3 | 3 kinds, one 26 pt height |
+
+The click count falls by one and the dialog/key actions by four, but the real gain is that every one of the four
+journey clicks is "the blue button at the right end of the bar". A beginner never has to look for the next step.
+
+## Beginner's walk (what still gets in the way)
+
+Run on the app, French UI, from an empty library to a gallery. What worked: the bar always named the next step;
+the Sort sidebar showed one panel; the Export screen had one blue button. What is left, honestly:
+
+1. **Import still needs the OS folder dialog** (2 actions) and there is no drag-and-drop proof from the walk.
+2. **The Retouch step does not say what to retouch.** The bar says *Export →* even if nothing was edited; the Develop
+   panel (by task, by type) is as dense as before, and the strip still has 9 tools. A "start with a preset" hint
+   belongs here.
+3. **AI picks is long** (judge, four buckets, why, duplicates, key faces, scenes, apply, one click): three of its sub-
+   sections should fold until there is something in them.
+4. **The two-row filter bar** above the grid is on by default in Sort.
+5. **Archive (Classify) was not reworked**, and the legacy *Quick sort* is hidden, not merged, in More tools.
+6. **Design tokens are used on the screens touched**: the other panels (Develop sliders, Masking, Info…) still
+   draw with `text_button`, and some English strings remain there (not audited).
+7. **A 30-photo library hides the cost of the long sidebar**: with 27 000 photos the Sort figure counts only the view.

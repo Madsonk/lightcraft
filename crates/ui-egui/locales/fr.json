@@ -2310,14 +2310,12 @@
   "Before / After without storing anything": "Avant / Après sans rien enregistrer",
   "Blur": "Flou",
   "Dim": "Assombrir",
-  "Bring a card or a folder in from the Library ▸ Import step. The photos open in Sort.": "Importez une carte ou un dossier depuis Bibliothèque > Import. Les photos s’ouvrent dans Tri.",
   "Cull and retouch in one click": "Sélection et retouche en un clic",
   "Cull and retouch in one click does steps 2 to 6 on the album, and one Undo takes it all back.": "« Sélection et retouche en un clic » fait les étapes 2 à 6 sur l’album, et un seul Annuler reprend tout.",
   "Cull and retouch: done": "Sélection et retouche : terminé",
   "Cull and retouch: stopped": "Sélection et retouche : arrêté",
   "Portrait retouch: done": "Retouche portrait : terminé",
   "Portrait retouch: stopped": "Retouche portrait : arrêtée",
-  "Develop active photo opens the Develop space. The filmstrip stays, the selection stays.": "« Développer la photo active » ouvre l’espace Développement. La pellicule et la sélection restent.",
   "Discard": "Écarter",
   "Everything the run did is undone": "Tout ce que le lot a fait est annulé",
   "Eyes opened from another shot of the burst: one undo step": "Yeux ouverts depuis une autre photo de la rafale : une seule étape d’annulation",
@@ -2455,5 +2453,7 @@
   "tool:Develop": "Réglages",
   "tool:Presets": "Styles",
   "tool:Red Eye": "Yeux rouges",
-  "tool:Proposals": "Propositions"
+  "tool:Proposals": "Propositions",
+  "The journey bar offers the next step: Retouch the picks opens the Develop space. The filmstrip stays, the selection stays.": "La barre de parcours propose l’étape suivante : « Retoucher les retenues » ouvre l’espace Développement. La pellicule et la sélection restent.",
+  "Step 1 of the journey bar: bring a card or a folder in. The photos open in Sort.": "Étape 1 de la barre de parcours : importez une carte ou un dossier. Les photos s’ouvrent dans Trier."
 }
