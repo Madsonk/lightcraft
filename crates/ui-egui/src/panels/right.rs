@@ -31,15 +31,9 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 if app.ui.histogram {
                     super::edit::histogram(app, ui, id);
                 }
+                // one main panel for sorting (AI picks); everything else is one click away under "More tools"
                 super::cull::show(app, ui);
-                library_batch_tools(app, ui);
-                egui::CollapsingHeader::new(crate::i18n::tr("Keywords")).default_open(true).show(ui, |ui| keywords(app, ui, id));
-                // what the photo (or video) shows: scene, action, description
-                egui::CollapsingHeader::new(crate::i18n::tr("Description")).default_open(true).show(ui, |ui| {
-                    let w = ui.available_width();
-                    crate::panels::videos::info_section(app, ui, id.0, w, false);
-                });
-                egui::CollapsingHeader::new(crate::i18n::tr("Metadata")).show(ui, |ui| info(app, ui, id));
+                more_tools(app, ui, id);
                 return;
             }
             if crate::retouch_left::wants(app) {
@@ -1238,11 +1232,37 @@ fn activity(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     });
 }
 
+/// "More tools" of the Library sidebar: batch actions, the older sorting help, keywords and metadata.
+/// Closed until asked for (`ui.more_tools`), so the sidebar of the Sort step shows one panel.
+fn more_tools(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
+    register(ui.ctx(), "region:libraryBatchTools", ui.max_rect());
+    ui.add_space(crate::design::SPACE[1]);
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 0, bottom: 8 }).show(ui, |ui| {
+        let label = if app.ui.more_tools { "Fewer tools" } else { "More tools" };
+        if crate::design::button(ui, "moreTools", crate::i18n::tr(label), crate::design::Kind::Quiet, true)
+            .on_hover_text(crate::i18n::tr("Batch processing, series, quick develop, keywords and metadata"))
+            .clicked()
+        {
+            app.ui.more_tools = !app.ui.more_tools;
+        }
+    });
+    if !app.ui.more_tools {
+        return;
+    }
+    library_batch_tools(app, ui);
+    egui::CollapsingHeader::new(crate::i18n::tr("Keywords")).show(ui, |ui| keywords(app, ui, id));
+    // what the photo (or video) shows: scene, action, description
+    egui::CollapsingHeader::new(crate::i18n::tr("Description")).show(ui, |ui| {
+        let w = ui.available_width();
+        crate::panels::videos::info_section(app, ui, id.0, w, false);
+    });
+    egui::CollapsingHeader::new(crate::i18n::tr("Metadata")).show(ui, |ui| info(app, ui, id));
+}
+
 /// Library keeps batch actions, keywords and metadata together in one sidebar.
 fn library_batch_tools(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let ids: Vec<u64> = app.session.selection.ids.iter().map(|id| id.0).collect();
     let guard = json!({"active": app.session.active().map(|id| id.0), "ids": ids});
-    register(ui.ctx(), "region:libraryBatchTools", ui.max_rect());
     header(ui, "Batch processing");
     ui.label(format!("{}: {}", crate::i18n::tr("Selected photos"), ids.len()));
     series_tools(app, ui, &ids, &guard);
@@ -1349,20 +1369,7 @@ fn classification_tools(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 
 /// All active-photo tools stay reachable above the current editing panel.
 fn development_tools(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
-    ui.label(crate::i18n::tr("Active photo only"));
-    ui.horizontal_wrapped(|ui| {
-        for (widget, label, command) in [
-            ("developColors", "Develop", "panel.edit"),
-            ("developCrop", "Crop", "panel.crop"),
-            ("developMasks", "Masking", "panel.masking"),
-            ("developLocation", "Location", "panel.info"),
-            ("developProposal", "Proposals", "panel.proposals"),
-        ] {
-            if text_button(ui, widget, label, false).clicked() {
-                let _ = app.run(command, json!({}));
-            }
-        }
-    });
+    // the tools themselves (Develop, Crop, Masking, Location, Proposals) are the tool strip's: one place each
     egui::CollapsingHeader::new(crate::i18n::tr("People and AI retouch")).show(ui, |ui| {
         if text_button(ui, "developDetect", "Detect Faces", false).clicked() {
             let _ = app.run("faces.detect", json!({"ids": [id.0]}));

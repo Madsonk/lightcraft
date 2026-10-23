@@ -532,6 +532,8 @@ pub struct UiState {
     pub edit_by_task: bool,
     /// The guided tour of the cull / retouch flow has been seen (relaunch: Window ▸ Guided Tour).
     pub flow_tour_done: bool,
+    /// The Library sidebar shows its "More tools" (batch actions, keywords, metadata).
+    pub more_tools: bool,
     /// Ids of the "next time, try the key…" hints already shown (each is shown once).
     pub flow_tips: Vec<String>,
     /// The Develop panel's search field ("Search a control…").
@@ -846,6 +848,7 @@ impl Default for UiState {
             toast_kind: ToastKind::Info,
             edit_by_task: false,
             flow_tour_done: false,
+            more_tools: false,
             flow_tips: Vec::new(),
             edit_search: String::new(),
             last_find_missing: None,

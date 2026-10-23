@@ -266,5 +266,7 @@
   "{rated} rated, {picked} picked, {rejected} rejected: one undo step": "{rated} rated, {picked} picked, {rejected} rejected: one undo step",
   "{stars}★ proposed · score {score:.0}": "{stars}★ proposed · score {score:.0}",
   "Scenes · {n}": "Scenes · {n}",
-  "… and {n} more": "… and {n} more"
+  "… and {n} more": "… and {n} more",
+  "Judging {d} / {t}": "Judging {d} / {t}",
+  "Retouch the {n} picks →": "Retouch the {n} picks →"
 }

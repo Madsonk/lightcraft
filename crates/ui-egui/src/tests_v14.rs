@@ -398,6 +398,7 @@ fn toasts_carry_their_kind() {
 #[test]
 fn workflow_development_scopes_presets_and_reset_to_active_photo() {
     let mut h = demo();
+    h.app.ui.more_tools = true;
     let ids: Vec<_> = h.app.session.catalog.photos().filter(|p| p.in_library()).take(2).map(|p| p.id).collect();
     assert_eq!(ids.len(), 2);
     h.app.session.selection.ids = ids.clone();
@@ -424,6 +425,7 @@ fn workflow_development_scopes_presets_and_reset_to_active_photo() {
 #[test]
 fn series_ui_preview_does_not_edit_and_apply_is_explicit() {
     let mut h = demo();
+    h.app.ui.more_tools = true;
     let ids: Vec<_> = h.app.session.catalog.photos().filter(|p| p.in_library()).take(3).map(|p| p.id).collect();
     h.app.session.selection.ids = ids.clone();
     h.app.session.selection.active = Some(ids[0]);

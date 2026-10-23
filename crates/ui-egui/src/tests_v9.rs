@@ -387,7 +387,7 @@ fn keyword_suggestions_are_kept_per_photo_and_bring_their_section_into_view() {
 fn the_tool_strip_has_labelled_icons_in_three_groups() {
     use crate::state::RightPanel;
     let mut h = demo([1400.0, 900.0], json!({"view": "detail", "right": "edit"}));
-    let strip_left = 1400.0 - 48.0;
+    let strip_left = 1400.0 - 62.0;
     let top = |h: &Headless, id: &str| {
         let r = widget(h, &format!("icon:{id}"));
         assert!(r.left() >= strip_left - 1.0 && r.right() <= 1400.0 + 0.5, "{id} {r:?} is in the strip");

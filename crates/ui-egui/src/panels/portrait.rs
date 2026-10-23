@@ -37,7 +37,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let working = app.flow.portrait.preview.is_some() || app.flow.portrait.apply.is_some() || app.flow.portrait.want_eyes;
         // ---- auto retouch
         ui.horizontal_wrapped(|ui| {
-            if crate::context_bar::primary_button(ui, "portraitAuto", tr("Auto retouch"), !busy && !working)
+            if crate::design::button(ui, "portraitAuto", tr("Auto retouch"), crate::design::Kind::Secondary, !busy && !working)
                 .on_hover_text(tr("The prudent default recipe on this photo: one undo step"))
                 .clicked()
             {
@@ -164,7 +164,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     let mut accept = false;
                     let mut reject = false;
                     ui.horizontal(|ui| {
-                        accept = crate::context_bar::primary_button(ui, "eyesAccept", tr("Accept"), true).clicked();
+                        accept = crate::design::button(ui, "eyesAccept", tr("Accept"), crate::design::Kind::Secondary, true).clicked();
                         reject = text_button(ui, "eyesReject", "Discard", false).clicked();
                     });
                     if accept {

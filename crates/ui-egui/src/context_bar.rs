@@ -7,12 +7,14 @@ use egui::{Align, Layout, Rect, Sense, Stroke, StrokeKind, UiBuilder, pos2, vec2
 use serde_json::{Value, json};
 
 use crate::LightcraftApp;
+use crate::design::{self, Kind};
+use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::widgets::{register, text_button};
 use crate::workspaces::{self, Space, Step};
 
 /// Height of the context bar.
-pub const HEIGHT: f32 = 32.0;
+pub const HEIGHT: f32 = 40.0;
 
 /// What the context bar says.
 #[derive(Clone, Debug, PartialEq)]
@@ -49,6 +51,10 @@ impl Summary {
 /// The three spaces are buttons; a space of the user's own that is open shows as a fourth.
 pub fn selector(app: &mut LightcraftApp, ui: &mut egui::Ui, left: f32, cy: f32) -> f32 {
     let t = Tokens::get(ui.ctx());
+    // the three built-in spaces are the stages of the journey bar now; only a space of the user's own shows here
+    if Space::ALL.iter().any(|s| s.name() == app.workspaces.current) {
+        return left;
+    }
     let mut items: Vec<(String, String, String, bool)> = Space::ALL
         .iter()
         .map(|s| {
@@ -98,6 +104,9 @@ pub fn selector(app: &mut LightcraftApp, ui: &mut egui::Ui, left: f32, cy: f32) 
 /// The width the selector needs (for the top bar to leave it room).
 pub fn selector_width(app: &LightcraftApp, ui: &egui::Ui) -> f32 {
     let t = Tokens::get(ui.ctx());
+    if Space::ALL.iter().any(|s| s.name() == app.workspaces.current) {
+        return 0.0;
+    }
     let mut names: Vec<String> = Space::ALL.iter().map(|s| crate::i18n::tr(s.name()).to_string()).collect();
     if !Space::ALL.iter().any(|s| s.name() == app.workspaces.current) {
         names.push(app.workspaces.current.clone());
@@ -122,7 +131,8 @@ pub(crate) fn primary_button(ui: &mut egui::Ui, id: &str, label: &str, enabled: 
     resp
 }
 
-/// The context bar, a thin panel under the top bar (only with workspaces on).
+/// The context bar: the journey (four steps and the next action) and, dimmer, what the work is
+/// about (source, filter, selection, active photo). Only with workspaces on.
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     if !workspaces::enabled(app) || app.ui.fullscreen {
         return;
@@ -132,8 +142,12 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     app.workspaces.context = Some(sum.clone());
     let kind = app.workspaces.kind;
     let selector_in_top = app.workspaces.selector_in_top_bar;
-    let in_classify = app.workspaces.step == Step::Classify;
+    let facts = crate::journey::facts(app, ui.ctx());
+    let stage = crate::journey::current(app);
+    let next = stage.and_then(|s| crate::journey::next(app, &facts, s));
     let mut run: Option<(&'static str, Value)> = None;
+    let mut pressed_stage = None;
+    let mut do_next = false;
     egui::Panel::top("context_bar")
         .exact_size(HEIGHT)
         .frame(egui::Frame::NONE.fill(t.inset).stroke(Stroke::new(1.0, t.divider)).inner_margin(egui::Margin {
@@ -145,97 +159,65 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             let full = ui.max_rect();
             register(ui.ctx(), "region:contextBar", full);
-            // the way on / out, from the right
+            // from the right: the next action (the one primary button of the screen), then the quiet ones
             let mut right = ui.new_child(UiBuilder::new().max_rect(full).layout(Layout::right_to_left(Align::Center)));
-            right.spacing_mut().item_spacing.x = 6.0;
-            match kind {
-                Space::Library => {
-                    let n = sum.selected;
-                    let label = crate::i18n::tr("Develop active photo →").to_string();
-                    let can = n > 0 || sum.active.is_some();
-                    let tip = if can {
-                        "Open the selected photos in the Retouch space (the selection and the filter stay)"
-                    } else {
-                        "Select the photos to retouch first"
-                    };
-                    if primary_button(&mut right, "ctxRetouch", &label, can).on_hover_text(format!("{} (Ctrl+2)", crate::i18n::tr(tip))).clicked() {
-                        run = Some(("workspace.retouchSelection", json!({})));
-                    }
+            right.spacing_mut().item_spacing.x = design::SPACE[1];
+            if let Some(n) = &next {
+                let enabled = !matches!(n, crate::journey::Next::Judging(..));
+                if design::button(&mut right, "journeyNext", &crate::journey::next_label(n), Kind::Primary, enabled).clicked() {
+                    do_next = true;
                 }
-                Space::Retouch => {
-                    if primary_button(&mut right, "ctxCreate", crate::i18n::tr("Create →"), true)
-                        .on_hover_text(crate::i18n::tr("Make a gallery, a slideshow or a kit from these photos (Ctrl+3)"))
-                        .clicked()
-                    {
-                        run = Some(("workspace.create", json!({})));
-                    }
-                    // v14: Before / After in one gesture (the same as holding `\\`)
-                    let showing = app.ui.before_after == crate::state::BeforeAfter::Original;
-                    if text_button(&mut right, "ctxBeforeAfter", if showing { "Showing: before" } else { "Before/After" }, showing)
-                        .on_hover_text(crate::i18n::tr(
-                            "Show the photo before any edit; press again for the edited photo (hold \\ for a glance, Y for side by side)",
-                        ))
-                        .clicked()
-                    {
-                        run = Some(("view.showOriginal", json!({})));
-                    }
-                }
-                Space::Create => {}
             }
             if (!sum.filter.is_empty() || sum.selected > 0)
-                && text_button(&mut right, "ctxClear", "Clear", false)
+                && design::button(&mut right, "ctxClear", tr("Clear"), Kind::Quiet, true)
                     .on_hover_text(crate::i18n::tr("Clear the filter and the selection (the active photo stays selected)"))
                     .clicked()
             {
                 run = Some(("workspace.clearContext", json!({})));
             }
             if kind == Space::Library
-                && !in_classify
-                && text_button(&mut right, "ctxSortingHelp", "Sorting Help", false)
-                    .on_hover_text(crate::i18n::tr("Culling, suggested picks and suggested keywords: nothing is written until you accept"))
+                && app.workspaces.step != Step::Classify
+                && design::button(&mut right, "ctxClassify", tr("Archive"), Kind::Quiet, true)
+                    .on_hover_text(crate::i18n::tr("The archive bench: health counters, “same person?” questions, groups, places, keywords"))
                     .clicked()
             {
-                run = Some(("dialog.cull", json!({})));
+                run = Some(("workspace.step", json!({"step": "classify"})));
             }
-            // from the left: the step chips (Library) or the way back, then the context
+            if kind == Space::Library
+                && app.workspaces.step == Step::Classify
+                && design::button(&mut right, "ctxSort", tr("Back to sorting"), Kind::Quiet, true).clicked()
+            {
+                run = Some(("workspace.step", json!({"step": "sort"})));
+            }
+            if kind == Space::Retouch {
+                // v14: Before / After in one gesture (the same as holding `\`)
+                let showing = app.ui.before_after == crate::state::BeforeAfter::Original;
+                if design::button(
+                    &mut right,
+                    "ctxBeforeAfter",
+                    if showing { tr("Showing: before") } else { tr("Before/After") },
+                    Kind::Secondary,
+                    true,
+                )
+                .on_hover_text(crate::i18n::tr(
+                    "Show the photo before any edit; press again for the edited photo (hold \\ for a glance, Y for side by side)",
+                ))
+                .clicked()
+                {
+                    run = Some(("view.showOriginal", json!({})));
+                }
+            }
+            // from the left: a custom space's selector (when the top bar has no room), the steps, then the context
             let left_rect = Rect::from_min_max(full.min, pos2((right.min_rect().left() - 12.0).max(full.left() + 60.0), full.max.y));
             let mut left = ui.new_child(UiBuilder::new().max_rect(left_rect).layout(Layout::left_to_right(Align::Center)));
-            left.spacing_mut().item_spacing.x = 6.0;
-            // a window too narrow for the selector in the top bar: it leads this bar instead
+            left.spacing_mut().item_spacing.x = 0.0;
             if !selector_in_top {
                 let x = left.cursor().left();
                 let end = selector(app, &mut left, x, full.center().y);
-                left.add_space(end - x + 8.0);
+                left.add_space((end - x + 8.0).max(0.0));
             }
-            match kind {
-                Space::Library => {
-                    // the three steps of the Library space: Import (home), Sort (grid + Quick sort), Classify (bench)
-                    let step = app.workspaces.step;
-                    for (id, label, tip, which) in [
-                        ("ctxImport", "Import", "Home: resume, drop a card or a folder, import without blocking the window", Step::Import),
-                        ("ctxSort", "Sort", "Decide fast: grid, Quick sort suggestions, ratings and flags", Step::Sort),
-                        (
-                            "ctxClassify",
-                            "Classify",
-                            "The archive bench: health counters, “same person?” questions, groups, places, keywords",
-                            Step::Classify,
-                        ),
-                    ] {
-                        if text_button(&mut left, id, label, step == which).on_hover_text(crate::i18n::tr(tip)).clicked() && step != which {
-                            run = Some(("workspace.step", json!({"step": which.name()})));
-                        }
-                    }
-                }
-                Space::Retouch | Space::Create => {
-                    if text_button(&mut left, "ctxBack", "← Library", false)
-                        .on_hover_text(crate::i18n::tr("Back to the Library with the same selection and filter (Ctrl+1)"))
-                        .clicked()
-                    {
-                        run = Some(("workspace.backToLibrary", json!({})));
-                    }
-                }
-            }
-            left.add_space(6.0);
+            pressed_stage = crate::journey::steps(app, &mut left, &facts);
+            left.add_space(design::SPACE[3]);
             // source · filter · selection · active photo, on one line that gives way at the right
             let dim = t.text_dim;
             let mut job = egui::text::LayoutJob::default();
@@ -243,25 +225,30 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             job.wrap.break_anywhere = true;
             job.wrap.overflow_character = Some('…');
             let part = |job: &mut egui::text::LayoutJob, label: String, value: String, strong: bool| {
-                let font = egui::FontId::proportional(12.0);
+                let font = egui::FontId::proportional(design::TEXT[0] + 0.5);
                 job.append(&label, 0.0, egui::TextFormat { font_id: font.clone(), color: dim, ..Default::default() });
                 job.append(&value, 0.0, egui::TextFormat { font_id: font, color: if strong { t.text } else { t.text_label }, ..Default::default() });
             };
-            part(&mut job, crate::i18n::tr("Source ").to_string(), sum.source.clone(), false);
-            let filter = if sum.filter.is_empty() { crate::i18n::tr("none").to_string() } else { sum.filter.join(" + ") };
-            part(&mut job, format!("  ·  {}", crate::i18n::tr("Filter ")), filter, !sum.filter.is_empty());
-            part(
-                &mut job,
-                "  ·  ".to_string(),
-                crate::i18n::tr_format!("{sel} selected of {all}", sel = sum.selected, all = sum.visible),
-                sum.selected > 0,
-            );
+            part(&mut job, String::new(), sum.source.clone(), false);
+            if !sum.filter.is_empty() {
+                part(&mut job, format!("  ·  {}", crate::i18n::tr("Filter ")), sum.filter.join(" + "), true);
+            }
+            if sum.selected > 0 {
+                part(&mut job, "  ·  ".to_string(), crate::i18n::tr_format!("{sel} selected of {all}", sel = sum.selected, all = sum.visible), true);
+            }
             if let Some(a) = &sum.active {
                 part(&mut job, format!("  ·  {}", crate::i18n::tr("Photo ")), a.clone(), false);
             }
             let r = left.add(egui::Label::new(job).truncate().selectable(false));
             register(ui.ctx(), "context:summary", r.rect);
         });
+    if let Some(stage) = pressed_stage {
+        let (cmd, p) = stage.open();
+        let _ = app.run(cmd, p);
+    }
+    if do_next && let Some(n) = &next {
+        crate::journey::run(app, ui.ctx(), n);
+    }
     if let Some((id, params)) = run {
         let _ = app.run(id, params);
     }

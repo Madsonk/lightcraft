@@ -96,7 +96,7 @@ fn changing_space_never_empties_the_selection_or_the_filter() {
     assert_eq!(h.app.session.selection.ids.iter().map(|p| p.0).collect::<Vec<_>>(), ids);
     assert_eq!(h.app.session.filter, filter);
     // and the way back
-    click(&mut h, "button:ctxBack");
+    click(&mut h, "button:ctxSort");
     assert_eq!(h.app.workspaces.current, "Library");
     assert_eq!(h.app.session.selection.ids.iter().map(|p| p.0).collect::<Vec<_>>(), ids);
     // only the explicit Clear empties them
@@ -148,9 +148,11 @@ fn ctrl_1_2_3_open_the_spaces_and_each_arranges_the_panels() {
     key(&mut h, "1", true);
     assert_eq!(h.app.workspaces.current, "Library");
     assert!(h.app.ui.filter_bar && h.app.ui.left_panel && h.app.ui.right == RightPanel::Keywords);
-    assert!(has(&h, "button:space-library") && has(&h, "button:space-retouch") && has(&h, "button:space-create"));
-    // the selector buttons do the same
-    click(&mut h, "button:space-retouch");
+    // the journey bar (Import, Sort, Retouch photos, Export) replaced the space selector
+    assert!(has(&h, "button:ctxImport") && has(&h, "button:ctxSort") && has(&h, "button:ctxRetouch") && has(&h, "button:ctxCreate"));
+    assert!(!has(&h, "button:space-library"), "no second navigation in the title bar");
+    // its steps do the same as the shortcuts
+    click(&mut h, "button:ctxRetouch");
     assert_eq!(h.app.workspaces.current, "Retouch");
     // the plain digit keys are still ratings (Ctrl is what opens a space)
     key(&mut h, "3", false);
@@ -378,7 +380,7 @@ fn the_create_panel_offers_the_gallery_the_kit_and_the_slideshow() {
 }
 
 #[test]
-fn the_selector_the_search_field_and_the_icons_never_overlap() {
+fn the_journey_bar_the_search_field_and_the_icons_never_overlap() {
     for width in [900.0, 1100.0, 1500.0] {
         for native_menu in [false, true] {
             let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() });
@@ -388,19 +390,16 @@ fn the_selector_the_search_field_and_the_icons_never_overlap() {
             let mut h = Headless::new(app, [width, 700.0], 1.0);
             h.settle(SETTLE);
             let rect = |id: &str| h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r).unwrap_or_else(|| panic!("no {id} at {width}"));
-            let (create, search, filter, bell) = (rect("button:space-create"), rect("field:search"), rect("icon:filter"), rect("icon:bell"));
-            // the selector is in the top bar, or (a window too narrow for it there) in the context bar below
-            let same_row = create.top() < search.bottom() && search.top() < create.bottom();
-            assert!(!same_row || create.right() < search.left(), "{width}/{native_menu}: selector {create:?} over the search field {search:?}");
-            assert_eq!(same_row, h.app.workspaces.selector_in_top_bar, "{width}/{native_menu}");
+            let (search, filter, bell) = (rect("field:search"), rect("icon:filter"), rect("icon:bell"));
             assert!(search.right() < filter.left(), "{width}/{native_menu}: search {search:?} over the filter icon {filter:?}");
             assert!(filter.right() <= bell.left(), "{width}/{native_menu}: filter icon {filter:?} over the bell {bell:?}");
-            if !native_menu && h.app.workspaces.selector_in_top_bar {
-                // the in-window menus end before the selector starts
-                let library = rect("button:space-library");
-                let title = h.app.widgets.iter().filter(|(w, _)| w.starts_with("menu")).map(|(_, r)| r.right()).fold(0.0f32, f32::max);
-                assert!(title <= library.left() + 0.5, "{width}: menus end at {title}, selector starts at {}", library.left());
+            // the journey bar: the four steps in order, then the next action, none over another
+            let steps: Vec<egui::Rect> = ["ctxImport", "ctxSort", "ctxRetouch", "ctxCreate"].iter().map(|id| rect(&format!("button:{id}"))).collect();
+            for w in steps.windows(2) {
+                assert!(w[0].right() <= w[1].left() + 0.5, "{width}/{native_menu}: steps overlap {w:?}");
             }
+            let next = rect("button:journeyNext");
+            assert!(steps[3].right() <= next.left() + 0.5, "{width}/{native_menu}: the last step {:?} runs under the next action {next:?}", steps[3]);
         }
     }
 }

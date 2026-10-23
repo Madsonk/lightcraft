@@ -173,13 +173,12 @@ fn tool(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, tool: &Tool, has
     };
     crate::icons::paint(p, egui::Rect::from_center_size(sq.center(), vec2(20.0, 20.0)), tool.icon, color);
     // v14: a label one can read (10 pt, label colour) under every tool
-    p.text(
-        egui::pos2(r.center().x, r.bottom() - 7.0),
-        egui::Align2::CENTER_CENTER,
-        crate::i18n::tr(tool.label),
-        t.font(10.0),
-        if on { t.text } else { t.text_label },
-    );
+    // the label shrinks (to 8 pt at most) rather than being cut off at the strip's edge ("Développement")
+    let colour = if on { t.text } else { t.text_label };
+    let text = crate::i18n::tr(tool.label);
+    let natural = p.layout_no_wrap(text.to_string(), t.font(10.0), colour);
+    let size = if natural.size().x > t.strip_w - 4.0 { (10.0 * (t.strip_w - 4.0) / natural.size().x).max(8.0) } else { 10.0 };
+    p.text(egui::pos2(r.center().x, r.bottom() - 7.0), egui::Align2::CENTER_CENTER, text, t.font(size), colour);
     if resp.on_hover_text(tip).clicked() {
         let _ = app.run(tool.command, json!({}));
     }

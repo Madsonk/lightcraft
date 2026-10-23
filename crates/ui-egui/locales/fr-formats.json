@@ -266,5 +266,7 @@
   "{rated} rated, {picked} picked, {rejected} rejected: one undo step": "{rated} notées, {picked} retenues, {rejected} rejetées : une seule étape d’annulation",
   "{stars}★ proposed · score {score:.0}": "{stars}★ proposées · score {score:.0}",
   "Scenes · {n}": "Scènes · {n}",
-  "… and {n} more": "… et {n} de plus"
+  "… and {n} more": "… et {n} de plus",
+  "Judging {d} / {t}": "Analyse {d} / {t}",
+  "Retouch the {n} picks →": "Retoucher les {n} retenues →"
 }

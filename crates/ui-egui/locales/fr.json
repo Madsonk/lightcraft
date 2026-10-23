@@ -992,7 +992,7 @@
   "Magenta Saturation": "Saturation magenta",
   "Make Candidate the Select": "Définir la candidate comme sélection",
   "Make a gallery, a slideshow or a kit from these photos": "Créer une galerie, un diaporama ou un kit à partir de ces photos",
-  "Make a gallery, a slideshow or a kit from these photos (Ctrl+3)": "Créer une galerie, un diaporama ou un kit à partir de ces photos (Ctrl+3)",
+  "Make a gallery, a slideshow or a kit from these photos (Ctrl+3)": "Faire une galerie, un diaporama ou un kit avec ces photos (Ctrl+3)",
   "Make it now": "Le créer maintenant",
   "Make the denoised picture of the photos I am looking at": "Créer la version débruitée des photos affichées",
   "Manual": "Manuel",
@@ -2406,5 +2406,16 @@
   "Neck brightness": "Éclat du cou",
   "Keep": "Garder",
   "No closed eyes found in this photo": "Aucun œil fermé trouvé dans cette photo",
-  "No other shot of the burst has this person's eyes open": "Aucune autre photo de la rafale n’a les yeux ouverts de cette personne"
+  "No other shot of the burst has this person's eyes open": "Aucune autre photo de la rafale n’a les yeux ouverts de cette personne",
+  "More tools": "Plus d’outils",
+  "Fewer tools": "Moins d’outils",
+  "Batch processing, series, quick develop, keywords and metadata": "Traitement en lot, séries, développement rapide, mots-clés et métadonnées",
+  "Retouch photos": "Retoucher",
+  "Sort the photos →": "Trier les photos →",
+  "Archive": "Archive",
+  "Back to sorting": "Retour au tri",
+  "Bring photos in from a card or a folder": "Importer des photos depuis une carte ou un dossier",
+  "Decide fast: AI picks, ratings and flags (Ctrl+1)": "Décider vite : sélections IA, notes et drapeaux (Ctrl+1)",
+  "Develop the selected photos: light, colour, portrait (Ctrl+2)": "Retoucher les photos choisies : lumière, couleur, portrait (Ctrl+2)",
+  "The archive bench: health counters, “same person?” questions, groups, places, keywords": "L’établi de l’archive : santé, questions « même personne ? », groupes, lieux, mots-clés"
 }

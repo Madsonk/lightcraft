@@ -65,17 +65,20 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 if text_button(ui, "cullCancel", "Stop", false).clicked() {
                     flow::cancel_cull(app);
                 }
-            } else if crate::context_bar::primary_button(ui, "cullRun", tr("Judge the photos"), !busy).clicked()
+            } else if crate::design::button(ui, "cullRun", tr("Judge the photos"), crate::design::Kind::Secondary, !busy).clicked()
                 && let Err(e) = flow::start_cull(app, &ctx)
             {
                 app.toast_error(&ctx, e);
             }
-            if text_button(ui, "cullTour", "Guided tour", false).on_hover_text(tr("A short tour of the cull and retouch flow")).clicked() {
+            if crate::design::button(ui, "cullTour", tr("Guided tour"), crate::design::Kind::Quiet, true)
+                .on_hover_text(tr("A short tour of the cull and retouch flow"))
+                .clicked()
+            {
                 flow::start_tour(app);
             }
         });
         // ---- one click, first: the way most people will use it
-        if crate::context_bar::primary_button(ui, "oneClick", tr("Cull and retouch in one click"), !busy).clicked() {
+        if crate::design::button(ui, "oneClick", tr("Cull and retouch in one click"), crate::design::Kind::Secondary, !busy).clicked() {
             flow::ask_one_click(app);
         }
         ui.horizontal(|ui| {

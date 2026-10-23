@@ -363,6 +363,7 @@ fn cancelling_an_import_from_the_task_list_stops_it_cleanly() {
 #[test]
 fn quick_sort_finds_bursts_and_soft_photos_in_slices_and_writes_nothing_by_itself() {
     let mut h = headless(fs_session());
+    h.app.ui.more_tools = true; // the older sorting help lives under "More tools" since the refonte
     let dir = temp_dir("quick");
     let n = 24;
     // photos 8-11 are one burst; photo 3 is soft; the rest all look different
