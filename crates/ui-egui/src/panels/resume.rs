@@ -103,8 +103,13 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 10.0;
                         let what = match &file {
-                            Some(f) => format!("Welcome back · {source} · {photos} photos · you were on {f}"),
-                            None => format!("Welcome back · {source} · {photos} photos"),
+                            Some(f) => crate::i18n::tr_format!(
+                                "Welcome back · {source} · {photos} photos · you were on {f}",
+                                source = source,
+                                photos = photos,
+                                f = f
+                            ),
+                            None => crate::i18n::tr_format!("Welcome back · {source} · {photos} photos", source = source, photos = photos),
                         };
                         ui.label(RichText::new(what).size(12.5).color(t.text_label));
                         let label = if file.is_some() { "Resume editing" } else { "Continue" };

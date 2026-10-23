@@ -268,5 +268,13 @@
   "Scenes · {n}": "Scènes · {n}",
   "… and {n} more": "… et {n} de plus",
   "Judging {d} / {t}": "Analyse {d} / {t}",
-  "Retouch the {n} picks →": "Retoucher les {n} retenues →"
+  "Retouch the {n} picks →": "Retoucher les {n} retenues →",
+  "Import {n} photos and open Sort": "Importer {n} photos et ouvrir Trier",
+  "Move {n} photos and open Sort": "Déplacer {n} photos et ouvrir Trier",
+  "{source} · {visible} photos": "{source} · {visible} photos",
+  "{photos} photos · {sorted} sorted · {todo} to sort": "{photos} photos · {sorted} triées · {todo} à trier",
+  "Imported {day}": "Importé le {day}",
+  "Welcome back · {source} · {photos} photos · you were on {f}": "Bon retour · {source} · {photos} photos · vous étiez sur {f}",
+  "Welcome back · {source} · {photos} photos": "Bon retour · {source} · {photos} photos",
+  "Rated or flagged: {done} of {total}": "Notées ou marquées : {done} sur {total}"
 }

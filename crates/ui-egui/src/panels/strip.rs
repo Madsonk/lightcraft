@@ -78,17 +78,6 @@ const RETOUCH: &[Tool] = &[
     },
 ];
 
-/// The proposed retouch (v14): shown with workspaces on.
-const PROPOSALS: Tool = Tool {
-    id: "proposals",
-    icon: Icon::Pencil,
-    label: "Proposals",
-    tip: "Proposals: the proposed portrait retouch, Before / After, copies (Shift+N)",
-    command: "panel.proposals",
-    panel: Some(RightPanel::Proposals),
-    needs_photo: true,
-};
-
 /// Portrait retouch by sliders (lot D): shown with workspaces on.
 const PORTRAIT: Tool = Tool {
     id: "portrait",
@@ -212,13 +201,15 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     tool(app, ui, &t, x, has_photo);
                 }
                 if crate::workspaces::enabled(app) {
-                    tool(app, ui, &t, &PROPOSALS, has_photo);
                     tool(app, ui, &t, &PORTRAIT, has_photo);
                 }
-                separator(ui, &t);
-                caption(ui, &t, "History");
-                for x in HISTORY {
-                    tool(app, ui, &t, x, has_photo);
+                // the Retouch space's left column already shows the versions and the history: one place each
+                if !crate::retouch_left::wants(app) {
+                    separator(ui, &t);
+                    caption(ui, &t, "History");
+                    for x in HISTORY {
+                        tool(app, ui, &t, x, has_photo);
+                    }
                 }
                 separator(ui, &t);
                 caption(ui, &t, "Organize");

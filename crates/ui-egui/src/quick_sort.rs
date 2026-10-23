@@ -529,7 +529,11 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     crate::home::heading(ui, &t, "Quick sort");
     // how far along the sorting is
     let frac = if s.total > 0 { s.sorted as f32 / s.total as f32 } else { 0.0 };
-    ui.label(egui::RichText::new(format!("Rated or flagged: {} of {}", s.sorted, s.total)).color(t.text_label).size(12.0));
+    ui.label(
+        egui::RichText::new(crate::i18n::tr_format!("Rated or flagged: {done} of {total}", done = s.sorted, total = s.total))
+            .color(t.text_label)
+            .size(12.0),
+    );
     ui.add(egui::ProgressBar::new(frac).desired_height(6.0));
     ui.horizontal(|ui| {
         if text_button(ui, "quickNext", crate::i18n::tr("Next unsorted"), false)

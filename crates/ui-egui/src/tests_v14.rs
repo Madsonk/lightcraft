@@ -298,7 +298,9 @@ fn retouch_space_has_its_left_column_and_the_proposals_panel() {
     assert!(has(&h, "button:developFit"), "the active-photo navigator");
     assert!(has(&h, "button:retouchVersionCreate"));
     assert!(has(&h, "button:ctxBeforeAfter"), "Before/After in one gesture");
-    assert!(has(&h, "icon:proposals"), "the Proposals tool in the strip");
+    assert!(has(&h, "icon:portrait"), "the Portrait tool in the strip (the Proposals recipe is a button of its panel)");
+    assert!(!has(&h, "icon:proposals"));
+    assert!(!has(&h, "icon:versions"), "the left column has the versions and the history: one place each");
     run(&mut h, "panel.proposals", json!({})).unwrap();
     h.settle(SETTLE);
     assert_eq!(h.app.ui.right, RightPanel::Proposals);

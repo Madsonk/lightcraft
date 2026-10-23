@@ -14,7 +14,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, UiBuilder, pos2, vec2};
+use egui::{Align2, Rect, Sense, Stroke, StrokeKind, UiBuilder, pos2, vec2};
 use serde_json::{Value, json};
 
 use crate::LightcraftApp;
@@ -598,15 +598,20 @@ fn left_column(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let visible = app.session.visible().len();
     let source = crate::i18n::source_title(&app.session);
     if app.session.catalog.photos().any(|p| p.in_library()) {
-        let detail = format!("{source} · {visible} photos");
+        let detail = crate::i18n::tr_format!("{source} · {visible} photos", source = source, visible = visible);
         if card(ui, "resumeCurrent", "Where you left off", &detail, "Open in Sort") {
             go = Some(json!({}));
         }
         ui.add_space(6.0);
     }
     for (i, r) in resume_list(app).iter().enumerate() {
-        let detail = format!("{} photos · {} sorted · {} to sort", r.photos, r.sorted, r.photos - r.sorted);
-        if card(ui, &format!("resumeDay{i}"), &format!("Imported {}", r.day), &detail, "Open in Sort") {
+        let detail = crate::i18n::tr_format!(
+            "{photos} photos · {sorted} sorted · {todo} to sort",
+            photos = r.photos,
+            sorted = r.sorted,
+            todo = r.photos - r.sorted
+        );
+        if card(ui, &format!("resumeDay{i}"), &crate::i18n::tr_format!("Imported {day}", day = r.day), &detail, "Open in Sort") {
             go = Some(json!({"day": r.day}));
         }
         ui.add_space(6.0);
@@ -809,14 +814,13 @@ fn right_column(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let sel = app.workspaces.home.d.selected_paths().len();
     let can = scanned && sel > 0 && app.import.is_none();
     let mover = app.workspaces.home.d.copy && app.workspaces.home.d.move_files;
-    let label = format!("{} {sel} photo{} and open Sort", if mover { "Move" } else { "Import" }, if sel == 1 { "" } else { "s" });
-    let primary = ui.add_enabled(
-        can,
-        egui::Button::new(egui::RichText::new(label).font(t.semibold(13.0)).color(Color32::WHITE))
-            .fill(t.accent)
-            .min_size(vec2(ui.available_width(), 32.0)),
-    );
-    register(ui.ctx(), "button:homeImport", primary.rect);
+    let label = match (mover, sel) {
+        (false, 1) => crate::i18n::tr("Import 1 photo and open Sort").to_string(),
+        (true, 1) => crate::i18n::tr("Move 1 photo and open Sort").to_string(),
+        (false, n) => crate::i18n::tr_format!("Import {n} photos and open Sort", n = n),
+        (true, n) => crate::i18n::tr_format!("Move {n} photos and open Sort", n = n),
+    };
+    let primary = crate::design::button(ui, "homeImport", &label, crate::design::Kind::Primary, can);
     if primary.clicked() {
         match app.run("workspace.home.import", json!({})) {
             Ok(_) => {}

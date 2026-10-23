@@ -10,7 +10,7 @@ use crate::LightcraftApp;
 use crate::design::{self, Kind};
 use crate::i18n::tr;
 use crate::theme::Tokens;
-use crate::widgets::{register, text_button};
+use crate::widgets::register;
 use crate::workspaces::{self, Space, Step};
 
 /// Height of the context bar.

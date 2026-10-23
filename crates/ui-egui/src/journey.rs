@@ -13,7 +13,7 @@
 use serde_json::{Value, json};
 
 use crate::LightcraftApp;
-use crate::design::{self, Kind};
+use crate::design;
 use crate::i18n::{tr, tr_format};
 use crate::theme::Tokens;
 use crate::widgets::register;
@@ -203,7 +203,7 @@ pub enum Next {
 
 pub fn next(app: &mut LightcraftApp, f: &Facts, stage: Stage) -> Option<Next> {
     if f.total == 0 {
-        return None;
+        return (stage != Stage::Import).then_some(Next::Go(Stage::Import));
     }
     match stage {
         // the Import screen carries its own button for the import that is ready to run

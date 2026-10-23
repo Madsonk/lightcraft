@@ -5,6 +5,7 @@
 //! burst, previewed and validated). All through `portrait.*` (see `docs/portrait-retouch.md`).
 
 use egui::{RichText, Sense, vec2};
+use serde_json::json;
 
 use crate::LightcraftApp;
 use crate::flow::{self, Pair};
@@ -75,6 +76,12 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         if let Some(pair) = &app.flow.portrait.pair {
             ui.label(RichText::new(app.flow.portrait.note.clone()).size(11.0).color(t.text_dim));
             before_after(ui, pair, "portraitPair");
+        }
+        if crate::design::button(ui, "portraitRecipe", tr("Natural skin recipe…"), crate::design::Kind::Quiet, true)
+            .on_hover_text(tr("The ready-made retouch with Light / Medium / Strong, copies and Before / After"))
+            .clicked()
+        {
+            let _ = app.run("panel.proposals", json!({}));
         }
         // ---- the groups
         let sliders = app.flow.portrait.sliders.clone();
