@@ -436,6 +436,9 @@ fn series_ui_preview_does_not_edit_and_apply_is_explicit() {
     h.settle(SETTLE);
     let before = h.app.session.catalog.to_snapshot();
     assert!(has(&h, "button:seriesPreview"));
+    crate::tests_v12::reveal(&mut h, "button:seriesPreview");
+    h.request("ui.hoverWidget", json!({"id":"button:seriesPreview"}), T);
+    h.step();
     let click = h.request("ui.clickWidget", json!({"id":"button:seriesPreview"}), T);
     assert_eq!(click["ok"], true);
     let end = std::time::Instant::now() + std::time::Duration::from_secs(30);
@@ -452,6 +455,7 @@ fn series_ui_preview_does_not_edit_and_apply_is_explicit() {
     assert!(has(&h, "image:proposalsBefore"));
     assert!(has(&h, "image:proposalsAfter"));
     assert_eq!(h.app.session.active(), Some(ids[0]));
+    crate::tests_v12::reveal(&mut h, "button:seriesApply");
     h.request("ui.hoverWidget", json!({"id":"button:seriesApply"}), T);
     h.step();
     let click = h.request("ui.clickWidget", json!({"id":"button:seriesApply"}), T);

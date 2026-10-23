@@ -56,7 +56,25 @@ fn rect(h: &Headless, id: &str) -> egui::Rect {
     h.app.widgets.iter().rev().find(|(w, _)| w == id).map(|(_, r)| *r).unwrap_or_else(|| panic!("no widget `{id}` on screen"))
 }
 
+/// Scroll the right sidebar until `id` is on screen (the sidebar of the Sort step is long since the
+/// AI picks section sits above "More tools"). Does nothing for a widget that is not drawn or is already visible.
+pub(crate) fn reveal(h: &mut Headless, id: &str) {
+    for _ in 0..40 {
+        let Some((_, r)) = h.app.widgets.iter().rev().find(|(w, _)| w == id).cloned() else { return };
+        if r.top() > 130.0 && r.bottom() < 780.0 {
+            return;
+        }
+        let panel = h.app.widgets.iter().rev().find(|(w, _)| w == "panel:right_panel").map(|(_, r)| r.center());
+        let at = panel.unwrap_or(egui::pos2(1350.0, 450.0));
+        h.request("ui.move", json!({"x": at.x, "y": at.y}), T);
+        h.request("ui.scroll", json!({"dy": if r.top() <= 130.0 { 160.0 } else { -160.0 }}), T);
+        h.step();
+        h.step();
+    }
+}
+
 fn click(h: &mut Headless, id: &str) {
+    reveal(h, id);
     // like a hand: rest the pointer on the button for a frame, then press (a button that has just
     // moved, or appeared, takes the click only once the pointer was over it)
     h.request("ui.hoverWidget", json!({"id": id}), T);
