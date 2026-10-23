@@ -276,5 +276,12 @@
   "Imported {day}": "Importé le {day}",
   "Welcome back · {source} · {photos} photos · you were on {f}": "Bon retour · {source} · {photos} photos · vous étiez sur {f}",
   "Welcome back · {source} · {photos} photos": "Bon retour · {source} · {photos} photos",
-  "Rated or flagged: {done} of {total}": "Notées ou marquées : {done} sur {total}"
+  "Rated or flagged: {done} of {total}": "Notées ou marquées : {done} sur {total}",
+  "{n} photos: the {selected} selected, in grid order": "{n} photos : les {selected} sélectionnées, dans l’ordre de la grille",
+  "{n} photos: everything in this view (select several to use only those)": "{n} photos : toute cette vue (sélectionnez-en plusieurs pour n’utiliser que celles-là)",
+  "{a} from a caption or title, {b} from keywords, {c} will say only the file name": "{a} viennent d’une légende ou d’un titre, {b} des mots-clés, {c} n’auront que le nom du fichier",
+  "Create the web gallery ({n} photos)": "Créer la galerie web ({n} photos)",
+  "Export the kit ({n} photos)": "Exporter le kit ({n} photos)",
+  "Start the slideshow ({n} photos)": "Lancer le diaporama ({n} photos)",
+  "Last kit: {d}": "Dernier kit : {d}"
 }

@@ -122,10 +122,10 @@ pub fn facts(app: &mut LightcraftApp, ctx: &egui::Context) -> Facts {
 }
 
 /// The small figure after a step's name.
-fn figure(stage: Stage, f: &Facts) -> Option<String> {
+fn figure(stage: Stage, f: &Facts, judged: usize) -> Option<String> {
     match stage {
         Stage::Import => (f.total > 0).then(|| f.total.to_string()),
-        Stage::Sort => (f.visible > 0).then(|| format!("{}/{}", f.triaged, f.visible)),
+        Stage::Sort => (f.visible > 0).then(|| format!("{}/{}", f.triaged.max(judged), f.visible)),
         Stage::Retouch => (f.edited > 0).then(|| f.edited.to_string()),
         Stage::Export => None,
     }
@@ -148,7 +148,7 @@ pub fn steps(app: &LightcraftApp, ui: &mut egui::Ui, f: &Facts) -> Option<Stage>
     for (i, stage) in Stage::ALL.into_iter().enumerate() {
         let is_now = now == Some(stage);
         let label = tr(stage.label());
-        let fig = figure(stage, f);
+        let fig = figure(stage, f, crate::flow::counts(app).map_or(0, |c| c.iter().sum::<u64>() as usize));
         let font = if is_now { t.semibold(design::TEXT[1]) } else { t.font(design::TEXT[1]) };
         let colour = if is_now { t.text } else { t.text_label };
         let g = ui.painter().layout_no_wrap(label.to_string(), font, colour);

@@ -389,9 +389,9 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             });
             let n = ids.len();
             let which = if selected > 1 {
-                format!("{n} photos: the {selected} selected, in grid order", n = n, selected = selected)
+                crate::i18n::tr_format!("{n} photos: the {selected} selected, in grid order", n = n, selected = selected)
             } else {
-                format!("{n} photos: everything in this view (select several to use only those)", n = n)
+                crate::i18n::tr_format!("{n} photos: everything in this view (select several to use only those)", n = n)
             };
             ui.add_space(6.0);
             dim(ui, which);
@@ -417,7 +417,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     let [caption, title, keywords, file] = ready;
                     dim(
                         ui,
-                        format!(
+                        crate::i18n::tr_format!(
                             "{a} from a caption or title, {b} from keywords, {c} will say only the file name",
                             a = caption + title,
                             b = keywords,
@@ -426,10 +426,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     );
                     ui.add_space(10.0);
                     let widths: Vec<u32> = WIDTHS.iter().zip(st.widths).filter(|(_, on)| *on).map(|(w, _)| *w).collect();
-                    let label = format!("Create the web gallery ({n} photos)", n = n);
+                    let label = crate::i18n::tr_format!("Create the web gallery ({n} photos)", n = n);
                     let ok = n > 0 && !widths.is_empty() && app.services.pick_folder.is_some();
                     ui.add_enabled_ui(ok, |ui| {
-                        if text_button(ui, "createGallery", &label, false).clicked() {
+                        if crate::design::button(ui, "createGallery", &label, crate::design::Kind::Primary, true).clicked() {
                             let mut p = json!({"background": true, "title": st.title.trim(), "widths": widths, "formats": if st.avif { json!(["avif"]) } else { json!([]) }});
                             if selected > 1 {
                                 p["ids"] = json!(ids.iter().map(|i| i.0).collect::<Vec<_>>());
@@ -469,15 +469,15 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                         }
                     });
                     ui.add_space(10.0);
-                    let label = format!("Export the kit ({n} photos)", n = n);
+                    let label = crate::i18n::tr_format!("Export the kit ({n} photos)", n = n);
                     ui.add_enabled_ui(n > 0 && st.pending.is_none() && app.services.pick_folder.is_some(), |ui| {
-                        if text_button(ui, "createKit", &label, false).clicked() {
+                        if crate::design::button(ui, "createKit", &label, crate::design::Kind::Primary, true).clicked() {
                             run = Some(("create.kit", json!({"title": st.title.trim(), "name": st.kit_name.trim(), "target": st.target.id(), "longEdge": st.long_edge})));
                         }
                     });
                     if let Some(k) = &st.last_kit {
                         ui.add_space(6.0);
-                        dim(ui, k["dir"].as_str().map(|d| format!("Last kit: {d}", d = d)).unwrap_or_else(|| k["error"].as_str().unwrap_or("").to_string()));
+                        dim(ui, k["dir"].as_str().map(|d| crate::i18n::tr_format!("Last kit: {d}", d = d)).unwrap_or_else(|| k["error"].as_str().unwrap_or("").to_string()));
                     }
                 }
                 Tab::Slideshow => {
@@ -490,9 +490,9 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                         register(ui.ctx(), "field:createInterval", r.rect);
                     });
                     ui.add_space(10.0);
-                    let label = format!("Start the slideshow ({n} photos)", n = n);
+                    let label = crate::i18n::tr_format!("Start the slideshow ({n} photos)", n = n);
                     ui.add_enabled_ui(n > 0, |ui| {
-                        if text_button(ui, "createSlideshow", &label, false).clicked() {
+                        if crate::design::button(ui, "createSlideshow", &label, crate::design::Kind::Primary, true).clicked() {
                             run = Some(("view.slideshow", json!({"interval": st.interval})));
                         }
                     });

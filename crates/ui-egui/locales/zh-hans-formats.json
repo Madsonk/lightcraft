@@ -276,5 +276,12 @@
   "Imported {day}": "Imported {day}",
   "Welcome back · {source} · {photos} photos · you were on {f}": "Welcome back · {source} · {photos} photos · you were on {f}",
   "Welcome back · {source} · {photos} photos": "Welcome back · {source} · {photos} photos",
-  "Rated or flagged: {done} of {total}": "Rated or flagged: {done} of {total}"
+  "Rated or flagged: {done} of {total}": "Rated or flagged: {done} of {total}",
+  "{n} photos: the {selected} selected, in grid order": "{n} photos: the {selected} selected, in grid order",
+  "{n} photos: everything in this view (select several to use only those)": "{n} photos: everything in this view (select several to use only those)",
+  "{a} from a caption or title, {b} from keywords, {c} will say only the file name": "{a} from a caption or title, {b} from keywords, {c} will say only the file name",
+  "Create the web gallery ({n} photos)": "Create the web gallery ({n} photos)",
+  "Export the kit ({n} photos)": "Export the kit ({n} photos)",
+  "Start the slideshow ({n} photos)": "Start the slideshow ({n} photos)",
+  "Last kit: {d}": "Last kit: {d}"
 }
