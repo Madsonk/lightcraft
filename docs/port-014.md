@@ -85,7 +85,7 @@ Known problems (honest list):
 - `cull.run` rejected 17 of 30 on a food shoot (soft focus and duplicates, genre "general"): calibrated on people shoots,
   not on food; `cull.apply` only flags 3 as Reject.
 - Portrait retouch with a real face was exercised by the unit tests (synthetic faces) only, not on a real portrait.
-- `ui-egui` tests: only a filtered subset was run (see below); `cargo xtask ci`, the wasm check and the web build were not run.
+- `ui-egui` tests: the filtered run compiled (28 min) but its binary stayed frozen at launch (macOS blocks new executables again), so no UI test result exists; `cargo xtask ci`, the wasm check and the web build were not run.
 - The engine without the `faces` / `autoseg` features (web build) compiles with dead-code warnings, untested for wasm.
 - Models (face mesh, ISNet, SegFormer) are not in the bundle; they are downloaded on request as in the fork.
 
