@@ -169,5 +169,11 @@ Limits, measured or not:
 - LightCraft on a **cold** disk cache of the originals (see above) and on a NAS.
 - LightCraft's UI paint times (the benchmark is headless); use `ui.inspect` → `perf` in the running app for those.
 - Culling/analysis models (lot A) and GPU thumbnail rendering.
-- `cargo clippy -D warnings` and the full `cargo xtask ci` were **not run** on this branch (the shared machine could not
-  afford another workspace build); `cargo fmt` and the two new tests are green. Run `cargo xtask ci` before merging.
+- `cargo xtask ci` run on this branch on 27 to 28 Oct 2026 (one run, log kept): `fmt` ok; `clippy --workspace --all-targets -D warnings` ok;
+  `heif` ok; `cargo test --workspace`: every test passes (about 1 000, among them the five new tests of this work) **except two
+  GPU tests in `crates/gpu/src/nn.rs`** (`the_gpu_gives_what_the_reference_gives`, `a_runner_serves_many_tiles_from_many_threads`:
+  "GPU and pure-Rust CPU differ" on Apple M4 / Metal). They fail the same way when the compiled test binary is run again, and
+  `crates/gpu` is not touched by any commit of this work, so they are not caused by it; they were not run on the base commit.
+  The chain stopped there, so `parity`, `layers`, `assets` and `wasm` did not run in it. Run alone, `layers` reports 6 crates
+  missing from its table (`lightcraft-restore`, `-retouch`, `-search`, `-taste`…: other lots' crates) and `assets` reports
+  `crates/codecs/tests/data/*` fixtures without an attribution entry: both predate this work. `parity` and `wasm` were not run (they compile).
