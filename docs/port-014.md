@@ -43,7 +43,7 @@ decision. *Port* = our code brought onto the 0.14.0 API; *Keep upstream* = nothi
 | Baked pixels carried by a spot (`SpotMode::Inpaint`, `Aux`, `pipeline::inpaint`) | PatchMatch fill only | **Port, reduced** | Patch part only; depth map (Lens Blur, Depth Range) and the MI-GAN model are left out. |
 | "AI picks" panel, Portrait tool, one click, tour, grid verdict dot | nothing | **Port** into upstream's right panel and tool strip | Window ▸ AI Picks (Shift+K), Portrait Retouch (Shift+T); entries under Photo. |
 | UX refonte: journey bar, home, quick sort, classify, workspaces | Lightroom-style modules | **Not ported** (§4) | It replaces the shell (spaces Library / Retouch / Create). Upstream's shell differs; porting means redesigning it. `design.rs` is ported because the panels use it. |
-| Video Catcher (`video.*`, `describe.*`, Videos view) | M14 Video not started | **Not ported yet** (§4) | Depends on our `people`, `search`, `taste` crates, which upstream replaced; needs a rewrite on `lightcraft-faces`. |
+| **Video Catcher VID-1 → VID-5** (`video.*`, `describe.*`, Videos view) | M14 Video not started | **Port, rewritten on `lightcraft-faces`** (§3b) | Frames, clips, poster and probe, unreadable videos, `.LRV` skip, Video Catcher database import, annotation store and text search all ported; faces of videos rebuilt on YuNet + the chosen recognition model; the semantic (SigLIP) half is left out. |
 | Semantic search (SigLIP), taste | not started | **Not ported yet** | Prerequisites of `describe.*`. |
 | Depth map, Lens Blur, Depth Range, MI-GAN inpaint | depth not started | **Not ported** | Out of the portrait path. |
 | Proposed retouch, skin harmonize, dodge & burn | nothing | **Not ported** | Not asked for in this port. |
@@ -89,10 +89,25 @@ Known problems (honest list):
 - The engine without the `faces` / `autoseg` features (web build) compiles with dead-code warnings, untested for wasm.
 - Models (face mesh, ISNet, SegFormer) are not in the bundle; they are downloaded on request as in the fork.
 
+## 3b. Video Catcher on 0.14.0 (VID-1 → VID-5)
+
+| Piece | How it was ported |
+|---|---|
+| `video.frames / status / cancel / clip / list / moments / open / importVideoCatcher` | Copied (`crates/engine/src/video/`, `cmd/video.rs`). Hooks added to the 0.14.0 import (`ImportOptions.videos`, folders take videos only when asked, `ProbeInfo.duration`, poster and probe in `files.rs`, preview loader never reads a whole video) and `lightroom_catalog::read_sqlite_tables`. |
+| `describe.set / confirm / delete / undo / list / suggest / search` | Copied (`crates/engine/src/describe/`). Text annotations and the who + what search work; `describe.suggest` and by-meaning ranking are unavailable (no SigLIP). `crate::search` is a 15-line module with the message and the key. |
+| Faces of videos | **Rewritten** (`video/faces.rs`): `video.faces`, `video.facesStatus`, `video.facesCancel`. YuNet finds and aligns the faces of each picture, the chosen recognition model embeds them, results are kept in `<library>/video/faces-<model tag>.json`; moments show the people the **photos' named faces** suggest (same threshold and margin as `faces.suggest`). Nothing is ever written into a photo. Replaces the fork's `people.index` for videos. |
+| Videos view | `panels/videos.rs` ported (view mode `Videos`, bottom bar button, View ▸ Videos, Import Videos…, Video Catcher import); the people parts now call `video.faces`. The Recognition panel's video faces are not ported (the fork's Recognition is not in 0.14.0). 117 French messages of ours already in `fr.json`, plus the Videos ones. |
+| Asynchronous loading of the Videos view | The view reads the remembered lists of pictures (as in the fork's last fix) but still builds its list on the window thread: a "Loading…" state off-thread was not done. |
+
+Evidence: `cargo test -p lightcraft-engine --features faces,autoseg --lib -- video describe`: 24 passed, 0 failed (real FFmpeg;
+synthetic videos); clippy `-D warnings` clean on engine, ui-egui and cli. Not run: the `tests_videos` UI tests, the real
+`~/Movies/VideoCatalog` database (read-only data, never touched), a run of `video.faces` on a real clip with named photos.
+
 ## 4. Left out on purpose
 - **UX refonte shell** (journey bar, spaces, home, quick sort, classify): replaces the whole window; upstream's
   Lightroom-style modules stay. A thin journey bar mapped onto upstream's modules can come later.
-- **Video Catcher** (`video.*`, `describe.*`, Videos view): rewrite on `lightcraft-faces` instead of our `people` crate.
+- **VID-6** (calibrated search floor, text-mean centring, scene cuts, Whisper transcription, search in speech, retry of failures): not started, by order of the maintainer it comes last.
+- Semantic proposals and by-meaning ranking of `describe.*` (they need the SigLIP model, `crates/search`): `describe.suggest` answers "Semantic search is not available in this build".
 - Semantic search, taste, depth / Lens Blur, MI-GAN inpainting, proposals, `perf_bench`.
 
 ## 5. Verification commands (run one build at a time, see the lock rule)
