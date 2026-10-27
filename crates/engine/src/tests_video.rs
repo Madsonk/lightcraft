@@ -209,4 +209,3 @@ fn force_keeps_video_catchers_pictures_and_a_stopped_run_leaves_a_whole_list() {
         assert!(std::fs::read_dir(&vdir).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().ends_with(".part")), "no half-written file left");
     }
 }
-

@@ -28,9 +28,9 @@ pub mod contact_sheet;
 pub mod crs;
 pub mod crs_masks;
 pub mod cull_job;
-pub mod describe;
 pub mod demo;
 pub mod denoise;
+pub mod describe;
 pub mod devices;
 pub mod display;
 pub mod doc_path;
@@ -1406,12 +1406,10 @@ mod tests_crop_angle;
 mod tests_crop_aspect;
 #[cfg(test)]
 mod tests_cull;
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests_describe;
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests_video;
 #[cfg(test)]
 mod tests_denoise;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_describe;
 #[cfg(test)]
 mod tests_export;
 #[cfg(test)]
@@ -1486,6 +1484,8 @@ mod tests_slideshow_export;
 mod tests_spots;
 #[cfg(test)]
 mod tests_sync;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_video;
 #[cfg(test)]
 mod tests_view_follow;
 #[cfg(test)]

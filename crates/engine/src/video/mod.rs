@@ -13,9 +13,9 @@
 //! (`<library>/describe/`, [`crate::describe`]) uses the same key, so "who" (faces) and "what"
 //! (scene, action, description) of one moment meet without being copied into each other.
 
+pub mod faces;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ffmpeg;
-pub mod faces;
 pub mod frames;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod unreadable;

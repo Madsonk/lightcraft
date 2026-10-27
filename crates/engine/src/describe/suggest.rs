@@ -164,9 +164,7 @@ pub fn suggest(_: &mut Session, _: &Value) -> Result<Value> {
     Err(other(format!("{} Proposals for scenes and actions need it; nothing was written.", crate::search::UNAVAILABLE)))
 }
 
-
 /// `describe.suggest {ids?, ms?, threshold?, background?, limit?, scenes?, actions?}`.
-
 
 /// `describe.cancel`.
 pub fn cancel(s: &mut Session) -> Value {

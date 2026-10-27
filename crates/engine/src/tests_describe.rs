@@ -91,7 +91,6 @@ fn proposals_need_the_model_and_a_choice_of_photos() {
     assert_eq!(s.execute("describe.status", &json!({})).unwrap()["running"], false);
 }
 
-
 #[test]
 fn pictures_are_cut_in_the_background_and_folders_bring_videos_only_when_asked() {
     if !have_ffmpeg() {

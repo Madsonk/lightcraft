@@ -756,13 +756,19 @@ pub fn start(app: &mut LightcraftApp, d: &ImportDialog) -> Result<Value, String>
 
 /// Start importing `paths` (files or folders) in the background, e.g. dropped on the window.
 pub fn start_paths(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value, String> {
+    start_paths_with(app, paths, json!({"mode": "add"}))
+}
+
+/// [`start_paths`] with `library.import`'s options (`{"mode": "add", "videos": true}`: a folder's
+/// videos too).
+pub fn start_paths_with(app: &mut LightcraftApp, paths: Vec<String>, params: Value) -> Result<Value, String> {
     busy_synchronizing(app)?;
     if running(app) {
         return Err(crate::i18n::tr("An import is running").to_string());
     }
     let undo0 = app.session.undo.len();
     let total = paths.len();
-    app.import = Some(ImportTask::new(paths, json!({"mode": "add"}), undo0, false));
+    app.import = Some(ImportTask::new(paths, params, undo0, false));
     Ok(json!({"importing": total}))
 }
 
