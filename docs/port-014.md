@@ -51,4 +51,67 @@ decision. *Port* = our code brought onto the 0.14.0 API; *Keep upstream* = nothi
 | `perf_bench` + `tools/perf.sh` | none | **Not ported yet** | Measurement tooling. |
 | Extension points for lot B (profiles) and galleries | — | Kept free | `style.*` and `autocrop.*` ids are not used; the command registry is untouched. |
 
-§3 to §6 (state of the port, bundle, verification, how to re-apply on 0.15.0) are filled in as the work lands.
+## 3. State of the port (2026-10-27)
+
+Written and committed (`d89d26a1`), **not yet compiled**: the Mac stopped starting new executables at 06:33
+(see §6), so no `cargo` run has finished. Treat every item below as "ported, unverified" until §5 is done.
+
+Order of dependency, as committed: crates `culler`, `facemesh`, `retouch`, `autoseg` (copied unchanged) →
+`catalog` (`FaceInfo`, `Analysis.faces`, `Analysis.verdict`, filter `faces`, rule fields) → `develop`
+(`PortraitStack`, `InpaintPatch`, `Aux`, `SpotMode::Inpaint`, `Spot.patch`) → `pipeline` (`inpaint.rs`, skipped in
+`spots.rs`, part of the stage key) → `engine` (`cull_job`, `facemesh`, `portrait*`, `autoseg`, `dust`, reduced `ai.rs`,
+patches attached in `media.rs`) → `ui-egui` (`design`, `flow`, `panels/cull`, `panels/portrait`, tool strip, menus,
+grid dot) → apps (features `faces`, `autoseg`).
+
+## 4. Left out on purpose
+- **UX refonte shell** (journey bar, spaces, home, quick sort, classify): replaces the whole window; upstream's
+  Lightroom-style modules stay. A thin journey bar mapped onto upstream's modules can come later.
+- **Video Catcher** (`video.*`, `describe.*`, Videos view): rewrite on `lightcraft-faces` instead of our `people` crate.
+- Semantic search, taste, depth / Lens Blur, MI-GAN inpainting, proposals, `perf_bench`.
+
+## 5. Verification commands (run one build at a time, see the lock rule)
+```bash
+source /Volumes/Data/work/lc-port-env.sh          # RUSTUP_HOME, PATH, CARGO_BUILD_JOBS=3, CARGO_TARGET_DIR, lcbuild()
+cd /Volumes/Data/work/lc-port-014
+lcbuild cargo check -p lightcraft-engine --features faces,autoseg --lib
+lcbuild cargo fmt --all -- --check
+lcbuild cargo clippy -p lightcraft-culler -p lightcraft-facemesh -p lightcraft-retouch -p lightcraft-autoseg \
+        -p lightcraft-catalog -p lightcraft-develop -p lightcraft-pipeline -p lightcraft-engine -p lightcraft-ui-egui \
+        --all-targets --features lightcraft-engine/faces,lightcraft-engine/autoseg -- -D warnings
+lcbuild cargo test -p lightcraft-culler -p lightcraft-retouch -p lightcraft-facemesh
+lcbuild cargo test -p lightcraft-engine --features faces,autoseg --lib -- cull portrait facemesh autoseg
+lcbuild cargo test -p lightcraft-ui-egui --lib -- panels tests_menubar tests_panels
+lcbuild cargo xtask layers && lcbuild cargo xtask assets
+# release build and bundle
+lcbuild cargo build --release -p lightcraft --features lightcraft/heif
+codesign --force -s - /Volumes/Data/work/lightcraft-port-target/release/lightcraft
+/Volumes/Data/work/lc-port-bundle.sh /Volumes/Data/work/lightcraft-port-target/release/lightcraft \
+        /Volumes/Data/work/lightcraft-port-bundle "$(git rev-parse HEAD)" madson1
+```
+The bundle copies the launcher's own `Info.plist` (id `ai.storyteller.lightcraft`, version `0.14.0`), adds
+`LightCraftLocalBuild = 0.14.0-madson1`, and is signed ad hoc. Real-photo check: copy at most 40 face-free photos
+(e.g. `2024/2024-12-08`) to the internal disk, import them into a throw-away library, run Import → Sort (AI picks) →
+Portrait (no face: the message must be clear) → Export, take headless screenshots outside the repository, delete the copy.
+
+## 6. Re-applying our changes when the launcher updates LightCraft (0.15.0 and later)
+
+The launcher records `lightcraft` in `~/Library/Application Support/ArtCraft Launcher/installed.json`
+(`version`, `path`) and replaces the app at that path when it installs a newer release. **It will overwrite our
+build**, and we found no log line showing how it decides an app is up to date, so assume any update does.
+
+1. `git fetch origin --tags`; `git worktree add -b lc-port-015 ../lc-port-015 v0.15.0`.
+2. `git cherry-pick` the port commits of `lc-port-014` in order (`git log --oneline v0.14.0..lc-port-014`); each is
+   small and one theme, so conflicts stay local. The risky files are the shared ones: `catalog/src/model.rs`
+   (`Analysis`), `develop/src/settings.rs` (`DevelopSettings`, `Spot`), `engine/src/lib.rs` (modules, `Session`
+   fields), `engine/src/cmd/mod.rs` (spec list), `ui-egui/src/{lib,state,menus,menubar}.rs`, `panels/{right,strip,grid}.rs`.
+3. Check upstream's changelog (`docs/whats-new.md`, `docs/roadmap.md`) for anything that now replaces a ported piece
+   (culling, portrait, eye analysis, automatic masks) and drop ours in favour of it.
+4. Run §5 and rebuild the bundle with the new version number in the reference plist.
+5. Keep a copy of the bundle outside `/Volumes/Madson/ArtCraft/` (here `/Volumes/Data/work/lightcraft-port-bundle/`)
+   and do not edit `installed.json` without proof of how the launcher uses it.
+
+## 7. Environment problem met during the port
+From 06:33 on 2026-10-27, new executables on this Mac stayed in `_dyld_start` for 30 minutes and more (an ad-hoc
+signed copy of `/bin/echo` too; cargo build scripts of every session). `syspolicyd` was working through a flood of
+dylib assessments from another process. Rebooting or restarting `syspolicyd`, or adding the terminal app under
+Privacy & Security ▸ Developer Tools, is the way out; building on the internal disk does not help.
