@@ -60,7 +60,35 @@ photographer's develop settings ──► 14 sliders (targets.rs) ────�
 
 ## Measured
 
-_(filled in below: synthetic ground truth, then Madson's archive.)_
+_Not measured yet: the first build of this lot could not run (the machine refused to start freshly built
+executables on 27 October). The method is fixed so the numbers are comparable when they exist:_
+
+* **Synthetic ground truth** (`lightcraft_style::synth`): a made-up photographer whose edit is a known function of
+  the photo plus noise, one slider pure noise. Expected: the learned sliders beat "median" by well over the 3 %
+  gate, the noise slider is *not learned*. Reported: held-out MAE per slider against *no adjustment* and
+  *median adjustment*, training time (`summary.trainSeconds`), inference time per photo (features + predict), profile
+  size (JSON bytes).
+* **Madson's archive (real)**: the Lightroom catalogue v13 (read on a copy) has 14 702 photos of which 314 are
+  edited and 222 still have their original. Import them into a scratch library, run `style.train`, report the
+  leave-shoots-out error per slider against the same two baselines.
+* **Straighten / crop**: run `autostraighten.suggest` and `autocrop.suggest` on ~100 real JPEG + CR2 photos, judge each
+  suggestion image by image (good / acceptable / wrong), report the rate and list the failures.
+
+## Limits
+
+* **222 edited photos is a small sample.** Aftershoot asks for thousands. With about 33 numbers per photo and 14
+  sliders, expect only the sliders that follow the photo's own brightness or white balance (exposure, temperature,
+  shadows, highlights) to clear the honesty gate; the rest will honestly say "median only".
+* The model is linear (ridge regression) on global statistics. It cannot see content: a portrait and a landscape
+  with the same histogram get the same edit. No local adjustments, masks, grain or presets are predicted.
+* A learned style is only as consistent as its photographer. Edits made for different clients or looks in one
+  catalogue average out; train a profile per look.
+* Crop suggestions use detected faces when Analyze Faces has run, otherwise a colour / contrast saliency blob, which
+  is a heuristic and will be wrong on busy scenes. Straighten needs dominant straight lines; it stays silent
+  otherwise rather than guess.
+* Not validated yet on a second photographer, nor by Madson's eye on the rendered result.
+* The pipeline's `taste` crate is missing from `xtask/src/layers.rs` TABLE on this base; `cargo xtask layers` may
+  flag it (not introduced by this lot).
 
 
 ## Porting to the 0.14.0 base
