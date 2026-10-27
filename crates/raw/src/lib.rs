@@ -312,6 +312,28 @@ pub fn probe_info(bytes: &[u8]) -> Result<RawInfo> {
     decode_with(bytes, Mode::Header).map(RawImage::into_info)
 }
 
+/// Where the image data of a TIFF-based file starts, for a reader that only has the beginning of the file: up to
+/// `max` windows `(offset, len)` of at most `window` bytes, one per image IFD, past the end of `head` (the bytes at
+/// `data` are the first ones of a file `file_len` long). A lossless-JPEG raw keeps its sample header there.
+pub fn data_windows(head: &[u8], file_len: u64, max: usize, window: usize) -> Vec<(u64, usize)> {
+    let Ok(tiff) = Tiff::parse(head) else { return Vec::new() };
+    let mut out = Vec::new();
+    for ifd in tiff.all_ifds() {
+        // (the tags themselves: a Canon CR2's lossless strip has no `ImageInfo`)
+        for (offsets, counts) in [
+            (lightcraft_tiff::tags::STRIP_OFFSETS, lightcraft_tiff::tags::STRIP_BYTE_COUNTS),
+            (lightcraft_tiff::tags::TILE_OFFSETS, lightcraft_tiff::tags::TILE_BYTE_COUNTS),
+        ] {
+            let Some(offset) = ifd.u64(offsets) else { continue };
+            if offset >= head.len() as u64 && offset < file_len && out.len() < max {
+                let len = ifd.u64(counts).unwrap_or(window as u64).min(file_len - offset);
+                out.push((offset, usize::try_from(len).unwrap_or(usize::MAX).min(window)));
+            }
+        }
+    }
+    out
+}
+
 /// How much of a file a decoder reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Mode {

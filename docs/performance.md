@@ -91,6 +91,50 @@ sits at the end of the file and a smaller one (still at least the requested size
 Not changed (deliberately): the content hash read at import still reads the whole file, and changing it would alter the
 catalogue's `content_hash` (a format change that needs a tested migration).
 
+## Slow volume (USB disk; a NAS is slower still): 27 Oct 2026
+
+The library of originals is on `/Volumes/Qnap bureau`, which is today a **USB disk** (`diskutil`: Protocol USB), not a network
+share. No SMB mount was available, so nothing here is a network figure. Test: 40 Canon CR2 (26.5 MB, 5760×3840) of an existing
+folder, read in place through symbolic links (originals never written), `perf_bench run usb40 24`.
+
+Raw read speed (Python, `F_NOCACHE`, 20 distinct files each): **whole file 22.5 MB/s = 1.16 s per file**; first 3 MiB
+30.6 MB/s = 103 ms per file. Reading a raw whole is what made everything slow:
+
+| Step, 40 CR2 on USB | Before | After |
+|---|---|---|
+| Import (probe + content key + catalogue) | 31.0 s and 32.2 s in two runs (774–805 ms/photo) | **7.9 s** (198 ms/photo), one run |
+| First paint, 24 visible cells | 2.6 s | 1.1 s |
+| 40 final thumbnails | 28.7 s (decode reads each raw whole) | 26.0 s (not improved) |
+| Embedded preview read, per photo (A/B) | 859 ms whole file, 26.5 MB | 140 ms, 3.1 MB |
+
+What changed (`files::probe_head`, `lightcraft_raw::data_windows`): a raw over 6 MiB is described from its first 2 MiB plus
+64 KiB at the start of each image strip (a lossless-JPEG raw keeps its sample header there), and its content key is a
+**sampled hash** `ps1-…` (size, then 1 MiB from the start, the middle and the end: the scheme videos already used, `vs1-…`)
+instead of the hash of every byte. About 4 MiB are read instead of 26.5. A file the head does not settle is read whole as
+before. Formats handled: Sony ARW, Canon CR2, Samsung SRW, Panasonic RW2/RAW, Fuji RAF (GFX 50S layout); on the corpus each
+gives the same probe as the whole file (`tests/probe_head.rs`). **Still read whole**: Canon CR3, Nikon NEF, Olympus ORF, older
+Fuji RAF, DNG, JPEG and every other format (their header reader needs data past the head).
+
+Catalogue compatibility (no schema change: `content_hash` was already an opaque optional string, videos already use a
+sampled one): photos imported earlier keep their full hash; a file imported again from its own path is a duplicate by path;
+a copy of an old photo elsewhere is found as a duplicate too (when an older photo has the same size, the file is read once
+and, if it is that photo's content, takes its key); Find Missing Photos compares with the scheme of the stored key; probing an
+old photo again keeps its key. Tested end to end in `tests/probe_head_import.rs` (old catalogue, new probe, same folder,
+copy in another folder, new file, old keys unchanged). Rolling back: an older build reads `ps1-` keys as plain strings; its only
+loss is that relinking a moved file cannot verify it by content.
+
+Limits, measured or not:
+- The "after" import is one run and the "before" two; the page cache was probably warm for part of the after run (the A/B
+  loop shows whole-file reads at 29 ms, i.e. cached, after the thumbnail pass read every file). Treat 7.9 s as an upper
+  bound on the gain of the *same order*, not a precise ratio. A cold, repeated measure needs `purge` (sudo).
+- A sampled key cannot tell apart two different files that share size and the three sampled MiB, for example a raw whose
+  middle was edited in place. An exact comparison (as Import ▸ Copy does for videos) stays available for copies.
+- **Thumbnails still decode each raw whole** (26 s for 40 on this disk, 1.5 photos/s): the next step is to build browse
+  thumbnails of unedited raws from the embedded preview (head read) and keep full decode for editing and export, which
+  changes what a grid cell shows (the camera's rendering, not LightCraft's) and needs a decision.
+- Whole-library SQLite on the slow disk: not tested (the catalogue of this run lived in memory).
+- `cargo xtask ci` and clippy have not been run on this branch.
+
 ## What is not measured, and why
 
 - Aftershoot on **raw** files: the only album allowed for tests holds JPEGs. Its per-photo analysis time and pixels on screen

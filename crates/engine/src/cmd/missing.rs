@@ -90,8 +90,22 @@ fn stored_hash(p: &Photo) -> Option<&str> {
     p.content_hash.as_deref().map(|h| h.split(':').next().unwrap_or(h)).filter(|h| !h.is_empty())
 }
 
-/// The content hash of the file at `path` (as import computes it), if it can be read.
-fn file_hash(path: &str) -> Option<String> {
+/// The key scheme of a stored content hash: `ps1` / `vs1` for the sampled keys of big raws and videos, `` for the hash of
+/// every byte.
+fn hash_scheme(stored: &str) -> &'static str {
+    match stored.get(..4) {
+        Some("ps1-") => "ps1",
+        Some("vs1-") => "vs1",
+        _ => "",
+    }
+}
+
+/// The content key of the file at `path` in `scheme` (as import computes it), if it can be read.
+fn file_hash(path: &str, scheme: &str) -> Option<String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if !scheme.is_empty() {
+        return crate::video::sampled_hash_tagged(Path::new(path), scheme).ok();
+    }
     std::fs::read(path).ok().map(|b| lightcraft_preview::hash_bytes(&b).to_string())
 }
 
@@ -233,8 +247,11 @@ pub fn plan_find_missing(candidates: &[FindCandidate], folder: &str) -> std::res
         }
     }
     let mut by_size: Option<HashMap<u64, Vec<String>>> = None;
-    let mut hashes: HashMap<String, Option<String>> = HashMap::new();
-    let mut hash_of = |f: &str| hashes.entry(f.to_string()).or_insert_with(|| file_hash(f)).clone();
+    let mut hashes: HashMap<(String, &'static str), Option<String>> = HashMap::new();
+    let mut hash_of = |f: &str, stored: &str| {
+        let scheme = hash_scheme(stored);
+        hashes.entry((f.to_string(), scheme)).or_insert_with(|| file_hash(f, scheme)).clone()
+    };
     let size_of = |f: &str| std::fs::metadata(f).map(|m| m.len()).ok();
     let mut used: HashSet<String> = HashSet::new();
     let mut plan = FindPlan::default();
@@ -248,7 +265,7 @@ pub fn plan_find_missing(candidates: &[FindCandidate], folder: &str) -> std::res
             .unwrap_or_default();
         // 1. same name and size, confirmed by the content hash
         let mut hit: Option<(String, MatchBy)> =
-            hash.and_then(|h| named.iter().find(|f| hash_of(f).as_deref() == Some(h))).map(|f| (f.to_string(), MatchBy::Name));
+            hash.and_then(|h| named.iter().find(|f| hash_of(f, h).as_deref() == Some(h))).map(|f| (f.to_string(), MatchBy::Name));
         // 2. renamed: same size and content
         if hit.is_none()
             && let Some(h) = hash
@@ -265,7 +282,7 @@ pub fn plan_find_missing(candidates: &[FindCandidate], folder: &str) -> std::res
             });
             hit = sizes
                 .get(&size)
-                .and_then(|v| v.iter().find(|f| !used.contains(*f) && hash_of(f).as_deref() == Some(h)))
+                .and_then(|v| v.iter().find(|f| !used.contains(*f) && hash_of(f, h).as_deref() == Some(h)))
                 .map(|f| (f.clone(), MatchBy::Content));
         }
         // 3. same name and size only (no hash, or the file was edited in place): one candidate

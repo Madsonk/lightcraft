@@ -169,10 +169,15 @@ fn edit_external(s: &mut Session, p: &Value) -> Result<Value> {
 /// `None` when nothing changed. Covers a raw that became decodable (or stopped being: a different
 /// file relinked), i.e. a change of [`lightcraft_catalog::Photo::preview_only`].
 pub(crate) fn content_op(id: lightcraft_catalog::PhotoId, ph: &lightcraft_catalog::Photo, info: crate::media::ProbeInfo) -> Option<Op> {
-    let same = info.content_hash == ph.content_hash
-        && info.file_size == ph.file_size
-        && (info.width, info.height) == (ph.width, ph.height)
-        && info.preview_only == ph.preview_only;
+    // a photo imported before the sampled keys keeps its full hash when the same file is probed again (size and
+    // dimensions are the same), so its cached thumbnails stay valid
+    let same_key = info.content_hash == ph.content_hash
+        || match (info.content_hash.as_deref(), ph.content_hash.as_deref()) {
+            (Some(a), Some(b)) => a.starts_with("ps1-") != b.starts_with("ps1-") && !a.contains(':') && !b.contains(':'),
+            _ => false,
+        };
+    let same =
+        same_key && info.file_size == ph.file_size && (info.width, info.height) == (ph.width, ph.height) && info.preview_only == ph.preview_only;
     (!same).then_some(Op::SetContent {
         id,
         width: info.width,
