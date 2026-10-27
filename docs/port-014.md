@@ -99,9 +99,11 @@ Known problems (honest list):
 | Videos view | `panels/videos.rs` ported (view mode `Videos`, bottom bar button, View ▸ Videos, Import Videos…, Video Catcher import); the people parts now call `video.faces`. The Recognition panel's video faces are not ported (the fork's Recognition is not in 0.14.0). 117 French messages of ours already in `fr.json`, plus the Videos ones. |
 | Asynchronous loading of the Videos view | The view reads the remembered lists of pictures (as in the fork's last fix) but still builds its list on the window thread: a "Loading…" state off-thread was not done. |
 
+Real run of the bundle on a synthetic 8 s video (FFmpeg test pattern, throw-away library, deleted afterwards): `library.import {videos: true}` → 1 video, 8 s; `video.frames {every: 2}` → 4 pictures; `video.list` / `video.moments` fine; `describe.set` then `describe.search {query: "mire"}` finds it; `video.faces` loaded YuNet and the SFace model and processed 4 pictures (0 faces: a test pattern); screenshot `verification/videos.png`. Seen in the app: the poster of the list shows white (the test pattern's first picture is not necessarily white: unconfirmed), and the "Finding faces" panel stays up after the run until the next poll (3 s).
+
 Evidence: `cargo test -p lightcraft-engine --features faces,autoseg --lib -- video describe`: 24 passed, 0 failed (real FFmpeg;
-synthetic videos); clippy `-D warnings` clean on engine, ui-egui and cli. Not run: the `tests_videos` UI tests, the real
-`~/Movies/VideoCatalog` database (read-only data, never touched), a run of `video.faces` on a real clip with named photos.
+synthetic videos); clippy `-D warnings` clean on engine, ui-egui and cli. Not run: the `tests_videos` UI tests (the UI test binary does not start reliably on this machine), the real
+`~/Movies/VideoCatalog` database (read-only data, never touched), `video.faces` on a real clip with named photos, and naming from the photos' people.
 
 ## 4. Left out on purpose
 - **UX refonte shell** (journey bar, spaces, home, quick sort, classify): replaces the whole window; upstream's
