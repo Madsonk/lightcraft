@@ -53,15 +53,41 @@ decision. *Port* = our code brought onto the 0.14.0 API; *Keep upstream* = nothi
 
 ## 3. State of the port (2026-10-27)
 
-Written and committed (`d89d26a1`), **not yet compiled**: the Mac stopped starting new executables at 06:33
-(see §6), so no `cargo` run has finished. Treat every item below as "ported, unverified" until §5 is done.
+Ports compile and run. Evidence (commands run on this machine, logs in `/Volumes/Data/work/lc-port-*.log`):
+
+| Check | Result |
+|---|---|
+| `cargo check -p lightcraft-engine --features faces,autoseg`, `-p lightcraft-ui-egui -p lightcraft-cli` | OK |
+| `cargo test --lib` culler / retouch / facemesh / autoseg / develop | 2 + 16 + 31 + 15 + 55 passed, 0 failed |
+| `cargo test -p lightcraft-engine --features faces,autoseg --lib -- cull portrait facemesh autoseg dust` | 49 passed, 0 failed, 4 ignored |
+| `cargo clippy … -- -D warnings` on culler, facemesh, retouch, autoseg, catalog, develop, pipeline, engine, ui-egui, cli | clean |
+| `cargo build --release -p lightcraft --features heif` (CRAFT_FONTS_DIR set) | OK, 23 min, 121 MB |
+| Bundle `/Volumes/Data/work/lightcraft-port-bundle/LightCraft.app` | id `ai.storyteller.lightcraft`, `0.14.0`, `LightCraftLocalBuild 0.14.0-madson1`, ad-hoc signed, `codesign --verify --strict --deep` valid |
+
+Real run of the bundle (control channel, throw-away library, 30 CR2 of the 2024-12-08 food shoot copied to the internal disk,
+copy and library deleted afterwards): import 30 photos; `cull.run` judged 30 in 3.5 s (2 highlight, 9 selected, 2 review,
+17 rejected, 10 duplicate groups, 4 scenes); `cull.apply` rated 30, picked 2, rejected 3; `photo.analyzeFaces` loaded
+the MediaPipe model and found 0 faces; `portrait.apply` / `portrait.auto` on a face-less photo answered
+`skipped: no face found` and changed nothing; `portrait.openEyes` answered "no face with closed eyes is known…";
+`app.export` wrote three 1600 px JPEGs. Screenshots (UI AI picks and Portrait panels, no faces):
+`/Volumes/Data/work/lightcraft-port-bundle/verification/`.
 
 Order of dependency, as committed: crates `culler`, `facemesh`, `retouch`, `autoseg` (copied unchanged) →
 `catalog` (`FaceInfo`, `Analysis.faces`, `Analysis.verdict`, filter `faces`, rule fields) → `develop`
-(`PortraitStack`, `InpaintPatch`, `Aux`, `SpotMode::Inpaint`, `Spot.patch`) → `pipeline` (`inpaint.rs`, skipped in
-`spots.rs`, part of the stage key) → `engine` (`cull_job`, `facemesh`, `portrait*`, `autoseg`, `dust`, reduced `ai.rs`,
-patches attached in `media.rs`) → `ui-egui` (`design`, `flow`, `panels/cull`, `panels/portrait`, tool strip, menus,
-grid dot) → apps (features `faces`, `autoseg`).
+(`PortraitStack`, `InpaintPatch`, `Aux`, `SpotMode::Inpaint`, `Spot.patch`) → `pipeline` (`inpaint.rs`, `linear_stage`,
+`cull::exposure`) → `engine` (`cull_job`, `facemesh`, `portrait*`, `autoseg`, `dust`, reduced `ai.rs`, patches
+attached in `media.rs`, `photo.analyze` weighs open eyes and takes `rejectClosedEyes`) → `ui-egui` (`design`, `flow`,
+`panels/cull`, `panels/portrait`, tool strip, menus, grid dot and "Eyes closed" pill) → apps (features `faces`, `autoseg`).
+
+Known problems (honest list):
+- The AI picks panel says "No verdicts yet" when the cull was started by command (`cull.run`) instead of its own button:
+  the panel's list is loaded by its own button. The verdict dots and the active photo's reasons are right.
+- `cull.run` rejected 17 of 30 on a food shoot (soft focus and duplicates, genre "general"): calibrated on people shoots,
+  not on food; `cull.apply` only flags 3 as Reject.
+- Portrait retouch with a real face was exercised by the unit tests (synthetic faces) only, not on a real portrait.
+- `ui-egui` tests: only a filtered subset was run (see below); `cargo xtask ci`, the wasm check and the web build were not run.
+- The engine without the `faces` / `autoseg` features (web build) compiles with dead-code warnings, untested for wasm.
+- Models (face mesh, ISNet, SegFormer) are not in the bundle; they are downloaded on request as in the fork.
 
 ## 4. Left out on purpose
 - **UX refonte shell** (journey bar, spaces, home, quick sort, classify): replaces the whole window; upstream's
