@@ -324,6 +324,9 @@ pub struct MediaCache {
     pub file_loader: Option<FileLoader>,
     pub file_probe: Option<FileProbe>,
     pub preview_loader: Option<PreviewLoader>,
+    /// Grid thumbnails of unedited raws come from the camera's embedded preview (a head read of the file) instead of
+    /// decoding the raw; edited photos always render from the raw. On by default.
+    pub preview_thumbs: bool,
     /// Reads a photo file's bytes (Photo Merge); `None` = the local file system.
     pub file_bytes: Option<crate::merge::ByteReader>,
     /// The library's smart previews folder (originals offline: render from the proxy).
@@ -397,6 +400,7 @@ impl Default for MediaCache {
             file_loader: None,
             file_probe: None,
             preview_loader: None,
+            preview_thumbs: true,
             file_bytes: None,
             smart_dir: None,
             availability: Default::default(),
@@ -679,6 +683,9 @@ pub struct RenderJob {
     pub stages: Option<Arc<StageCache>>,
     /// Keep a full-quality result here as the photo's view preview ([`crate::Session::loupe_job`]).
     pub view_cache: Option<(Arc<PreviewCache>, Hash128)>,
+    /// A grid thumbnail of an unedited raw: the camera's embedded preview, (path, loader, max edge), tried before the raw
+    /// is decoded. Its result is cached under its own key.
+    pub embedded: Option<(String, PreviewLoader, usize)>,
 }
 
 pub struct RenderResult {
@@ -744,6 +751,25 @@ impl RenderJob {
             && let Some(img) = cache.get_at(self.cache_generation, *key)
         {
             let image = Arc::unwrap_or_clone(img);
+            let histogram = Histogram::of_srgb8(&image);
+            return RenderResult {
+                request_id: self.request_id,
+                source_key: self.source_key,
+                photo: self.photo,
+                level: self.level,
+                key: self.key,
+                rendered: Ok(Rendered { image, histogram, deep: None }),
+                loaded: None,
+                quick: None,
+            };
+        }
+        // an unedited raw's grid thumbnail: the camera's embedded preview, when the file has a usable one (else the raw is decoded below)
+        if let Some((path, loader, edge)) = &self.embedded
+            && let Some(image) = loader(path, *edge)
+        {
+            if let Some((cache, key)) = &self.cache {
+                cache.put_at(self.cache_generation, *key, Arc::new(image.clone()));
+            }
             let histogram = Histogram::of_srgb8(&image);
             return RenderResult {
                 request_id: self.request_id,
@@ -957,9 +983,15 @@ impl crate::Session {
             ^ id.0.wrapping_mul(0x9e37_79b9_7f4a_7c15)
             ^ content.rotate_left(17)
             ^ salt;
+        // a grid thumbnail of an unedited raw: the camera's preview first (never for a "before" view or an edited photo)
+        let embedded =
+            thumb_bucket.filter(|_| self.media.preview_thumbs && !before).and_then(|b| self.embedded_of(&p).map(|(path, loader)| (path, loader, b)));
         let cache = thumb_bucket.map(|b| {
             let mut k = Hasher128::new();
             k.str(&content_key).u64(settings_hash).u64(b as u64).u64(RENDER_CACHE_VERSION).u64(crate::camera_profiles::cache_key());
+            if embedded.is_some() {
+                k.str("camera-preview");
+            }
             // (only a render that uses a denoised picture has it in its key, so every other thumbnail stays valid)
             if salt != 0 {
                 k.u64(salt);
@@ -981,6 +1013,7 @@ impl crate::Session {
             cache,
             stages: None,
             view_cache: None,
+            embedded,
         })
     }
 
@@ -1037,6 +1070,7 @@ impl crate::Session {
             cache: Some((self.media.rendered.clone(), ck)),
             stages: None,
             view_cache: None,
+            embedded: None,
         })
     }
 
@@ -1082,6 +1116,7 @@ impl crate::Session {
             cache: Some((self.media.rendered.clone(), ck)),
             stages: None,
             view_cache: None,
+            embedded: None,
         })
     }
 

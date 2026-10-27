@@ -123,15 +123,42 @@ old photo again keeps its key. Tested end to end in `tests/probe_head_import.rs`
 copy in another folder, new file, old keys unchanged). Rolling back: an older build reads `ps1-` keys as plain strings; its only
 loss is that relinking a moved file cannot verify it by content.
 
+### Browse thumbnails from the camera preview (27 Oct 2026)
+
+`MediaCache::preview_thumbs` (on by default; `RenderJob::embedded`): the grid thumbnail of an **unedited** raw is the camera's
+embedded JPEG (read from the head of the file, resized and oriented), cached under its own key (`camera-preview`); the raw is
+no longer decoded to fill a grid. Kept as before: a photo whose settings differ from its import look renders from the raw (the
+LightCraft rendering, also its cached thumbnails); a raw whose preview cannot be read falls back to decoding it, without an
+error; the loupe never uses it (`loupe_job` has no embedded source); `preview_thumbs = false` turns it off. Tests:
+`crates/engine/tests/preview_thumbs.rs` (unedited uses the preview, edited does not, loupe does not, unreadable preview falls
+back, switch off). Same 40 CR2 on USB, `perf_bench run usb40 24`:
+
+| Metric | Decode every raw (before) | Camera preview (after) |
+|---|---|---|
+| 40 final thumbnails | 26.0 s (1.5 photos/s) | **0.57 s** (70 photos/s) |
+| 24 visible final thumbnails | 16.3 s | 0.16 s |
+| First paint, 24 cells | 1.1 s | 1.1 s |
+| Import | 7.9 s | 7.3 s |
+| Loupe, sharp image, cold | 340 ms | **905 ms** |
+| Loupe, sharp, neighbour prefetched | 38 ms | 40 ms |
+| Loupe stand-in (camera preview) | 71 ms | 79 ms |
+
+The loupe figure got worse for an honest reason: the decode of every raw used to leave the files in the system page cache, so the
+later "cold" loupe read was warm; now the raws are not read until opened, so the first sharp render pays the 26 MB read
+at the disk's 22 to 30 MB/s. It is acceptable because the camera preview is shown at once (79 ms) and the next photos are
+prefetched (40 ms when prefetched); it is a real cost the first time a raw is opened from a slow disk. Numbers are one run
+each on a disk whose cache I could not purge (needs sudo): read them as orders of magnitude. What a cell shows for an unedited
+raw is now the camera's own rendering, the same as the "camera look" the import applies by default; with another import
+preset the photo is not at its import look and renders from the raw as before.
+
 Limits, measured or not:
 - The "after" import is one run and the "before" two; the page cache was probably warm for part of the after run (the A/B
   loop shows whole-file reads at 29 ms, i.e. cached, after the thumbnail pass read every file). Treat 7.9 s as an upper
   bound on the gain of the *same order*, not a precise ratio. A cold, repeated measure needs `purge` (sudo).
 - A sampled key cannot tell apart two different files that share size and the three sampled MiB, for example a raw whose
   middle was edited in place. An exact comparison (as Import ▸ Copy does for videos) stays available for copies.
-- **Thumbnails still decode each raw whole** (26 s for 40 on this disk, 1.5 photos/s): the next step is to build browse
-  thumbnails of unedited raws from the embedded preview (head read) and keep full decode for editing and export, which
-  changes what a grid cell shows (the camera's rendering, not LightCraft's) and needs a decision.
+- Thumbnails of **edited** raws, and of every raw that is not at its import look, still decode the raw whole (the LightCraft
+  rendering is the point there).
 - Whole-library SQLite on the slow disk: not tested (the catalogue of this run lived in memory).
 - `cargo xtask ci` and clippy have not been run on this branch.
 
