@@ -36,6 +36,7 @@ mod merge;
 pub mod metadata;
 pub mod missing;
 mod organize;
+pub(crate) mod people_migrate;
 pub(crate) mod portrait;
 pub(crate) mod portrait_stack;
 mod prefs;
@@ -161,6 +162,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(lut_profiles::specs());
         v.extend(mask_effects::specs());
         v.extend(cull::specs());
+        v.extend(people_migrate::specs());
         v.extend(video::specs());
         v.extend(crate::video::faces::specs());
         v.extend(describe::specs());

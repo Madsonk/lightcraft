@@ -1458,6 +1458,8 @@ mod tests_move_to_share;
 mod tests_organize;
 #[cfg(test)]
 mod tests_persist;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_people_migrate;
 #[cfg(test)]
 mod tests_portrait_job;
 #[cfg(test)]
