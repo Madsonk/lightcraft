@@ -37,11 +37,15 @@ pub enum RightPanel {
     Info,
     /// The profile browser (part of Edit).
     Profiles,
+    /// Portrait retouch by sliders: groups, Before / After, auto, open eyes.
+    Portrait,
+    /// AI Culling: run it on the view, read the buckets, apply the proposed stars and flags.
+    AiPicks,
 }
 
 impl RightPanel {
     pub fn is_edit_tool(self) -> bool {
-        matches!(self, RightPanel::Edit | RightPanel::Profiles | RightPanel::Crop | RightPanel::Remove | RightPanel::Masking | RightPanel::RedEye)
+        matches!(self, RightPanel::Edit | RightPanel::Profiles | RightPanel::Crop | RightPanel::Remove | RightPanel::Masking | RightPanel::RedEye | RightPanel::Portrait)
     }
 }
 
@@ -937,6 +941,16 @@ pub struct UiState {
     /// a request made while the panel can't show expires.
     #[serde(skip)]
     pub focus_keywords: Option<u64>,
+    /// An Analyze Faces (face mesh) run was in progress at the last frame.
+    #[serde(skip)]
+    pub facemesh_running: bool,
+    /// A face-mesh model download was in progress at the last frame.
+    #[serde(skip)]
+    pub facemesh_downloading: bool,
+    /// The guided tour of the cull / retouch flow has been seen (relaunch: Window ▸ Guided Tour).
+    pub flow_tour_done: bool,
+    /// Ids of the "next time, try the key…" hints already shown (each is shown once).
+    pub flow_tips: Vec<String>,
     /// A mask being renamed in the Masks list: its id and the edited name.
     #[serde(skip)]
     pub renaming_mask: Option<(u32, String)>,
@@ -1549,6 +1563,10 @@ impl Default for UiState {
             search: String::new(),
             focus_search: false,
             focus_keywords: None,
+            facemesh_running: false,
+            facemesh_downloading: false,
+            flow_tour_done: false,
+            flow_tips: Vec::new(),
             renaming_mask: None,
             describe: None,
             detail_due: None,

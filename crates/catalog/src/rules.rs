@@ -123,6 +123,11 @@ pub const FIELDS: &[(&str, &str, Kind)] = &[
     // Assisted Culling
     ("sharpness", "Focus (assisted culling)", Kind::Number),
     ("bestOfGroup", "Best of Similar Shots", Kind::Bool),
+    ("faceCount", "Faces (Analyze Faces)", Kind::Number),
+    ("eyesClosed", "Has Closed Eyes", Kind::Bool),
+    ("eyesOpen", "All Eyes Open", Kind::Bool),
+    ("cullBucket", "AI Culling Verdict", Kind::Choice(&[("highlight", "Highlight"), ("selected", "Selected"), ("review", "To review"), ("rejected", "Rejected")])),
+    ("cullStars", "AI Culling Stars (proposed)", Kind::Number),
 ];
 
 /// The fields the field menu shows at its top level, before the groups.
@@ -1036,8 +1041,16 @@ impl Rule {
                 let (w, h) = p.shown_size();
                 num_op(op, Some(w * h / 1e6), value)
             }
-            "sharpness" => num_op(op, p.analysis.map(|a| a.sharpness as f64), value),
-            "bestOfGroup" => yes(p.analysis.is_some_and(|a| a.best || a.group.is_none())),
+            "sharpness" => num_op(op, p.analysis.as_ref().map(|a| a.sharpness as f64), value),
+            "bestOfGroup" => yes(p.analysis.as_ref().is_some_and(|a| a.best || a.group.is_none())),
+            "faceCount" => num_op(op, p.faces().map(|f| f.len() as f64), value),
+            "eyesClosed" => yes(p.has_closed_eyes()),
+            "eyesOpen" => yes(p.has_open_eyes()),
+            "cullBucket" => {
+                let bucket = p.analysis.as_ref().and_then(|a| a.verdict.as_ref()).map(|v| v.bucket.name());
+                (bucket == Some(want.as_str())) == (op == "is")
+            }
+            "cullStars" => num_op(op, p.analysis.as_ref().and_then(|a| a.verdict.as_ref()).map(|v| v.stars as f64), value),
             "album" => {
                 let id = album_rule_id(value);
                 // a smart album's photos are its matches; one being evaluated (a loop) holds none

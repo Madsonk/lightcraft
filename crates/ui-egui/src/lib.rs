@@ -14,9 +14,11 @@ mod command_error;
 pub mod control;
 pub mod credits;
 pub mod date_picker;
+pub mod design;
 pub mod docking;
 mod drop_overlay;
 pub mod export_task;
+pub mod flow;
 mod focus_scan;
 mod frame_rate;
 pub mod headless;
@@ -496,6 +498,8 @@ pub struct LightcraftApp {
     pub export: Option<export_task::ExportTask>,
     /// Background file-system work of other commands (Find Missing Photos, auto import…).
     pub tasks: tasks::Tasks,
+    /// The cull → retouch flow: AI picks, portrait retouch, one click, tour.
+    pub flow: flow::Flow,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
     pub last_export_result: Option<Value>,
     /// The last slideshow export's end has been told (a toast).
@@ -599,6 +603,7 @@ impl LightcraftApp {
             shown_library: None,
             export: None,
             tasks: Default::default(),
+            flow: Default::default(),
             last_export_result: None,
             slideshow_export_reported: true,
             hover_preview: None,
@@ -968,6 +973,44 @@ impl LightcraftApp {
     }
 
     /// A toast for an error the user has to read and act on (stays 6 s).
+    /// A toast for something that worked.
+    pub fn toast_success(&mut self, ctx: &egui::Context, text: impl Into<String>) {
+        self.toast_for(ctx, text, 2.0);
+    }
+
+    /// Analyze Faces (the face mesh): apply what the worker found, show its errors and its end,
+    /// watch the model download. Never waits for the model.
+    fn facemesh_poll(&mut self, ctx: &egui::Context) {
+        let polled = self.session.faces_poll();
+        if polled.changed {
+            ctx.request_repaint();
+        }
+        if let Some(e) = polled.messages.into_iter().last() {
+            self.toast_error(ctx, e);
+        }
+        let busy = self.session.facemesh.busy();
+        if busy {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        } else if self.ui.facemesh_running {
+            let p = self.session.facemesh.progress();
+            let closed = self.session.catalog.photos().filter(|ph| ph.has_closed_eyes()).count();
+            self.toast(ctx, format!("Faces analyzed in {} photo{} · {closed} with closed eyes", p.done, if p.done == 1 { "" } else { "s" }));
+        }
+        self.ui.facemesh_running = busy;
+        let download = self.session.facemesh.download_status();
+        if download.running {
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        if self.ui.facemesh_downloading && !download.running {
+            self.ui.facemesh_downloading = false;
+            match (&download.error, download.finished) {
+                (Some(e), _) => self.toast_error(ctx, format!("The face model download failed: {e}")),
+                (None, true) => self.toast(ctx, crate::i18n::tr("The face model is installed: run Photo ▸ Analyze Faces.")),
+                (None, false) => {}
+            }
+        }
+    }
+
     pub fn toast_error(&mut self, ctx: &egui::Context, text: impl Into<String>) {
         let t = ctx.input(|i| i.time);
         self.ui.toast = Some((text.into(), t + 6.0, None));
@@ -1200,6 +1243,8 @@ impl LightcraftApp {
         lightroom_import::tick(self, ctx);
         recheck::tick(self);
         tasks::poll(self, ctx);
+        flow::tick(self, ctx);
+        self.facemesh_poll(ctx);
         self.preview_build_status(ctx);
         self.save_status(ctx);
         self.slideshow_tick(ctx);
@@ -1613,6 +1658,7 @@ impl LightcraftApp {
         panels::notices::show(self, &ctx);
         panels::dialogs::show(self, &ctx);
         panels::library_problem::show(self, &ctx);
+        flow::overlays(self, &ctx);
         export_task::poll(self, &ctx);
         slideshow_export::poll(self, &ctx);
         panels::activity::show(self, &ctx);

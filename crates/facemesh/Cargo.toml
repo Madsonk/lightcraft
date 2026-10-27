@@ -1,0 +1,18 @@
+[package]
+name = "lightcraft-facemesh"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LightCraft face analysis: MediaPipe Face Landmarker (BlazeFace + Face Mesh V2) on a pure-Rust TensorFlow Lite interpreter, with eye-openness and eye-sharpness scores (L3)"
+
+[lints]
+workspace = true
+
+[dependencies]
+miniz_oxide = { workspace = true }
+ndarray = { version = "=0.17.2", default-features = false, features = ["std"] }
+rayon = { workspace = true }
+
+[dev-dependencies]
+image = { workspace = true }
+serde_json = { workspace = true }

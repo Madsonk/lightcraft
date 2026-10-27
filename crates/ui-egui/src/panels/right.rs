@@ -33,6 +33,14 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 });
                 return;
             }
+            // the AI picks work on the view, not on one photo
+            if app.ui.right == RightPanel::AiPicks {
+                egui::ScrollArea::vertical().id_salt("right-scroll").auto_shrink([false, false]).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    super::cull::show(app, ui);
+                });
+                return;
+            }
             let r = ui.max_rect();
             // every tab (Edit, Info, Versions…) says it: nothing to show until photos come in
             if super::empty_library::shown(&app.session) {
@@ -64,6 +72,8 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 RightPanel::Remove => remove(app, ui, id),
                 RightPanel::Masking => super::masking::show(app, ui, id),
                 RightPanel::RedEye => red_eye(app, ui, id),
+                RightPanel::Portrait => super::portrait::show(app, ui),
+                RightPanel::AiPicks => super::cull::show(app, ui),
                 RightPanel::Info => info(app, ui, id),
                 RightPanel::Keywords => keywords(app, ui, id),
                 RightPanel::Versions => versions(app, ui, id),

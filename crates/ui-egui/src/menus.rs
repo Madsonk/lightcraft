@@ -155,6 +155,13 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("panel.profiles", "Profile Browser", None, "Window"),
     ("panel.crop", "Crop & Rotate", Some("C"), "Window"),
     ("panel.remove", "Remove", Some("H"), "Window"),
+    ("panel.portrait", "Portrait Retouch", Some("Shift+T"), "Window"),
+    ("panel.aiPicks", "AI Picks", Some("Shift+K"), "Window"),
+    ("flow.cullRun", "AI Culling…", None, "Photo"),
+    ("flow.cullCancel", "Stop AI Culling", None, "Photo"),
+    ("flow.oneClick", "Cull and Retouch in One Click…", None, "Photo"),
+    ("flow.portraitAuto", "Auto Portrait Retouch", None, "Photo"),
+    ("flow.tour", "Guided Tour", None, "Window"),
     ("panel.masking", "Masking", Some("M"), "Window"),
     ("panel.redeye", "Red Eye", None, "Window"),
     ("panel.presets", "Presets", Some("Shift+P"), "Window"),
@@ -1259,6 +1266,32 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             if app.ui.right == RightPanel::Remove && app.ui.tool.is_empty() {
                 app.ui.tool = "remove".into();
             }
+            Ok(Value::Null)
+        }
+        "panel.aiPicks" => {
+            panel(app, &ctx, RightPanel::AiPicks, "AI Picks");
+            Ok(Value::Null)
+        }
+        "panel.portrait" => {
+            panel(app, &ctx, RightPanel::Portrait, "Portrait Retouch");
+            Ok(Value::Null)
+        }
+        "flow.cullRun" => crate::flow::start_cull(app, &ctx).map(|()| Value::Null),
+        "flow.cullCancel" => {
+            crate::flow::cancel_cull(app);
+            Ok(Value::Null)
+        }
+        "flow.oneClick" => {
+            crate::flow::ask_one_click(app);
+            Ok(Value::Null)
+        }
+        "flow.portraitAuto" => {
+            let (ids, _) = crate::flow::targets(app);
+            crate::flow::start_retouch(app, ids);
+            Ok(Value::Null)
+        }
+        "flow.tour" => {
+            crate::flow::start_tour(app);
             Ok(Value::Null)
         }
         "panel.masking" => {

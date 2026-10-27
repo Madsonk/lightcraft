@@ -15,8 +15,10 @@
 extern crate lightcraft_denoise_core as lightcraft_denoise;
 
 pub mod activity;
+pub mod ai;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod apple_photos;
+pub mod autoseg;
 pub mod availability;
 pub(crate) mod camera_preview;
 pub mod camera_profiles;
@@ -25,14 +27,17 @@ pub mod config;
 pub mod contact_sheet;
 pub mod crs;
 pub mod crs_masks;
+pub mod cull_job;
 pub mod demo;
 pub mod denoise;
 pub mod devices;
 pub mod display;
 pub mod doc_path;
+pub mod dust;
 mod errors;
 pub mod export;
 pub mod face_download;
+pub mod facemesh;
 pub mod face_tiles;
 #[cfg(not(target_arch = "wasm32"))]
 mod faces_index;
@@ -59,6 +64,9 @@ pub mod merge;
 mod model_download;
 pub mod open_path;
 pub mod originals;
+pub mod portrait;
+pub mod portrait_job;
+pub mod portrait_stack;
 mod pdf;
 pub mod preset_import;
 pub mod preset_luminar;
@@ -291,6 +299,14 @@ pub struct Session {
     /// The loaded recognition model and the face embeddings made with it.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) faces: faces_index::FacesState,
+    /// AI culling (`cull.*`): the job in progress or the last one, and the user's settings.
+    pub cull: cull_job::Culler,
+    /// Face analysis (eyes open / closed, eye sharpness): the model and the run in progress.
+    pub facemesh: facemesh::Faces,
+    /// The baked pixels of the portrait sliders (see [`ai`]).
+    pub ai: ai::Ai,
+    /// Disposable per-photo measurements of AI culling, by content key (bounded).
+    pub(crate) culling_cache: std::collections::BTreeMap<String, cull_job::Measurement>,
     /// Reading focus points for photos imported before they were read (`photo.readFocusPoints`, `focus.pump`).
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) focus_scan: focus_scan::FocusScan,
@@ -480,6 +496,10 @@ impl Session {
             face_catalog: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             faces: Default::default(),
+            cull: Default::default(),
+            facemesh: facemesh::Faces::default(),
+            ai: ai::Ai::default(),
+            culling_cache: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             focus_scan: Default::default(),
             clipboard: None,
@@ -1378,7 +1398,17 @@ mod tests_denoise;
 #[cfg(test)]
 mod tests_export;
 #[cfg(test)]
+mod tests_autoseg;
+#[cfg(test)]
+mod tests_cull;
+#[cfg(test)]
 mod tests_face_models;
+#[cfg(test)]
+mod tests_facemesh;
+#[cfg(test)]
+mod tests_portrait_job;
+#[cfg(test)]
+mod tests_portrait_stack;
 #[cfg(test)]
 #[cfg(not(target_arch = "wasm32"))]
 mod tests_face_recognize;
@@ -1447,3 +1477,8 @@ mod tests_sync;
 mod tests_view_follow;
 #[cfg(test)]
 mod tests_xmp;
+
+/// Most face patches one retouch mask holds (the limit of a mask component's detail passes).
+pub(crate) fn portrait_max_detail() -> usize {
+    lightcraft_develop::segmask::MAX_DETAIL
+}

@@ -38,6 +38,8 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     ("crop", Icon::Crop, RightPanel::Crop, "Crop & Rotate (C)"),
                     ("remove", Icon::Eraser, RightPanel::Remove, "Remove (H)"),
                     ("masking", Icon::Mask, RightPanel::Masking, "Masking (M)"),
+                    ("aiPicks", Icon::Star, RightPanel::AiPicks, "AI Picks: cull the view, see why, apply the stars (Shift+K)"),
+                    ("portrait", Icon::FaceBox, RightPanel::Portrait, "Portrait retouch: sliders by group, Before / After, auto retouch, open eyes (Shift+T)"),
                     ("redeye", Icon::Eye, RightPanel::RedEye, "Red Eye"),
                 ] {
                     let on = app.ui.right == panel || (panel == RightPanel::Edit && app.ui.right == RightPanel::Profiles);

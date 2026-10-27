@@ -31,6 +31,7 @@ pub mod curve;
 pub mod dust;
 pub mod finish;
 pub mod geometry;
+pub mod inpaint;
 pub mod local;
 pub mod local_tone;
 pub mod lut;
@@ -445,6 +446,8 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
         geo,
         [wb_t, wb_tint, info.as_shot_temp, info.as_shot_tint].map(f64::to_bits),
         format!("{:?}", s.spots),
+        // baked portrait pixels are composited in this stage too
+        s.aux.key(),
         format!("{eyes:?}"),
         // defringe runs in this stage
         format!("{:?}", s.optics),
@@ -476,6 +479,7 @@ pub fn lin_cpu(img: &mut Rgb32f, info: &SourceInfo, p: &Plan<'_>) {
     local::white_balance(img, info, s);
     optics::defringe(img, s, p.px_per_long / optics::DEFRINGE_REF_LONG);
     spots::apply(img, &s.spots, &p.frame, p.px_per_long);
+    inpaint::apply(img, &s.spots, &s.aux, &p.frame);
     redeye::apply(img, &p.eyes);
 }
 

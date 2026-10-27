@@ -278,6 +278,10 @@ pub fn apply(img: &mut Rgb32f, spots: &[Spot], frame: &Frame, ppl: f64) {
     let (w, h) = (img.width, img.height);
     let to_out = frame.norm_to_out(w, h);
     for spot in spots {
+        // inpainted spots are composited from their stored pixels (`inpaint::apply`)
+        if spot.mode == SpotMode::Inpaint {
+            continue;
+        }
         let r = radius_px(spot.size, ppl) as f32;
         let pts: Vec<(f32, f32)> = spot
             .points

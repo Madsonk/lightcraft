@@ -141,6 +141,12 @@ pub struct DevelopSettings {
     pub calibration: Calibration,
     /// Section on/off toggles (the "eye" buttons on panel headers): section id → enabled.
     pub disabled_sections: Vec<String>,
+    /// Portrait retouch steps (the pixels they made are an inpaint patch placed by a spot).
+    #[serde(skip_serializing_if = "crate::portrait::PortraitStack::is_empty")]
+    pub portrait: crate::portrait::PortraitStack,
+    /// Render-time data the engine attaches (baked portrait pixels): not part of the edit, never saved.
+    #[serde(skip)]
+    pub aux: crate::inpaint_patch::Aux,
 }
 
 impl Default for DevelopSettings {
@@ -174,6 +180,8 @@ impl Default for DevelopSettings {
             enhance: Enhance::default(),
             calibration: Calibration::default(),
             disabled_sections: Vec::new(),
+            portrait: crate::portrait::PortraitStack::default(),
+            aux: crate::inpaint_patch::Aux::default(),
         }
     }
 }
@@ -1047,6 +1055,8 @@ pub enum SpotMode {
     Clone,
     /// Content-aware: the spot is rebuilt from patches of its surroundings (no single source).
     Fill,
+    /// Filled with baked pixels (a portrait retouch): they live in the patch named by [`Spot::patch`].
+    Inpaint,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1061,11 +1071,15 @@ pub struct Spot {
     pub opacity: f64,
     /// Source offset (normalized) from the target; None = auto (content-aware remove).
     pub source_offset: Option<Point>,
+    /// For [`SpotMode::Inpaint`]: the id (hex) of the baked pixels, kept in a file next to the
+    /// library ([`crate::InpaintPatch`]); the spot's `points` and `size` only place its pin.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
 }
 
 impl Default for Spot {
     fn default() -> Self {
-        Self { mode: SpotMode::Remove, points: Vec::new(), size: 0.02, feather: 50.0, opacity: 100.0, source_offset: None }
+        Self { mode: SpotMode::Remove, points: Vec::new(), size: 0.02, feather: 50.0, opacity: 100.0, source_offset: None, patch: None }
     }
 }
 

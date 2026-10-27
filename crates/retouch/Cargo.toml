@@ -1,0 +1,16 @@
+[package]
+name = "lightcraft-retouch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LightCraft proposed retouch: colour maths (Lab, DeltaE 2000), skin measurement and harmonization fields, guided dodge and burn planes, palettes, quality checks. Pure functions on pixel planes, no model, no network (L2)"
+
+[lints]
+workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+lightcraft-facemesh = { workspace = true }
+image = { workspace = true }
+serde_json = { workspace = true }
