@@ -749,7 +749,7 @@ pub fn overlays(app: &mut LightcraftApp, ctx: &egui::Context) {
                 );
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    go = crate::design::button(ui, "oneClickGo", &tr("Start"), crate::design::Kind::Primary, c.0 > 0).clicked();
+                    go = crate::design::button(ui, "oneClickGo", tr("Start"), crate::design::Kind::Primary, c.0 > 0).clicked();
                     cancel = text_button(ui, "oneClickCancel", "Cancel", false).clicked();
                 });
             });
@@ -792,7 +792,7 @@ pub fn overlays(app: &mut LightcraftApp, ctx: &egui::Context) {
                         if !s.undone {
                             undo = text_button(ui, "summaryUndo", "Undo everything", false).clicked();
                         }
-                        close = crate::design::button(ui, "summaryClose", &tr("Close"), crate::design::Kind::Primary, true).clicked();
+                        close = crate::design::button(ui, "summaryClose", tr("Close"), crate::design::Kind::Primary, true).clicked();
                     });
                 });
         }
@@ -843,7 +843,8 @@ fn tour(app: &mut LightcraftApp, ctx: &egui::Context) {
                 ui.label(RichText::new(format!("{} / {}", step + 1, TOUR.len())).size(11.0).color(t.text_dim));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let last = step + 1 >= TOUR.len();
-                    next = crate::design::button(ui, "tourNext", &if last { tr("Done") } else { tr("Next") }, crate::design::Kind::Primary, true).clicked();
+                    next = crate::design::button(ui, "tourNext", if last { tr("Done") } else { tr("Next") }, crate::design::Kind::Primary, true)
+                        .clicked();
                     if step > 0 {
                         prev = text_button(ui, "tourPrev", "Back", false).clicked();
                     }

@@ -119,7 +119,10 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
     for (i, (id, _, sharp, clip, _)) in rows.iter().enumerate() {
         let g = group_of[i];
         let is_best = g.is_some_and(|g| best.get(&g).is_some_and(|b| b.0 == i));
-        ops.push(Op::SetAnalysis { id: *id, analysis: Some(Analysis { sharpness: *sharp, clipped: *clip, group: g, best: is_best, ..old_analysis(s, *id) }) });
+        ops.push(Op::SetAnalysis {
+            id: *id,
+            analysis: Some(Analysis { sharpness: *sharp, clipped: *clip, group: g, best: is_best, ..old_analysis(s, *id) }),
+        });
         let flag = s.catalog.photo(*id).map(|p| p.flag).unwrap_or_default();
         let closed = summaries[i].is_some_and(|f| f.1);
         closed_eyes += closed as usize;
@@ -217,5 +220,9 @@ pub fn specs() -> Vec<CommandSpec> {
 /// What a photo's analysis already holds besides the burst measurements (faces, AI verdict), so
 /// that `photo.analyze` does not erase it.
 fn old_analysis(s: &Session, id: PhotoId) -> Analysis {
-    s.catalog.photo(id).and_then(|p| p.analysis.clone()).map(|a| Analysis { faces: a.faces, verdict: a.verdict, ..Default::default() }).unwrap_or_default()
+    s.catalog
+        .photo(id)
+        .and_then(|p| p.analysis.clone())
+        .map(|a| Analysis { faces: a.faces, verdict: a.verdict, ..Default::default() })
+        .unwrap_or_default()
 }

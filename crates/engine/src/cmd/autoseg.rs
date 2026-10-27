@@ -5,7 +5,7 @@ use lightcraft_catalog::PhotoId;
 use lightcraft_develop::{Mask, MaskComponent, MaskOp, MaskShape};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, bool_or, cmd, f64_or, has_active, str_param};
+use super::{CommandSpec, always, bad, cmd, f64_or, has_active, str_param};
 use crate::{Result, Session};
 
 /// Long edge of the developed copy the networks look at.
@@ -52,7 +52,8 @@ fn auto(s: &mut Session, p: &Value) -> Result<Value> {
     let kind = str_param(p, "kind").unwrap_or("sky");
     let (k, invert) =
         kind_of(kind).ok_or_else(|| bad(C, "`kind` must be sky, people, subject, background, vegetation, water, mountain, buildings or ground"))?;
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() { s.targets(p).unwrap_or_default() } else { s.active().into_iter().collect() };
+    let ids: Vec<PhotoId> =
+        if p.get("ids").is_some() || p.get("id").is_some() { s.targets(p).unwrap_or_default() } else { s.active().into_iter().collect() };
     if ids.is_empty() {
         return Err(bad(C, "no active photo"));
     }
@@ -84,37 +85,6 @@ fn auto(s: &mut Session, p: &Value) -> Result<Value> {
         made.push(json!({"id": id.0, "mask": next}));
     }
     Ok(json!({"kind": kind, "masks": made, "seconds": (secs * 100.0).round() / 100.0, "refine": refine, "inverted": invert}))
-}
-
-/// Whether `mask.add {kind}` should use an installed network instead of the classical heuristic
-/// (Sky / Subject / Background tiles get better as soon as the models are there; `classic: true`
-/// keeps the old way).
-pub(crate) fn wants_model(kind: &str, p: &Value) -> bool {
-    if bool_or(p, "classic", false) {
-        return false;
-    }
-    #[cfg(feature = "autoseg")]
-    return match kind {
-        "sky" => crate::autoseg::installed(crate::autoseg::Model::Segformer),
-        "subject" | "background" => crate::autoseg::installed(crate::autoseg::Model::Subject),
-        _ => false,
-    };
-    #[cfg(not(feature = "autoseg"))]
-    {
-        let _ = kind;
-        false
-    }
-}
-
-/// `mask.auto` for a `mask.add` call.
-pub(crate) fn run_auto(s: &mut Session, p: &Value) -> Result<Value> {
-    #[cfg(feature = "autoseg")]
-    return auto(s, p);
-    #[cfg(not(feature = "autoseg"))]
-    {
-        let _ = (s, p);
-        Err(bad("mask.auto", "automatic masks are not available in this build"))
-    }
 }
 
 fn capitalise(s: &str) -> String {

@@ -336,8 +336,11 @@ fn batch(s: &mut Session, p: &Value) -> Result<Value> {
 /// done and where to continue, and a cancel flag checked between photos.
 pub(crate) fn batch_with(s: &mut Session, p: &Value, src: &mut Sources) -> Result<Value> {
     const C: &str = "portrait.batch";
-    let ids: Vec<PhotoId> =
-        if p.get("ids").is_some() || p.get("id").is_some() || s.selection.ids.len() > 1 { s.targets(p).unwrap_or_default() } else { s.visible_cloned() };
+    let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() || s.selection.ids.len() > 1 {
+        s.targets(p).unwrap_or_default()
+    } else {
+        s.visible_cloned()
+    };
     if ids.is_empty() {
         return Err(bad(C, "no photos: give `ids`, or select some, or filter the view"));
     }
@@ -494,21 +497,8 @@ fn auto_batch(s: &mut Session, p: &Value) -> Result<Value> {
 /// The pair (photo, reference, face) of the last preview: `apply` only accepts what was seen.
 static LAST_EYES_PREVIEW: std::sync::Mutex<Option<(u64, u64, usize)>> = std::sync::Mutex::new(None);
 
-/// Names of the people the People index recognized in a photo, by face box (empty without it).
-#[cfg(feature = "people")]
-fn names_in(s: &mut Session, id: PhotoId) -> Vec<([f32; 2], Option<String>)> {
-    let Ok(v) = crate::people::ops::faces(s, &json!({"id": id.0})) else { return Vec::new() };
-    let Some(list) = v.get("faces").and_then(Value::as_array) else { return Vec::new() };
-    list.iter()
-        .filter_map(|f| {
-            let r = f.get("rect")?.as_array()?;
-            let (x0, y0, x1, y1) = (r.first()?.as_f64()?, r.get(1)?.as_f64()?, r.get(2)?.as_f64()?, r.get(3)?.as_f64()?);
-            Some(([((x0 + x1) / 2.0) as f32, ((y0 + y1) / 2.0) as f32], f.get("name").and_then(Value::as_str).map(str::to_string)))
-        })
-        .collect()
-}
-
-#[cfg(not(feature = "people"))]
+/// Names of the people the People index recognized in a photo, by face box (the 0.14.0 port has no
+/// such index here: empty).
 fn names_in(_: &mut Session, _: PhotoId) -> Vec<([f32; 2], Option<String>)> {
     Vec::new()
 }

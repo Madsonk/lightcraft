@@ -37,8 +37,8 @@ pub mod dust;
 mod errors;
 pub mod export;
 pub mod face_download;
-pub mod facemesh;
 pub mod face_tiles;
+pub mod facemesh;
 #[cfg(not(target_arch = "wasm32"))]
 mod faces_index;
 #[cfg(not(target_arch = "wasm32"))]
@@ -64,10 +64,10 @@ pub mod merge;
 mod model_download;
 pub mod open_path;
 pub mod originals;
+mod pdf;
 pub mod portrait;
 pub mod portrait_job;
 pub mod portrait_stack;
-mod pdf;
 pub mod preset_import;
 pub mod preset_luminar;
 pub mod presets;
@@ -1386,6 +1386,8 @@ mod tests_album_remove;
 #[cfg(test)]
 mod tests_albums_local;
 #[cfg(test)]
+mod tests_autoseg;
+#[cfg(test)]
 mod tests_color;
 #[cfg(test)]
 mod tests_constrain_crop;
@@ -1394,27 +1396,21 @@ mod tests_crop_angle;
 #[cfg(test)]
 mod tests_crop_aspect;
 #[cfg(test)]
+mod tests_cull;
+#[cfg(test)]
 mod tests_denoise;
 #[cfg(test)]
 mod tests_export;
 #[cfg(test)]
-mod tests_autoseg;
-#[cfg(test)]
-mod tests_cull;
-#[cfg(test)]
 mod tests_face_models;
-#[cfg(test)]
-mod tests_facemesh;
-#[cfg(test)]
-mod tests_portrait_job;
-#[cfg(test)]
-mod tests_portrait_stack;
 #[cfg(test)]
 #[cfg(not(target_arch = "wasm32"))]
 mod tests_face_recognize;
 #[cfg(test)]
 #[cfg(not(target_arch = "wasm32"))]
 mod tests_face_tiles;
+#[cfg(test)]
+mod tests_facemesh;
 #[cfg(test)]
 mod tests_filesystem_history;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -1451,6 +1447,10 @@ mod tests_move_to_share;
 mod tests_organize;
 #[cfg(test)]
 mod tests_persist;
+#[cfg(test)]
+mod tests_portrait_job;
+#[cfg(test)]
+mod tests_portrait_stack;
 #[cfg(test)]
 mod tests_prefs;
 #[cfg(test)]

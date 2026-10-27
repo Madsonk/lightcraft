@@ -214,7 +214,16 @@ fn token_matches(p: &Photo, tok: &str) -> bool {
             "keyword" | "kw" => p.meta.keywords.iter().any(|k| crate::keywords::is_under(k, val)),
             "person" | "who" => has_person(p, val),
             "faces" | "face" => faces_match(p, val),
-            "eyes" => faces_match(p, if val == "closed" { "closedeyes" } else if val == "open" { "eyesopen" } else { val }),
+            "eyes" => faces_match(
+                p,
+                if val == "closed" {
+                    "closedeyes"
+                } else if val == "open" {
+                    "eyesopen"
+                } else {
+                    val
+                },
+            ),
             "type" | "kind" => format!("{:?}", p.kind).eq_ignore_ascii_case(val),
             "edited" => (val == "true" || val == "yes") == p.is_edited(),
             "date" => p.captured.as_deref().is_some_and(|c| c.starts_with(val)),

@@ -126,7 +126,11 @@ pub const FIELDS: &[(&str, &str, Kind)] = &[
     ("faceCount", "Faces (Analyze Faces)", Kind::Number),
     ("eyesClosed", "Has Closed Eyes", Kind::Bool),
     ("eyesOpen", "All Eyes Open", Kind::Bool),
-    ("cullBucket", "AI Culling Verdict", Kind::Choice(&[("highlight", "Highlight"), ("selected", "Selected"), ("review", "To review"), ("rejected", "Rejected")])),
+    (
+        "cullBucket",
+        "AI Culling Verdict",
+        Kind::Choice(&[("highlight", "Highlight"), ("selected", "Selected"), ("review", "To review"), ("rejected", "Rejected")]),
+    ),
     ("cullStars", "AI Culling Stars (proposed)", Kind::Number),
 ];
 

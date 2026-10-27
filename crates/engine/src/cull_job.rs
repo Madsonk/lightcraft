@@ -374,7 +374,7 @@ fn flag(p: &Value, key: &str, default: bool, c: &str) -> Result<bool> {
     }
 }
 
-fn targets(s: &mut Session, p: &Value, c: &str) -> Result<Vec<PhotoId>> {
+fn targets(s: &mut Session, p: &Value, _c: &str) -> Result<Vec<PhotoId>> {
     if p.get("ids").is_some() || p.get("id").is_some() || s.selection.ids.len() > 1 { s.targets(p) } else { Ok(s.visible_cloned()) }
 }
 
