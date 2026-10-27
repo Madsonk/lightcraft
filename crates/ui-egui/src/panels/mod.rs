@@ -24,6 +24,7 @@ pub mod people_rec;
 pub mod person;
 pub mod places;
 pub mod portrait;
+pub mod style;
 pub mod presets;
 pub mod profiles;
 pub mod proposals;

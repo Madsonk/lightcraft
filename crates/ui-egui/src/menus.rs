@@ -147,6 +147,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("panel.proposals", "Proposals", Some("Shift+N"), "Window"),
     // lot D: the cull → retouch flow
     ("panel.portrait", "Portrait Retouch", Some("Shift+T"), "Window"),
+    ("panel.style", "My Style", None, "Window"),
     ("flow.cullRun", "AI Culling…", None, "Photo"),
     ("flow.cullCancel", "Stop AI Culling", None, "Photo"),
     ("flow.oneClick", "Cull and Retouch in One Click…", None, "Photo"),
@@ -921,6 +922,10 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         }
         "panel.portrait" => {
             panel(app, &ctx, RightPanel::Portrait, "Portrait Retouch");
+            Ok(Value::Null)
+        }
+        "panel.style" => {
+            panel(app, &ctx, RightPanel::Style, "My Style");
             Ok(Value::Null)
         }
         "flow.cullRun" => crate::flow::start_cull(app, &ctx).map(|()| Value::Null),

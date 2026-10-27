@@ -47,6 +47,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 RightPanel::Edit => super::edit::show(app, ui, id),
                 RightPanel::Proposals => super::proposals::show(app, ui),
                 RightPanel::Portrait => super::portrait::show(app, ui),
+                RightPanel::Style => super::style::show(app, ui),
                 RightPanel::Profiles => super::profiles::show(app, ui, id),
                 RightPanel::Crop => crop(app, ui, id),
                 RightPanel::Remove => remove(app, ui, id),

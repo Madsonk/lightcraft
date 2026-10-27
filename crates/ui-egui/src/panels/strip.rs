@@ -89,6 +89,17 @@ const PORTRAIT: Tool = Tool {
     needs_photo: true,
 };
 
+/// "My style" and "Auto crop" (lot B): shown with workspaces on, next to Portrait.
+const STYLE: Tool = Tool {
+    id: "style",
+    icon: Icon::Sliders,
+    label: "Style",
+    tip: "My style: learn how you edit, preview it on a shoot, auto straighten and crop",
+    command: "panel.style",
+    panel: Some(RightPanel::Style),
+    needs_photo: false,
+};
+
 const HISTORY: &[Tool] = &[
     Tool {
         id: "versions",
@@ -207,6 +218,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 }
                 if crate::workspaces::enabled(app) {
                     tool(app, ui, &t, &PORTRAIT, has_photo);
+                    tool(app, ui, &t, &STYLE, has_photo);
                 }
                 // the Retouch space's left column already shows the versions and the history: one place each
                 if !crate::retouch_left::wants(app) {

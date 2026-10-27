@@ -70,6 +70,7 @@ pub mod retouch;
 pub mod search;
 pub mod segment;
 pub mod series;
+pub mod style_job;
 pub mod sidecar;
 pub mod smart;
 pub mod video;
@@ -170,6 +171,8 @@ pub struct Session {
     pub series: series::Workbench,
     /// AI culling (`cull.*`): the job in progress or the last one, and the user's settings.
     pub cull: cull_job::Culler,
+    /// "My style" and automatic framing (`style.*`, `autocrop.*`, `autostraighten.*`): jobs and profiles.
+    pub style: style_job::StyleLab,
     library_generation: u64,
     /// Auto Sync: edits to the active photo also change the other selected photos (the settings
     /// that changed, nothing else).
@@ -318,6 +321,7 @@ impl Session {
         Session {
             series: Default::default(),
             cull: Default::default(),
+            style: Default::default(),
             library_generation: LIBRARY_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             auto_sync: false,
             catalog: Catalog::new(),
@@ -988,6 +992,8 @@ mod tests_autoseg;
 mod tests_color;
 #[cfg(test)]
 mod tests_cull;
+#[cfg(test)]
+mod tests_style;
 #[cfg(test)]
 mod tests_denoise;
 #[cfg(all(test, not(target_arch = "wasm32")))]

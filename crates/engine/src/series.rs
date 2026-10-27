@@ -89,10 +89,11 @@ fn bounded_targets(s: &Session, p: &Value, c: &str) -> Result<Vec<PhotoId>> {
     }
     Ok(ids)
 }
-fn groups(s: &Session, p: &Value) -> Result<Value> {
-    let mut photos: Vec<_> = bounded_targets(s, p, "series.groups")?.into_iter().filter_map(|id| s.catalog.photo(id).cloned()).collect();
+/// Split photos into time-and-place series (gap of at most 15 minutes, same place, near GPS).
+/// Missing capture times stay alone. Shared with `style.apply`.
+pub(crate) fn group_photos(mut photos: Vec<Arc<Photo>>) -> Vec<Vec<PhotoId>> {
     photos.sort_by_key(|p| (p.captured.as_deref().and_then(lightcraft_catalog::dates::iso_seconds), p.id));
-    let mut out: Vec<Vec<u64>> = Vec::new();
+    let mut out: Vec<Vec<PhotoId>> = Vec::new();
     let mut previous: Option<Arc<Photo>> = None;
     for photo in photos {
         let same = previous.as_ref().is_some_and(|prev| {
@@ -112,13 +113,18 @@ fn groups(s: &Session, p: &Value) -> Result<Value> {
         });
         if same {
             if let Some(g) = out.last_mut() {
-                g.push(photo.id.0);
+                g.push(photo.id);
             }
         } else {
-            out.push(vec![photo.id.0]);
+            out.push(vec![photo.id]);
         }
         previous = Some(photo);
     }
+    out
+}
+fn groups(s: &Session, p: &Value) -> Result<Value> {
+    let photos: Vec<_> = bounded_targets(s, p, "series.groups")?.into_iter().filter_map(|id| s.catalog.photo(id).cloned()).collect();
+    let out: Vec<Vec<u64>> = group_photos(photos).into_iter().map(|g| g.into_iter().map(|id| id.0).collect()).collect();
     Ok(
         json!({"groups":out,"gapSeconds":900,"method":"time-and-place","warning":"Missing times stay separate. Review lighting changes before harmonising."}),
     )

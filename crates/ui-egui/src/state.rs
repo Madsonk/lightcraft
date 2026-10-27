@@ -45,6 +45,8 @@ pub enum RightPanel {
     Proposals,
     /// Portrait retouch by sliders (flow, workspaces on): groups, Before / After, auto, open eyes.
     Portrait,
+    /// "My style" and "Auto crop" (flow, workspaces on): learned style, straighten and crop suggestions.
+    Style,
 }
 
 impl RightPanel {

@@ -27,6 +27,7 @@ lightcraft-meta = { workspace = true }
 lightcraft-retouch = { workspace = true }
 lightcraft-faces = { workspace = true }
 lightcraft-culler = { workspace = true }
+lightcraft-style = { workspace = true }
 lightcraft-lens = { workspace = true }
 miniz_oxide = { workspace = true }
 lightcraft-merge = { workspace = true }

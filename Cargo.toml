@@ -42,6 +42,7 @@ lightcraft-depth = { path = "crates/depth" }
 lightcraft-inpaint = { path = "crates/inpaint" }
 lightcraft-search = { path = "crates/search" }
 lightcraft-taste = { path = "crates/taste" }
+lightcraft-style = { path = "crates/style" }
 lightcraft-culler = { path = "crates/culler" }
 lightcraft-people = { path = "crates/people" }
 lightcraft-places = { path = "crates/places" }
