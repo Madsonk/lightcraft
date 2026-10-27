@@ -175,6 +175,7 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
                     .filter(|(o, _)| *o >= SAME_FACE)
                     .max_by(|a, b| a.0.total_cmp(&b.0))
                     .map(|(_, r)| r);
+                let mut conflict = false;
                 match (hit, &name) {
                     (Some(r), Some(n)) => match r.name.as_deref() {
                         None => {
@@ -182,7 +183,10 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
                             t.named_existing += 1;
                         }
                         Some(x) if x.eq_ignore_ascii_case(n) => t.already_named += 1,
-                        Some(x) => t.conflicts.push(json!({"photo": id.0, "legacy": n, "catalogue": x})),
+                        Some(x) => {
+                            conflict = true;
+                            t.conflicts.push(json!({"photo": id.0, "legacy": n, "catalogue": x}));
+                        }
                     },
                     (Some(_), None) => t.unnamed_existing += 1,
                     (None, _) => {
@@ -194,7 +198,8 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
                         }
                     }
                 }
-                if let Some(n) = &name {
+                // a conflict keeps the catalogue's name and is reported on its own
+                if let (Some(n), false) = (&name, conflict) {
                     *expected.entry(n.to_lowercase()).or_default() += 1;
                 }
             }
