@@ -28,6 +28,7 @@ pub mod contact_sheet;
 pub mod crs;
 pub mod crs_masks;
 pub mod cull_job;
+pub mod describe;
 pub mod demo;
 pub mod denoise;
 pub mod devices;
@@ -77,6 +78,7 @@ pub mod print_pdf;
 pub mod profile_refs;
 pub mod proof;
 pub mod rename;
+pub mod search;
 pub mod segment;
 pub mod sidecar;
 pub mod slide;
@@ -88,6 +90,7 @@ pub mod slideshow_export;
 pub mod smart;
 pub mod sync;
 pub mod text;
+pub mod video;
 mod view;
 pub mod walk;
 
@@ -305,6 +308,10 @@ pub struct Session {
     pub facemesh: facemesh::Faces,
     /// The baked pixels of the portrait sliders (see [`ai`]).
     pub ai: ai::Ai,
+    /// Videos: the pictures cut out of them (`<library>/video/`).
+    pub video: video::Videos,
+    /// Annotations: undo steps and the proposal run (`<library>/describe/`).
+    pub describe: describe::Describe,
     /// Disposable per-photo measurements of AI culling, by content key (bounded).
     pub(crate) culling_cache: std::collections::BTreeMap<String, cull_job::Measurement>,
     /// Reading focus points for photos imported before they were read (`photo.readFocusPoints`, `focus.pump`).
@@ -499,6 +506,8 @@ impl Session {
             cull: Default::default(),
             facemesh: facemesh::Faces::default(),
             ai: ai::Ai::default(),
+            video: video::Videos::default(),
+            describe: describe::Describe::default(),
             culling_cache: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             focus_scan: Default::default(),
@@ -1397,6 +1406,10 @@ mod tests_crop_angle;
 mod tests_crop_aspect;
 #[cfg(test)]
 mod tests_cull;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_describe;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_video;
 #[cfg(test)]
 mod tests_denoise;
 #[cfg(test)]

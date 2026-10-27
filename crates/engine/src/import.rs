@@ -110,6 +110,10 @@ pub struct ImportOptions {
     pub metadata_preset: Option<String>,
     /// Copy: raws are copied as DNG (Copy as DNG).
     pub convert_dng: bool,
+    /// Folders: take the videos in them too ([`crate::video::EXTENSIONS`]). Off by default: a
+    /// photo library is not filled with videos unless asked. Videos named one by one are always
+    /// imported.
+    pub videos: bool,
 }
 
 /// How copies are filed in the destination. The date is the capture time, else the time of the
@@ -422,14 +426,30 @@ pub fn expand_within(paths: &[String], skip: Option<&Path>, limits: crate::walk:
     expand_noting(paths, skip, limits, None)
 }
 
+/// [`expand_within`], taking the videos of folders too when `videos`.
+pub fn expand_kinds(paths: &[String], skip: Option<&Path>, limits: crate::walk::Limits, videos: bool) -> (Vec<String>, bool) {
+    expand_noting_kinds(paths, skip, limits, None, videos)
+}
+
 /// [`expand_within`], handing the listing of every folder that is walked to `note`
 /// ([`crate::walk::files_in_noting`]).
 pub(crate) fn expand_noting(
     paths: &[String],
     skip: Option<&Path>,
     limits: crate::walk::Limits,
-    mut note: Option<crate::walk::NoteFolder>,
+    note: Option<crate::walk::NoteFolder>,
 ) -> (Vec<String>, bool) {
+    expand_noting_kinds(paths, skip, limits, note, false)
+}
+
+fn expand_noting_kinds(
+    paths: &[String],
+    skip: Option<&Path>,
+    limits: crate::walk::Limits,
+    mut note: Option<crate::walk::NoteFolder>,
+    videos: bool,
+) -> (Vec<String>, bool) {
+    let keep = move |p: &Path| is_supported(p) || (videos && crate::video::is_video_path(&p.to_string_lossy()));
     let mut out = Vec::new();
     let mut truncated = false;
     for p in paths {
@@ -439,8 +459,8 @@ pub(crate) fn expand_noting(
         }
         if p.is_dir() {
             let w = match note.as_mut() {
-                Some(note) => crate::walk::files_in_noting(p, skip, limits, is_supported, &mut **note),
-                None => crate::walk::files_in(p, skip, limits, is_supported),
+                Some(note) => crate::walk::files_in_noting(p, skip, limits, keep, &mut **note),
+                None => crate::walk::files_in(p, skip, limits, keep),
             };
             if w.truncated {
                 log::warn!(
@@ -996,7 +1016,7 @@ impl ImportJob {
     /// Expand `paths` (folders recursively, the library's own folder skipped) into the files an
     /// import would handle; counted in [`ImportJob::total`].
     pub fn expand(&self, paths: &[String]) -> Vec<String> {
-        let files = expand(paths, self.lib_dir.as_deref());
+        let files = expand_kinds(paths, self.lib_dir.as_deref(), crate::walk::Limits::default(), self.opts.videos).0;
         self.total.fetch_add(files.len(), std::sync::atomic::Ordering::Relaxed);
         files
     }
@@ -1527,6 +1547,9 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     if !placed.is_empty() {
         finish_moves(s, placed, log0, &mut report);
     }
+    // videos it could not read are listed in the Videos view, with their cause
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::video::unreadable::note_import(s, &report.failed, &report.imported);
     Ok(report)
 }
 
@@ -1595,6 +1618,7 @@ impl Session {
             p.as_shot_wb = info.as_shot_wb;
             p.embedded_lens = info.embedded_lens;
             p.preview_only = info.preview_only.clone();
+            p.duration = info.duration;
         }
         p.develop = std::sync::Arc::new(p.import_defaults());
         let edge = edge.clamp(64, crate::media::SourceLevel::Thumb.max_edge());

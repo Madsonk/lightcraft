@@ -182,6 +182,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             content_hash,
             xmp: lightcraft_meta::embedded(bytes).xmp,
             preview_only: None,
+            duration: None,
         });
     }
     let fmt = lightcraft_codecs::sniff(bytes).ok_or("unrecognized file format")?;
@@ -215,6 +216,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
         embedded_lens: None,
         xmp: None,
         preview_only: None,
+        duration: None,
     })
 }
 
@@ -810,6 +812,10 @@ fn fit_box(max_edge: usize) -> lightcraft_codecs::DecodeOptions {
 /// the whole file, which is what the decode of one can hold.
 pub fn fs_preview_loader() -> PreviewLoader {
     Arc::new(|path: &str, max_edge: usize| {
+        // a video has no embedded preview: the poster path is the normal loader's, never the whole file
+        if crate::video::is_video_path(path) {
+            return None;
+        }
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
         let gate = crate::memory::work_gate();
         let _permit = if crate::memory::is_background() { gate.acquire(len.saturating_mul(2)) } else { gate.acquire_urgent(len.saturating_mul(2)) };
@@ -1073,6 +1079,9 @@ fn quick_image_srgb(header: &[u8], window: &[u8], adobe_rgb: bool, max_edge: usi
 /// denoised picture. It holds two pictures at once, so it counts for more at the memory gate than a plain load.
 pub fn fs_pair_loader() -> PairLoader {
     Arc::new(|path: &str, max_edge: usize, spec: &DenoiseSpec| {
+        if crate::video::is_video_path(path) {
+            return Err("a video has no denoised picture".to_string());
+        }
         let len = std::fs::metadata(path).map(|m| m.len() as usize).unwrap_or(0);
         let weight = len * if max_edge <= crate::media::SourceLevel::Thumb.max_edge() { 4 } else { 10 };
         let gate = crate::memory::work_gate();
@@ -1092,8 +1101,18 @@ pub fn fs_pair_loader() -> PairLoader {
 /// interactive loads (the loupe, exports) never wait — they are counted, so background work
 /// yields to them.
 pub fn fs_hooks() -> (FileLoader, FileProbe) {
-    let loader: FileLoader = Arc::new(|path: &str, max_edge: usize| fs_load(path, max_edge, |bytes| load_vec(bytes, max_edge)));
+    let loader: FileLoader = Arc::new(|path: &str, max_edge: usize| {
+        // a video shows its poster: a picture FFmpeg cuts out of it (never the whole file read)
+        if crate::video::is_video_path(path) {
+            let bytes = crate::video::poster_bytes(path, max_edge)?;
+            return load_vec(bytes, max_edge);
+        }
+        fs_load(path, max_edge, |bytes| load_vec(bytes, max_edge))
+    });
     let probe: FileProbe = Arc::new(|path: &str| {
+        if crate::video::is_video_path(path) {
+            return crate::video::probe_for_import(path);
+        }
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
         let _permit = crate::memory::work_gate().acquire(len);
         let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
@@ -1106,7 +1125,13 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
 
 /// The filesystem [`ReducedLoader`]: [`load_vec_reduced`] of the file, gated like [`fs_hooks`]' loader.
 pub fn fs_reduced_loader() -> ReducedLoader {
-    Arc::new(|path: &str, max_edge: usize| fs_load(path, max_edge, |bytes| load_vec_reduced(bytes, max_edge)))
+    Arc::new(|path: &str, max_edge: usize| {
+        if crate::video::is_video_path(path) {
+            let bytes = crate::video::poster_bytes(path, max_edge)?;
+            return load_vec_reduced(bytes, max_edge);
+        }
+        fs_load(path, max_edge, |bytes| load_vec_reduced(bytes, max_edge))
+    })
 }
 
 /// Read `path` and `load` it, waiting on [`crate::memory::work_gate`] as [`fs_hooks`] explains.

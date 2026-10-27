@@ -18,6 +18,7 @@ pub mod dust;
 mod edit;
 mod export;
 pub(crate) mod face_detect;
+mod describe;
 mod face_models;
 mod face_recognize;
 mod facemesh;
@@ -46,6 +47,7 @@ pub mod recheck;
 pub mod reload;
 mod slideshow;
 mod sync;
+mod video;
 mod xmp;
 
 use serde::Serialize;
@@ -159,6 +161,8 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(lut_profiles::specs());
         v.extend(mask_effects::specs());
         v.extend(cull::specs());
+        v.extend(video::specs());
+        v.extend(describe::specs());
         v.extend(crate::cull_job::specs());
         v.extend(facemesh::specs());
         v.extend(autoseg::specs());

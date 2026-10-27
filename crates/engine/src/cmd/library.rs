@@ -100,6 +100,7 @@ pub fn import_params(s: &Session, p: &Value) -> Result<ImportRequest> {
         rename_start: p.get("renameStart").and_then(Value::as_u64).unwrap_or(1) as usize,
         metadata_preset,
         convert_dng: bool_or(p, "dng", false),
+        videos: bool_or(p, "videos", false),
         local: bool_or(p, "local", false),
     };
     let album_name = str_param(p, "albumName").map(str::trim).filter(|n| !n.is_empty()).map(str::to_string);
