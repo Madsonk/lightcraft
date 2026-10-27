@@ -168,3 +168,37 @@ pub fn wait_for(app: &mut LightcraftApp, ctx: &egui::Context, label: &str, timeo
         !app.tasks.is_running(label)
     }
 }
+
+/// A progress panel at the bottom left, `slot` panels above the first (the export's own panel is
+/// below them): the label, a bar (a busy bar while `total` is 0), what is in hand and Cancel.
+/// Returns `true` when Cancel was pressed this frame.
+pub fn progress_window(ctx: &egui::Context, key: &str, slot: usize, label: &str, done: usize, total: usize, note: &str, stopping: bool) -> bool {
+    let t = crate::theme::Tokens::get(ctx);
+    let mut cancel = false;
+    egui::Window::new(format!("task-{key}"))
+        .title_bar(false)
+        .resizable(false)
+        .anchor(egui::Align2::LEFT_BOTTOM, [16.0, -130.0 - 72.0 * slot as f32])
+        .fixed_size([320.0, 64.0])
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                let text = if total > 0 {
+                    format!("{} · {} / {total}", crate::i18n::tr(label), (done + 1).min(total))
+                } else {
+                    format!("{}…", crate::i18n::tr(label))
+                };
+                ui.label(egui::RichText::new(text).color(t.text));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    cancel =
+                        crate::widgets::text_button(ui, &format!("taskCancel:{key}"), if stopping { "Stopping…" } else { "Cancel" }, false).clicked();
+                });
+            });
+            if total > 0 {
+                ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_width(300.0));
+            } else {
+                ui.add(egui::ProgressBar::new(0.0).animate(true).desired_width(300.0));
+            }
+            ui.label(egui::RichText::new(note).size(11.0).color(t.text_dim));
+        });
+    cancel
+}
