@@ -157,3 +157,19 @@ fn a_library_without_the_earlier_index_is_left_alone() {
     assert!(e.contains("people.json"), "{e}");
     let _: Value = json!(null);
 }
+
+/// Not a test of its own: the report of `people.migrate` on a COPY of a real library
+/// (`LC_MIGRATE_COPY` = the copy's folder, `LC_MIGRATE_REPORT` = where to write the JSON,
+/// `LC_MIGRATE_APPLY=1` to apply on the copy). `cargo test … -- --ignored real_copy`.
+#[test]
+#[ignore]
+fn real_copy_report() {
+    let (Some(copy), Some(out)) = (std::env::var_os("LC_MIGRATE_COPY"), std::env::var_os("LC_MIGRATE_REPORT")) else { return };
+    let apply = std::env::var("LC_MIGRATE_APPLY").is_ok_and(|v| v == "1");
+    let mut s = Session::new().with_fs();
+    s.open_library(std::path::PathBuf::from(copy), false).unwrap();
+    let photos = s.catalog.photos().filter(|p| p.in_library()).count();
+    let mut report = s.execute("people.migrate", &json!({"dryRun": !apply})).unwrap();
+    report["photosInCatalogue"] = json!(photos);
+    std::fs::write(out, serde_json::to_string_pretty(&report).unwrap()).unwrap();
+}
