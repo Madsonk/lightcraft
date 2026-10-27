@@ -261,7 +261,7 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
 fn faces_of(file: &std::path::Path, detector: &lightcraft_faces::yunet::Detector, embedder: &lightcraft_faces::runtime::Embedder) -> Vec<VideoFace> {
     let Ok(bytes) = std::fs::read(file) else { return Vec::new() };
     let Ok(t) = lightcraft_codecs::decode_thumbnail(&bytes, 1280) else { return Vec::new() };
-    let (w, h) = (t.image.width as usize, t.image.height as usize);
+    let (w, h) = (t.image.width, t.image.height);
     let rgb: Vec<u8> = t.image.data.iter().flat_map(|px| [px[0], px[1], px[2]]).collect();
     let Ok(found) = detector.detect(&rgb, w, h, &Options { score: 0.5, ..Options::default() }) else { return Vec::new() };
     let img = Rgb { data: &rgb, width: w, height: h };
