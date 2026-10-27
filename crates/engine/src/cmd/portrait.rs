@@ -91,7 +91,7 @@ type Finder<'a> = &'a mut dyn FnMut(&mut Session, PhotoId, &[Region], usize) -> 
 /// `portrait.retouch` with the face finder given (the tests supply meshes without the model).
 fn retouch_with(s: &mut Session, p: &Value, find: Finder) -> Result<Value> {
     const C: &str = "portrait.retouch";
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() { s.targets(p) } else { s.active().into_iter().collect() };
+    let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() { s.targets(p).unwrap_or_default() } else { s.active().into_iter().collect() };
     if ids.is_empty() {
         return Err(bad(C, "no active photo"));
     }
@@ -143,7 +143,7 @@ fn retouch_with(s: &mut Session, p: &Value, find: Finder) -> Result<Value> {
 }
 
 fn clear(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() { s.targets(p) } else { s.active().into_iter().collect() };
+    let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() { s.targets(p).unwrap_or_default() } else { s.active().into_iter().collect() };
     let mut removed = 0usize;
     for id in ids {
         let Some(d) = s.develop_of(id) else { continue };

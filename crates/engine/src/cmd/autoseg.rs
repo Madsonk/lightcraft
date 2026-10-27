@@ -52,7 +52,7 @@ fn auto(s: &mut Session, p: &Value) -> Result<Value> {
     let kind = str_param(p, "kind").unwrap_or("sky");
     let (k, invert) =
         kind_of(kind).ok_or_else(|| bad(C, "`kind` must be sky, people, subject, background, vegetation, water, mountain, buildings or ground"))?;
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() { s.targets(p) } else { s.active().into_iter().collect() };
+    let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() { s.targets(p).unwrap_or_default() } else { s.active().into_iter().collect() };
     if ids.is_empty() {
         return Err(bad(C, "no active photo"));
     }

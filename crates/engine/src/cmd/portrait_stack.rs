@@ -92,7 +92,7 @@ pub(crate) fn matte_from(seg: &lightcraft_develop::SegMask, w: usize, h: usize) 
 // ---- shared steps ----------------------------------------------------------------------------
 
 fn ids_of(s: &mut Session, p: &Value) -> Vec<PhotoId> {
-    if p.get("ids").is_some() || p.get("id").is_some() { s.targets(p) } else { s.active().into_iter().collect() }
+    if p.get("ids").is_some() || p.get("id").is_some() { s.targets(p).unwrap_or_default() } else { s.active().into_iter().collect() }
 }
 
 fn label_of(steps: &[PortraitStep]) -> String {
@@ -337,7 +337,7 @@ fn batch(s: &mut Session, p: &Value) -> Result<Value> {
 pub(crate) fn batch_with(s: &mut Session, p: &Value, src: &mut Sources) -> Result<Value> {
     const C: &str = "portrait.batch";
     let ids: Vec<PhotoId> =
-        if p.get("ids").is_some() || p.get("id").is_some() || s.selection.ids.len() > 1 { s.targets(p) } else { s.visible_cloned() };
+        if p.get("ids").is_some() || p.get("id").is_some() || s.selection.ids.len() > 1 { s.targets(p).unwrap_or_default() } else { s.visible_cloned() };
     if ids.is_empty() {
         return Err(bad(C, "no photos: give `ids`, or select some, or filter the view"));
     }

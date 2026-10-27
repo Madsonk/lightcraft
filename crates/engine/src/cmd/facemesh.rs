@@ -49,7 +49,7 @@ fn status_json(s: &Session) -> Value {
 fn analyze_faces(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "photo.analyzeFaces";
     let ids: Vec<PhotoId> =
-        if p.get("ids").is_some() || p.get("id").is_some() || s.selection.ids.len() > 1 { s.targets(p) } else { s.visible_cloned() };
+        if p.get("ids").is_some() || p.get("id").is_some() || s.selection.ids.len() > 1 { s.targets(p).unwrap_or_default() } else { s.visible_cloned() };
     let force = p.get("force").and_then(Value::as_bool).unwrap_or(false);
     let wait = p.get("wait").and_then(Value::as_bool);
     if let Some(l) = p.get("level").and_then(Value::as_str) {

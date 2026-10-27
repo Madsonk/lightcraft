@@ -483,6 +483,20 @@ pub fn lin_cpu(img: &mut Rgb32f, info: &SourceInfo, p: &Plan<'_>) {
     redeye::apply(img, &p.eyes);
 }
 
+/// The whole (uncropped) photo at the scene-linear stage (white balanced, retouched, defringed,
+/// before tone and colour) fitting `max_edge`, with Lens Blur and masks left out: what a portrait
+/// retouch works on and what its baked pixels are composited into (`inpaint::apply`).
+pub fn linear_stage(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, max_edge: usize) -> Rgb32f {
+    let mut s = s.clone();
+    s.lens_blur.enabled = false;
+    s.masks.clear();
+    let req = RenderRequest { apply_crop: false, ..RenderRequest::fit(max_edge, max_edge) };
+    let plan = plan(src, info, &s, &req);
+    let mut img = plan.frame.sample(src, plan.w, plan.h);
+    lin_cpu(&mut img, info, &plan);
+    img
+}
+
 /// The settings a render of `s` for `req` uses: the HDR edit for an [`OutputDepth::F32Hdr`]
 /// render, otherwise its SDR rendition (see [`DevelopSettings::sdr_rendition`]). Every renderer
 /// (CPU and GPU) goes through this, so an SDR render of an HDR edit looks the same everywhere.

@@ -54,7 +54,7 @@ fn luma(s: &mut Session, id: PhotoId) -> Result<(Vec<f32>, usize, usize)> {
 }
 
 fn ids_of(s: &mut Session, p: &Value) -> Vec<PhotoId> {
-    if p.get("ids").is_some() || p.get("id").is_some() || s.selection.ids.len() > 1 { s.targets(p) } else { s.visible_cloned() }
+    if p.get("ids").is_some() || p.get("id").is_some() || s.selection.ids.len() > 1 { s.targets(p).unwrap_or_default() } else { s.visible_cloned() }
 }
 
 fn params_for(sensitivity: f64) -> Params {

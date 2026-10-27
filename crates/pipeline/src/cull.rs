@@ -100,6 +100,19 @@ pub fn similarity(a: &[f32; 64], b: &[f32; 64]) -> f32 {
     a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>().clamp(-1.0, 1.0)
 }
 
+/// How the exposure sits, from the display-referred luminance of the photo at the measuring
+/// size: `[mean, 5th percentile, 95th percentile]`, each 0..1.
+pub fn exposure(img: &Rgb32f) -> [f32; 3] {
+    let (mut l, _, _) = luma(img);
+    if l.is_empty() {
+        return [0.0; 3];
+    }
+    let mean = l.iter().sum::<f32>() / l.len() as f32;
+    l.sort_by(f32::total_cmp);
+    let at = |q: f32| l.get(((l.len() - 1) as f32 * q).round() as usize).copied().unwrap_or(0.0);
+    [mean, at(0.05), at(0.95)]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
