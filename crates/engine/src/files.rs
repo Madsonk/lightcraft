@@ -134,7 +134,11 @@ fn ext_upper(name: &str) -> String {
 /// ([`lightcraft_codecs::read_header`], which refuses truncated files but can't see damage inside
 /// compressed data that is all there: such a file imports and shows as unreadable when rendered).
 pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
-    let content_hash = Some(lightcraft_preview::hash_bytes(bytes).to_string());
+    probe_parts(name, bytes, bytes.len() as u64, Some(lightcraft_preview::hash_bytes(bytes).to_string()))
+}
+
+/// [`probe_bytes`] for a file of `file_size` bytes of which `bytes` may be only the first part, with its content key.
+fn probe_parts(name: &str, bytes: &[u8], file_size: u64, content_hash: Option<String>) -> Result<ProbeInfo, String> {
     let m = lightcraft_meta::extract(bytes);
     let (meta, captured) = meta_of(&m);
     if lightcraft_raw::probe(bytes).is_some() {
@@ -148,7 +152,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
                     height: h,
                     format: ext_upper(name),
                     kind: MediaKind::Raw,
-                    file_size: bytes.len() as u64,
+                    file_size,
                     captured,
                     meta,
                     as_shot_wb: None,
@@ -174,7 +178,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             height: h,
             format: ext_upper(name),
             kind: MediaKind::Raw,
-            file_size: bytes.len() as u64,
+            file_size,
             captured,
             file_modified: None,
             meta,
@@ -207,7 +211,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
         height: h,
         format,
         kind: MediaKind::Image,
-        file_size: bytes.len() as u64,
+        file_size,
         captured,
         file_modified: None,
         meta,
@@ -218,6 +222,63 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
         preview_only: None,
         duration: None,
     })
+}
+
+/// Files longer than this are probed from their head first ([`probe_head`]).
+pub const PROBE_HEAD_MIN: usize = 6 << 20;
+/// How much of a raw's start [`probe_head`] reads.
+pub const PROBE_HEAD: usize = 2 << 20;
+
+/// Probe a big raw file from its first [`PROBE_HEAD`] bytes: kind, size, dimensions, metadata like [`probe_bytes`], and a
+/// sampled content key (`ps1-`: size, then 1 MiB from the start, the middle and the end, as for videos) instead of
+/// the hash of every byte. `None` when the head is not enough (not a raw, a variant shown from its preview, a header that
+/// reaches past the head, an unreadable file): the caller then reads the whole file as before.
+pub fn probe_head(path: &str) -> Option<ProbeInfo> {
+    probe_head_why(path).ok()
+}
+
+/// [`probe_head`] saying why the whole file has to be read instead.
+pub fn probe_head_why(path: &str) -> Result<ProbeInfo, String> {
+    use std::io::Read;
+    let p = std::path::Path::new(path);
+    let file_size = std::fs::metadata(p).map_err(|e| e.to_string())?.len();
+    let mut head = Vec::with_capacity(PROBE_HEAD);
+    let _permit = crate::memory::work_gate().acquire(PROBE_HEAD);
+    std::fs::File::open(p).map_err(|e| e.to_string())?.take(PROBE_HEAD as u64).read_to_end(&mut head).map_err(|e| e.to_string())?;
+    // only containers whose head probe was checked against the whole-file probe (tests/probe_head.rs); a DNG can
+    // carry its XMP and opcodes anywhere, so it is read whole
+    use lightcraft_raw::RawFormat::{Arw, Cr2, Cr3, Nef, Orf, Raf, Rw2, Srw};
+    match lightcraft_raw::probe(&head) {
+        Some(Arw | Cr2 | Cr3 | Nef | Orf | Raf | Rw2 | Srw) => {}
+        other => return Err(format!("container {other:?} is read whole")),
+    }
+    let hash = crate::video::sampled_hash_tagged(p, "ps1")?;
+    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).ok_or("no file name")?;
+    // the header readers check that the strips they describe lie inside the file: give them a buffer of the file's size
+    // whose unread part is zeros (a lazily mapped allocation: nothing is read or touched for it)
+    let size = usize::try_from(file_size).ok().filter(|n| *n >= head.len() && *n <= (512 << 20)).ok_or("file too large for a head probe")?;
+    let mut whole = vec![0u8; size];
+    whole.get_mut(..head.len()).ok_or("head longer than the file")?.copy_from_slice(&head);
+    // a lossless-JPEG raw (Canon CR2…) has its sample header at the start of its strip, usually past the head: read the
+    // first 64 KiB of each image strip or tile that starts there (a few seeks, never the strip itself)
+    {
+        use std::io::{Seek, SeekFrom};
+        let mut f = std::fs::File::open(p).map_err(|e| e.to_string())?;
+        for (at, n) in lightcraft_raw::data_windows(&head, file_size, 12, 64 << 10) {
+            let start = usize::try_from(at).unwrap_or(usize::MAX);
+            if let Some(dst) = whole.get_mut(start..start.saturating_add(n))
+                && f.seek(SeekFrom::Start(at)).is_ok()
+            {
+                let _ = f.read_exact(dst);
+            }
+        }
+    }
+    drop(head);
+    let info = probe_parts(&name, &whole, file_size, Some(hash)).map_err(|e| format!("head probe: {e}"))?;
+    if info.kind != MediaKind::Raw || info.preview_only.is_some() {
+        return Err(format!("shown from its embedded preview ({}): read whole", info.preview_only.as_deref().unwrap_or("not a raw")));
+    }
+    Ok(info)
 }
 
 /// Why a raw that failed to decode should show its embedded preview instead (`Ok`), or the error
@@ -1118,6 +1179,13 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
             return crate::video::probe_for_import(path);
         }
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
+        // a big raw is described from its first megabytes and a sampled content key: its 20 to 50 MB are not read
+        // (a USB disk or a share reads them at 20 to 30 MB/s). Anything the head does not settle is read whole.
+        if len > PROBE_HEAD_MIN
+            && let Some(info) = probe_head(path)
+        {
+            return Ok(info);
+        }
         let _permit = crate::memory::work_gate().acquire(len);
         let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
         let mut info = probe_bytes(path, &bytes)?;

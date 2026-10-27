@@ -268,6 +268,12 @@ pub fn source_path(p: &lightcraft_catalog::Photo) -> Option<&str> {
 /// [`lightcraft_preview::hash_bytes`], so Import ▸ Copy compares a copy byte for byte instead.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn sampled_hash(path: &Path) -> Result<String, String> {
+    sampled_hash_tagged(path, "vs1")
+}
+
+/// [`sampled_hash`] with its own tag (`ps1` for big raws: [`crate::files::probe_head`]).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn sampled_hash_tagged(path: &Path, tag: &str) -> Result<String, String> {
     use std::io::{Read, Seek, SeekFrom};
     const PART: u64 = 1 << 20;
     let mut f = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -280,7 +286,7 @@ pub fn sampled_hash(path: &Path) -> Result<String, String> {
         let n = f.by_ref().take(PART).read(&mut buf).map_err(|e| e.to_string())?;
         h.update(buf.get(..n).unwrap_or(&[]));
     }
-    Ok(format!("vs1-{}", h.finish()))
+    Ok(format!("{tag}-{}", h.finish()))
 }
 
 /// Probe a video for import: size and duration from `ffprobe`, the content key from samples.

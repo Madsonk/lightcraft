@@ -705,7 +705,7 @@ impl ScanInput {
         // (no table of the library here: this is the session's thread, and the library may hold
         // millions of photos. The scan looks up what it finds)
         let library = std::sync::Arc::new(s.catalog.clone());
-        let input = ScanInput { probe: s.media.file_probe.clone(), skip, library, cache: std::mem::take(&mut s.import_probes) };
+        let input = ScanInput { probe: adopting_full_hashes(s, s.media.file_probe.clone()), skip, library, cache: std::mem::take(&mut s.import_probes) };
         (input, paths.to_vec())
     }
 
@@ -717,6 +717,47 @@ impl ScanInput {
     /// The library as the scan sees it (shared, for [`crate::sync`], which looks at the same one).
     pub(crate) fn library(&self) -> std::sync::Arc<lightcraft_catalog::Catalog> {
         std::sync::Arc::clone(&self.library)
+    }
+}
+
+/// A probe that gives a big raw its catalogue photo's full content hash when it is that same file. A raw is now keyed
+/// by a sampled hash (`ps1-`, [`crate::files::probe_head`]) so that importing it does not read all of it; photos
+/// imported before have the hash of every byte. When one of those has the file's size, the file is read once and, if it
+/// is that photo's content, takes its key: the same file is then one photo whichever way it was imported, and its cached
+/// thumbnails stay valid. (Costs a whole read only for a file whose size matches an older photo's.)
+fn adopting_full_hashes(s: &Session, probe: Option<crate::media::FileProbe>) -> Option<crate::media::FileProbe> {
+    let probe = probe?;
+    #[cfg(target_arch = "wasm32")]
+    {
+        Some(probe)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut full: HashMap<u64, std::collections::HashSet<String>> = HashMap::new();
+        for p in s.catalog.photos() {
+            if let Some(h) = &p.content_hash
+                && p.file_size > crate::files::PROBE_HEAD_MIN as u64
+                && !h.contains(['-', ':'])
+            {
+                full.entry(p.file_size).or_default().insert(h.clone());
+            }
+        }
+        if full.is_empty() {
+            return Some(probe);
+        }
+        Some(std::sync::Arc::new(move |path: &str| {
+            let mut info = probe(path)?;
+            if info.content_hash.as_deref().is_some_and(|h| h.starts_with("ps1-"))
+                && let Some(known) = full.get(&info.file_size)
+                && let Ok(bytes) = std::fs::read(path)
+            {
+                let whole = lightcraft_preview::hash_bytes(&bytes).to_string();
+                if known.contains(&whole) {
+                    info.content_hash = Some(whole);
+                }
+            }
+            Ok(info)
+        }))
     }
 }
 
@@ -992,7 +1033,7 @@ impl ImportJob {
             library: Some((s.catalog.clone(), fresh)),
             by_path: HashMap::new(),
             by_hash: HashMap::new(),
-            probe: s.media.file_probe.clone(),
+            probe: adopting_full_hashes(s, s.media.file_probe.clone()),
             file_bytes: s.media.file_bytes.clone(),
             cache: std::mem::take(&mut s.import_probes),
             naming: s.xmp.naming,
