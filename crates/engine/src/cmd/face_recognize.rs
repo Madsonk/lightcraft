@@ -341,7 +341,7 @@ mod imp {
         Ok(embedder)
     }
 
-    fn current(s: &mut Session, cmd: &str) -> Result<Arc<Embedder>> {
+    pub(super) fn current(s: &mut Session, cmd: &str) -> Result<Arc<Embedder>> {
         current_with(s, cmd, true)
     }
 
@@ -1106,6 +1106,12 @@ mod imp {
     pub fn arrange_unnamed(_: &mut Session, _: &mut Vec<(u64, usize, lightcraft_geom::Rect)>, _: usize) -> super::Arranged {
         super::Arranged { ordered: false, ready: false, suggestions: Default::default() }
     }
+}
+
+/// The chosen recognition model, loaded (what the faces of videos are embedded with).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn recognizer(s: &mut Session, cmd: &str) -> Result<std::sync::Arc<lightcraft_faces::runtime::Embedder>> {
+    imp::current(s, cmd)
 }
 
 pub fn specs() -> Vec<CommandSpec> {

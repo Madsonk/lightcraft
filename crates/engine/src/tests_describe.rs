@@ -3,6 +3,13 @@
 //! proposals refused without the model, `video.frames` in the background, folder imports with
 //! videos, and Video Catcher's videos brought into the catalog.
 
+fn write_png(path: &Path, seed: u8) {
+    let data: Vec<[u8; 4]> = (0..64 * 48).map(|i| [(i % 64) as u8 * 3, (i / 64) as u8 * 4, seed, 255]).collect();
+    let img = lightcraft_raster::Rgba8 { width: 64, height: 48, data };
+    let bytes = lightcraft_codecs::encode_png(&lightcraft_codecs::EncodeImage::rgba8(&img), &lightcraft_codecs::EncodeMeta::default()).unwrap();
+    std::fs::write(path, bytes).unwrap();
+}
+
 use std::path::Path;
 use std::process::Command;
 
@@ -11,7 +18,6 @@ use serde_json::{Value, json};
 
 use crate::Session;
 use crate::describe::{Annotation, Store};
-use crate::tests_video::people::{face, write_png};
 use crate::tests_video::{have_ffmpeg, ids, import, library, make_video, temp_dir};
 
 fn store(s: &Session) -> Store {
@@ -74,7 +80,6 @@ fn what_a_person_writes_wins_and_confirm_delete_undo_work() {
 #[test]
 fn proposals_need_the_model_and_a_choice_of_photos() {
     let (mut s, dir) = library();
-    s.searcher.dir = Some(temp_dir("no-search-model"));
     write_png(&dir.join("p.png"), 10);
     let pid = ids(&import(&mut s, &dir.join("p.png")))[0];
     let e = s.execute("describe.suggest", &json!({"ids": [pid.0]})).unwrap_err().to_string();

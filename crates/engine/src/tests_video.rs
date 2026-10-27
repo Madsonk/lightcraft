@@ -44,7 +44,6 @@ pub(crate) fn make_video(path: &Path, secs: u32, video: bool) {
 pub(crate) fn library() -> (Session, PathBuf) {
     let dir = temp_dir("lib");
     let mut s = Session::new().with_fs();
-    s.people.dir = Some(temp_dir("models"));
     s.open_library(dir.join("lib"), false).unwrap();
     (s, dir)
 }

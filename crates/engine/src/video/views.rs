@@ -12,12 +12,12 @@ use crate::cmd::{bad, bool_or, str_param};
 use crate::describe::{Status, fold};
 use crate::{Result, Session};
 
-fn faces_at(_: &mut Session, _: u64) -> Vec<Value> {
-    Vec::new()
+fn faces_at(s: &mut Session, key: u64) -> Vec<Value> {
+    super::faces::faces_at(s, key)
 }
 
-fn analysed(_: &mut Session, _: &[u64]) -> usize {
-    0
+fn analysed(s: &mut Session, keys: &[u64]) -> usize {
+    super::faces::analysed(s, keys)
 }
 
 /// The named people among faces (`[{name, …}]`), each once, in order of appearance.

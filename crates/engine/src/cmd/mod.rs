@@ -20,7 +20,7 @@ mod export;
 pub(crate) mod face_detect;
 mod describe;
 mod face_models;
-mod face_recognize;
+pub(crate) mod face_recognize;
 mod facemesh;
 pub mod filters;
 mod focus;
@@ -162,6 +162,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(mask_effects::specs());
         v.extend(cull::specs());
         v.extend(video::specs());
+        v.extend(crate::video::faces::specs());
         v.extend(describe::specs());
         v.extend(crate::cull_job::specs());
         v.extend(facemesh::specs());

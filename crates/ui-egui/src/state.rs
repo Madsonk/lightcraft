@@ -18,6 +18,8 @@ pub enum ViewMode {
     Reference,
     /// A card per person named on faces (close-up, name, photo count).
     People,
+    /// The videos: list, a video's moments, who + what search.
+    Videos,
 }
 
 /// The right-hand tool/panel shown next to the tool strip.

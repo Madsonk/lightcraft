@@ -151,8 +151,8 @@ pub fn undo(s: &mut Session) -> Result<Value> {
 }
 
 /// Who is there at `key` (named people of the face index), as JSON.
-fn people_at(_: &mut Session, _: u64) -> Value {
-    json!([])
+fn people_at(s: &mut Session, key: u64) -> Value {
+    json!(crate::video::faces::faces_at(s, key))
 }
 
 /// `describe.list`: what a photo shows, or each moment of a video, every source together.

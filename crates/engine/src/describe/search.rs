@@ -92,8 +92,30 @@ fn people_in(query: &str, people: &[(u32, String)]) -> (Vec<(u32, String)>, Stri
     (found, q.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
-fn named(_: &mut Session) -> (Vec<(u32, String)>, HashMap<u64, Vec<(u32, String)>>) {
-    (Vec::new(), HashMap::new())
+/// The people the photos name (numbered by first appearance) and, by picture key, who the faces
+/// of the videos are suggested to be.
+fn named(s: &mut Session) -> (Vec<(u32, String)>, HashMap<u64, Vec<(u32, String)>>) {
+    let keys: Vec<u64> = crate::video::faces::keys(s);
+    let mut people: Vec<(u32, String)> = Vec::new();
+    let mut by_key: HashMap<u64, Vec<(u32, String)>> = HashMap::new();
+    for k in keys {
+        for f in crate::video::faces::faces_at(s, k) {
+            let Some(name) = f["name"].as_str() else { continue };
+            let id = match people.iter().find(|(_, n)| n == name) {
+                Some((i, _)) => *i,
+                None => {
+                    let i = people.len() as u32;
+                    people.push((i, name.to_string()));
+                    i
+                }
+            };
+            let row = by_key.entry(k).or_default();
+            if !row.iter().any(|(i, _)| *i == id) {
+                row.push((id, name.to_string()));
+            }
+        }
+    }
+    (people, by_key)
 }
 
 /// The cosine of each search key with the meaning of `texts` (their embeddings averaged); `Err`
