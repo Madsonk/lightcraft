@@ -1,3 +1,9 @@
+//! Automatic straighten and crop *suggestions* (L3). Pure functions over decoded pixels and face
+//! boxes: nothing here edits a photo, reads a file or touches the network. The engine turns a
+//! suggestion into a preview, and the photographer accepts it or not.
+#![forbid(unsafe_code)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+
 //! Straighten and crop *suggestions*. Nothing here edits a photo: the engine turns a suggestion
 //! into a preview, and the photographer accepts it or not.
 //!

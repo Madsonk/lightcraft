@@ -20,7 +20,7 @@ use std::time::Duration;
 use lightcraft_catalog::{MediaKind, Op, Photo, PhotoId, Source};
 use lightcraft_develop::DevelopSettings;
 use lightcraft_geom::{CropGeometry, Rect};
-use lightcraft_style::framing::{self, CropRequest, Subject};
+use lightcraft_autoframe::{self as framing, CropRequest, Subject};
 use lightcraft_style::{Config, Sample, StyleModel, targets};
 use serde_json::{Value, json};
 use web_time::Instant;

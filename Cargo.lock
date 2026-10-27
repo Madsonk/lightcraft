@@ -3195,6 +3195,7 @@ dependencies = [
  "lightcraft-scenes",
  "lightcraft-search",
  "lightcraft-segment",
+ "lightcraft-style",
  "lightcraft-taste",
  "lightcraft-tiff",
  "log",
@@ -3485,6 +3486,22 @@ dependencies = [
  "candle-nn",
  "lightcraft-fetch",
  "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lightcraft-style"
+version = "0.5.0"
+dependencies = [
+ "lightcraft-color",
+ "lightcraft-develop",
+ "lightcraft-geom",
+ "lightcraft-pipeline",
+ "lightcraft-raster",
+ "lightcraft-scenes",
+ "lightcraft-taste",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

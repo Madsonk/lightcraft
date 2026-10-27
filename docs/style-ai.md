@@ -62,6 +62,41 @@ photographer's develop settings ──► 14 sliders (targets.rs) ────�
 
 _(filled in below: synthetic ground truth, then Madson's archive.)_
 
-## Limits
 
-_(see the end of this page.)_
+## Porting to the 0.14.0 base
+
+The lot is built so the port is mostly a copy. Two **self-contained crates** (pure functions, no I/O, no network,
+no UI, `#![forbid(unsafe_code)]`, panic-free lints) and a thin integration layer.
+
+Copy as they are:
+
+* `crates/style/` (`lightcraft-style`): features, targets, ridge training with grouped cross-validation, profile
+  JSON, series harmonisation, synthetic photographer. Depends on `lightcraft-taste` (ridge solver, group folds),
+  `develop`, `pipeline` (`auto::{auto_tone, auto_wb, current_wb}`, `SourceInfo`), `raster`, `color`.
+* `crates/autoframe/` (`lightcraft-autoframe`): straighten (reuses `pipeline::upright`) and crop search. Depends on
+  `geom`, `raster`, `develop`, `pipeline`.
+
+Integration, in the order to port it (every file listed is new unless marked *edit*):
+
+| File | What | Note |
+|---|---|---|
+| `Cargo.toml` (*edit*) | workspace members' path deps `lightcraft-style`, `lightcraft-autoframe` | 2 lines |
+| `xtask/src/layers.rs` (*edit*) | `("style", Layer(3))`, `("autoframe", Layer(3))` | 2 lines |
+| `crates/pipeline/src/upright.rs` (*edit*) | `Segment::mid` made `pub` | 1 word |
+| `crates/engine/Cargo.toml` (*edit*) | the two dependencies | 2 lines |
+| `crates/engine/src/style_job.rs` | the whole engine layer: `style.train/apply/status/list/cancel/delete`, `autostraighten.suggest/apply`, `autocrop.suggest/apply`, worker threads, profile files | one file, ~900 lines |
+| `crates/engine/src/lib.rs` (*edit*) | `pub mod style_job;`, field `pub style: style_job::StyleLab` + its `Default` in `Session::new`, `#[cfg(test)] mod tests_style;` | 4 lines |
+| `crates/engine/src/cmd/mod.rs` (*edit*) | `v.extend(crate::style_job::specs());` | 1 line |
+| `crates/engine/src/series.rs` (*edit*) | the grouping body of `groups()` extracted as `pub(crate) fn group_photos`; `groups()` calls it | pure refactor |
+| `crates/engine/src/tests_style.rs` | engine tests on the demo library | |
+| `crates/ui-egui/src/panels/style.rs` | the "My style" / "Auto crop" panel | |
+| `crates/ui-egui/src/state.rs` (*edit*) | `RightPanel::Style` | 1 variant |
+| `crates/ui-egui/src/panels/mod.rs`, `panels/right.rs` (*edit*) | `pub mod style;`, one `match` arm | 2 lines |
+| `crates/ui-egui/src/menus.rs` (*edit*) | `("panel.style", "My Style", None, "Window")` and its `"panel.style"` arm | 2 spots |
+| `crates/ui-egui/src/panels/strip.rs` (*edit*) | `const STYLE: Tool` + one `tool(...)` call next to Portrait | |
+| `crates/ui-egui/locales/fr.json` (*edit*) | 48 French strings (append) | |
+
+Things the port must re-check on 0.14.0: the names `Session::source_ref_uncached`, `source_info`, `develop_op`,
+`commit`, `checked_targets`, `library_generation`, `guard::catch`, `describe::ops::library_dir`;
+`Photo::faces()` (rects normalised to the upright photo); `proposals::pair` (Before / After tile) in the UI;
+`design::{button, status_line, section_title}`. Nothing else is shared with the rest of the application.

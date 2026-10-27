@@ -9,7 +9,6 @@ description = "LightCraft style (L3): a photographer's editing style learned fro
 workspace = true
 
 [dependencies]
-lightcraft-geom = { workspace = true }
 lightcraft-color = { workspace = true }
 lightcraft-raster = { workspace = true }
 lightcraft-develop = { workspace = true }

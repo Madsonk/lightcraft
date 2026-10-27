@@ -7,14 +7,12 @@
 //! than the photographer's own median is not predicted at all (the model says so), and the
 //! numbers it was judged on (leave-shoots-out cross-validation, against "no adjustment" and
 //! "median adjustment") are stored with it. [`series`] keeps one shoot coherent.
-//! [`framing`] suggests a straighten angle and a crop; it never applies anything.
 //!
 //! No UI, no I/O, no unsafe code (L3).
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod features;
-pub mod framing;
 pub mod model;
 pub mod series;
 pub mod synth;
