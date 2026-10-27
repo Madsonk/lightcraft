@@ -995,7 +995,7 @@ fn assisted_culling_groups_bursts_and_scores_focus() {
     s.commit("t", lightcraft_catalog::Op::SetCaptured { id: other, captured: Some("2026-05-01T10:00:04".into()) }).unwrap();
     let r = s.execute("photo.analyze", &json!({"ids": ids, "rejectBelow": 0.0, "pickBest": true})).unwrap();
     assert_eq!(r["groups"], 1, "{r}");
-    let a = |s: &Session, n: &str| s.catalog.photo(by_name(s, n)).unwrap().analysis.unwrap();
+    let a = |s: &Session, n: &str| s.catalog.photo(by_name(s, n)).unwrap().analysis.clone().unwrap();
     let (soft, sharp, softer, odd) = (a(&s, "a_soft.png"), a(&s, "b_sharp.png"), a(&s, "c_softer.png"), a(&s, "d_other.png"));
     eprintln!("sharpness: sharp {} soft {} softer {} other {}", sharp.sharpness, soft.sharpness, softer.sharpness, odd.sharpness);
     assert!(sharp.sharpness > soft.sharpness && soft.sharpness > softer.sharpness);
@@ -1020,7 +1020,7 @@ fn assisted_culling_ignores_repeated_ids() {
     let r = s.execute("photo.analyze", &json!({"ids": [id.0, id.0]})).unwrap();
     assert_eq!(r["groups"], 0, "a photo listed twice is not a burst of two: {r}");
     assert_eq!(r["photos"].as_array().map(Vec::len), Some(1), "{r}");
-    let an = s.catalog.photo(id).unwrap().analysis.unwrap();
+    let an = s.catalog.photo(id).unwrap().analysis.clone().unwrap();
     assert!(an.group.is_none() && !an.best, "{an:?}");
 }
 
