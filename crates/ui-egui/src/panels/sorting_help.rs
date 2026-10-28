@@ -364,6 +364,22 @@ fn keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, goto: &mut O
         ),
     );
     warning(ui, t, "keywordsWarning", KEYWORDS_WARNING);
+    let auto_id = egui::Id::new("kw-auto-accept");
+    let mut auto: bool = match ui.data(|d| d.get_temp::<bool>(auto_id)) {
+        Some(b) => b,
+        None => {
+            let b = app.run("keywords.settings", json!({})).ok().and_then(|v| v["autoAccept"].as_bool()).unwrap_or(false);
+            ui.data_mut(|d| d.insert_temp(auto_id, b));
+            b
+        }
+    };
+    let changed = ui
+        .checkbox(&mut auto, crate::i18n::tr("Add suggestions above 90 % automatically"))
+        .on_hover_text(crate::i18n::tr("Off by default. When on, Suggest also adds the keywords at or above the threshold."))
+        .changed();
+    if changed && app.run("keywords.settings", json!({"autoAccept": auto})).is_ok() {
+        ui.data_mut(|d| d.insert_temp(auto_id, auto));
+    }
     let n = if app.session.selection.ids.len() > 1 { app.session.selection.ids.len() } else { usize::from(app.session.active().is_some()) };
     let running = app.tasks.is_running(crate::heavy::SUGGEST);
     ui.horizontal(|ui| {

@@ -218,6 +218,8 @@ mod tests_tool_overlay;
 #[cfg(test)]
 mod tests_unsaved;
 #[cfg(test)]
+mod tests_videos;
+#[cfg(test)]
 mod tests_view_cost;
 #[cfg(test)]
 mod tests_wb_selector;

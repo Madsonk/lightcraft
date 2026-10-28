@@ -190,23 +190,25 @@ fn signature(s: &crate::Session, root: &Path, rev: u64) -> u64 {
 /// Lists of pictures read at once when the remembered ones are rebuilt.
 const LOAD_THREADS: usize = 32;
 
-impl crate::Session {
-    /// The pictures of the library's videos, by key (empty without a library on disk).
-    pub fn video_frames(&mut self) -> Arc<HashMap<u64, FrameAt>> {
-        let Some(root) = cache_root(self) else { return Arc::default() };
-        let sig = signature(self, &root, self.video.rev);
-        if let Some((s, m)) = &self.video.cache
-            && *s == sig
-        {
-            return m.clone();
-        }
-        let mut by_content: HashMap<String, Vec<PhotoId>> = HashMap::new();
-        for p in self.catalog.photos().filter(|p| p.in_library() && p.kind == MediaKind::Video) {
-            by_content.entry(crate::media::content_key(p)).or_default().push(p.id);
-        }
-        // the lists are read side by side: on a cold or busy disk each open waits tens of
-        // milliseconds, and 355 of them one after the other kept the Videos view blank for 30 s
-        let jobs: Vec<(String, Vec<PhotoId>)> = by_content.into_iter().collect();
+/// Reading the lists of pictures of every video of the library (see [`Session::video_frames_job`]): owns
+/// everything it needs, so it runs on any thread.
+pub struct ListsJob {
+    root: PathBuf,
+    sig: u64,
+    jobs: Vec<(String, Vec<PhotoId>)>,
+}
+
+/// What a [`ListsJob`] read.
+pub struct ListsLoaded {
+    sig: u64,
+    map: HashMap<u64, FrameAt>,
+}
+
+impl ListsJob {
+    /// Read the lists, side by side: on a cold or busy disk each open waits tens of milliseconds, and 355 of
+    /// them one after the other kept the Videos view blank for 30 s.
+    pub fn run(self) -> ListsLoaded {
+        let ListsJob { root, sig, jobs } = self;
         let load = |chunk: &[(String, Vec<PhotoId>)]| -> Vec<(String, Vec<PhotoId>, PathBuf, frames::Manifest)> {
             chunk
                 .iter()
@@ -233,9 +235,53 @@ impl crate::Session {
                 map.insert(frame_key(&ck, f.ms), FrameAt { ids: ids.clone(), ms: f.ms, file: dir.join(&f.file) });
             }
         }
-        let m = Arc::new(map);
-        self.video.cache = Some((sig, m.clone()));
-        m
+        ListsLoaded { sig, map }
+    }
+}
+
+impl crate::Session {
+    /// The pictures of the library's videos, by key (empty without a library on disk). Read here, on the
+    /// calling thread, when they are not remembered yet; a window that must not wait asks
+    /// [`Session::video_frames_job`] first and runs it on a worker.
+    pub fn video_frames(&mut self) -> Arc<HashMap<u64, FrameAt>> {
+        if let Some(job) = self.video_frames_job() {
+            let loaded = job.run();
+            self.video_frames_apply(loaded);
+        }
+        match &self.video.cache {
+            Some((_, m)) => m.clone(),
+            None => Arc::default(),
+        }
+    }
+
+    /// Whether the pictures of the videos are remembered (a list built now reads no file of the pictures).
+    pub fn video_frames_warm(&mut self) -> bool {
+        self.video_frames_job().is_none()
+    }
+
+    /// What reading the pictures of every video takes, to do off the session's thread: `None` when they are
+    /// remembered already (or there is no library on disk to read them from).
+    pub fn video_frames_job(&mut self) -> Option<ListsJob> {
+        let root = cache_root(self)?;
+        let sig = signature(self, &root, self.video.rev);
+        if let Some((s, _)) = &self.video.cache
+            && *s == sig
+        {
+            return None;
+        }
+        let mut by_content: HashMap<String, Vec<PhotoId>> = HashMap::new();
+        for p in self.catalog.photos().filter(|p| p.in_library() && p.kind == MediaKind::Video) {
+            by_content.entry(crate::media::content_key(p)).or_default().push(p.id);
+        }
+        Some(ListsJob { root, sig, jobs: by_content.into_iter().collect() })
+    }
+
+    /// Remember what a [`ListsJob`] read (dropped when the library changed meanwhile: the next list reads again).
+    pub fn video_frames_apply(&mut self, loaded: ListsLoaded) {
+        let Some(root) = cache_root(self) else { return };
+        if signature(self, &root, self.video.rev) == loaded.sig {
+            self.video.cache = Some((loaded.sig, Arc::new(loaded.map)));
+        }
     }
 
     /// The pictures of one video, in time order.

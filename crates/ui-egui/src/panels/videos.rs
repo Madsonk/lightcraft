@@ -293,6 +293,9 @@ pub struct VideosUi {
     pub focus_ms: Option<u64>,
     scroll_to_focus: bool,
     pub dirty: bool,
+    /// The pictures of the videos being read off the window's thread (the view says "Loading…" meanwhile).
+    #[cfg(not(target_arch = "wasm32"))]
+    warming: Option<std::sync::mpsc::Receiver<lightcraft_engine::video::ListsLoaded>>,
     list: Option<(u64, Value)>,
     sheet: Option<(u64, u64, Value)>,
     /// Filters of the list.
@@ -316,6 +319,14 @@ pub struct VideosUi {
 }
 
 impl VideosUi {
+    /// Whether the lists of pictures are being read (the headless harness waits for them).
+    pub fn is_warming(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        return self.warming.is_some();
+        #[cfg(target_arch = "wasm32")]
+        false
+    }
+
     /// The catalog revision and annotation edits are what the lists depend on; asked again when either moves.
     fn stale(&self, rev: u64) -> bool {
         self.dirty || self.list.as_ref().is_none_or(|(r, _)| *r != rev)
@@ -486,7 +497,62 @@ pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
 }
 
 /// The view.
+/// Make sure the lists of pictures are remembered before the view asks the engine for anything: they are read on a
+/// worker (355 videos on a network or USB volume took 14 s, up to 134 s under load, on the window's thread).
+/// `false` while they load: the view then draws a "Loading…" page.
+fn warmed(app: &mut LightcraftApp, ui: &mut egui::Ui) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if app.session.video_frames_warm() {
+            app.caches.videos.warming = None;
+            return true;
+        }
+        if let Some(rx) = &app.caches.videos.warming {
+            match rx.try_recv() {
+                Ok(loaded) => {
+                    app.caches.videos.warming = None;
+                    app.session.video_frames_apply(loaded);
+                    app.caches.videos.dirty = true;
+                    return app.session.video_frames_warm();
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(_) => app.caches.videos.warming = None,
+            }
+        } else if let Some(job) = app.session.video_frames_job() {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let repaint = ui.ctx().clone();
+            let started = std::thread::Builder::new().name("lc-video-lists".into()).spawn(move || {
+                let _ = tx.send(job.run());
+                repaint.request_repaint();
+            });
+            if started.is_ok() {
+                app.caches.videos.warming = Some(rx);
+            } else {
+                return true;
+            }
+        }
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(120));
+        let t = Tokens::get(ui.ctx());
+        ui.add_space(40.0);
+        ui.vertical_centered(|ui| {
+            ui.spinner();
+            ui.add_space(8.0);
+            let r = ui.label(egui::RichText::new(tr("Loading the videos…")).font(t.font(14.0)).color(t.text_dim));
+            register(ui.ctx(), "videos:loading", r.rect);
+        });
+        false
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (app, ui);
+        true
+    }
+}
+
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    if !warmed(app, ui) {
+        return;
+    }
     match app.caches.videos.section {
         Section::Sheet if app.caches.videos.open.is_some() => sheet(app, ui),
         Section::Search if app.caches.videos.search.is_some() => results(app, ui),
@@ -1037,14 +1103,14 @@ pub fn moment_card(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64, m: &Valu
     for (field, label, lines) in [("scene", "Scene", 1), ("action", "Action", 1), ("description", "Description", 2)] {
         let value = a[field].as_str().unwrap_or_default().to_string();
         let ek = format!("{key}:{field}");
-        ui.label(egui::RichText::new(tr(label)).font(t.font(10.5)).color(t.text_dim));
+        let name = ui.label(egui::RichText::new(tr(label)).font(t.font(10.5)).color(t.text_dim));
         let mut text = app.caches.videos.edits.get(&ek).cloned().unwrap_or_else(|| value.clone());
         let edit = if lines > 1 {
             egui::TextEdit::multiline(&mut text).desired_rows(lines).desired_width(width - 12.0).id(egui::Id::new(("moment-field", &ek)))
         } else {
             egui::TextEdit::singleline(&mut text).desired_width(width - 12.0).id(egui::Id::new(("moment-field", &ek)))
         };
-        let resp = ui.add(edit);
+        let resp = ui.add(edit).labelled_by(name.id);
         register(ui.ctx(), format!("field:{ek}"), resp.rect);
         if resp.changed() {
             app.caches.videos.edits.insert(ek.clone(), text.clone());

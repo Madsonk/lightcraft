@@ -333,6 +333,7 @@ fn with_spot(mode: lightcraft_develop::SpotMode, at: (f64, f64), offset: Option<
     use lightcraft_geom::Point;
     let mut s = DevelopSettings::default();
     s.spots.push(Spot {
+        patch: None,
         mode,
         points: vec![Point::new(at.0, at.1)],
         size: 0.04,

@@ -149,7 +149,7 @@ pub const FIELD_GROUPS: &[(&str, &[&str])] = &[
     ("Location", &["location", "city", "state", "country", "hasGps"]),
     ("Size", &["longEdge", "shortEdge", "aspect", "megapixels"]),
     ("Develop", &["edited", "cropped", "treatment"]),
-    ("Assisted Culling", &["sharpness", "bestOfGroup"]),
+    ("Assisted Culling", &["sharpness", "bestOfGroup", "faceCount", "eyesClosed", "eyesOpen", "cullBucket", "cullStars"]),
 ];
 
 /// The field-menu group `field` sits in; `None` for a top-level or unknown field.

@@ -56,11 +56,6 @@ impl Session {
         p
     }
 
-    #[cfg(test)]
-    pub(crate) fn store_patch_for_test(&mut self, p: InpaintPatch) -> Arc<InpaintPatch> {
-        self.store_patch(p).unwrap()
-    }
-
     pub(crate) fn store_patch(&mut self, p: InpaintPatch) -> Result<Arc<InpaintPatch>> {
         if let Some(file) = self.ai_file("inpaint", &format!("{}.lcp", p.hex_id())) {
             write_atomic(&file, &p.to_bytes()).map_err(|e| EngineError::Other(format!("{}: {e}", file.display())))?;

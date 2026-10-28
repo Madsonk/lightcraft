@@ -103,7 +103,7 @@ mod tests {
         let alpha: Vec<u8> = (0..pw * ph).map(|i| if (4..12).contains(&(i % pw)) && (4..12).contains(&(i / pw)) { 255 } else { 0 }).collect();
         let patch = Arc::new(InpaintPatch::new([0.25, 0.25, 0.75, 0.75], pw, ph, rgb, alpha).unwrap());
         let spot = Spot { mode: SpotMode::Inpaint, points: vec![Point::new(0.5, 0.5)], patch: Some(patch.hex_id()), ..Default::default() };
-        let s = DevelopSettings { spots: vec![spot], aux: Aux { patches: vec![patch], ..Default::default() }, ..Default::default() };
+        let s = DevelopSettings { spots: vec![spot], aux: Aux { patches: vec![patch] }, ..Default::default() };
         let frame = crate::geometry::Frame::new(w, h, &s, true);
         apply(&mut img, &s.spots, &s.aux, &frame);
         assert!(img.data[20 * w + 20][0] > 0.5 && img.data[20 * w + 20][1] < 0.1, "centre is filled: {:?}", img.data[20 * w + 20]);

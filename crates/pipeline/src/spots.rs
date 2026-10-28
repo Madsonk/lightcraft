@@ -398,6 +398,7 @@ mod tests {
                 let mut img = original.clone();
                 let frame = Frame::new(64, 48, &DevelopSettings::default(), true);
                 let spot = Spot {
+                    patch: None,
                     mode,
                     points: vec![Point::new(cx / 64.0, cy / 48.0)],
                     size: 5.0 / 64.0,
@@ -420,6 +421,7 @@ mod tests {
             let mut img = original.clone();
             let frame = Frame::new(w, h, &DevelopSettings::default(), true);
             let spot = Spot {
+                patch: None,
                 mode: SpotMode::Clone,
                 points: vec![Point::new(cx / w as f64, cy / h as f64)],
                 size: radius / w as f64,
@@ -468,6 +470,7 @@ mod tests {
     fn fill_spot() -> Spot {
         // a source offset is ignored by Fill
         Spot {
+            patch: None,
             mode: SpotMode::Fill,
             points: vec![Point::new(0.5, 0.5)],
             size: 0.06,
@@ -529,6 +532,7 @@ mod tests {
         let mut img = Rgb32f::from_fn(100, 100, |x, _| if x < 50 { [0.1; 3] } else { [0.9; 3] });
         let frame = Frame::new(100, 100, &DevelopSettings::default(), true);
         let spot = Spot {
+            patch: None,
             mode: SpotMode::Clone,
             points: vec![Point::new(0.25, 0.5)],
             size: 0.05,
