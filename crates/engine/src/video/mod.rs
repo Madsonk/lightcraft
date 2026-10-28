@@ -231,6 +231,7 @@ fn load_frames(root: &Path, jobs: Vec<(String, Vec<PhotoId>)>) -> HashMap<u64, F
 
 /// The lists being read off the window's thread (see [`crate::Session::video_frames_ready`]).
 #[derive(Default)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub struct Warm {
     /// A reading is running.
     running: bool,
@@ -296,6 +297,12 @@ impl crate::Session {
             }
         }
         false
+    }
+
+    /// Without threads (the web build) the lists are read when asked for.
+    #[cfg(target_arch = "wasm32")]
+    pub fn video_frames_ready(&mut self) -> bool {
+        true
     }
 
     /// The pictures of one video, in time order.

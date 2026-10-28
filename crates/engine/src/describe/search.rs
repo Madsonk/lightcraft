@@ -87,11 +87,12 @@ fn people_in(query: &str, people: &[(u32, String)]) -> (Vec<(u32, String)>, Stri
 /// The people the photos name (numbered by first appearance) and, by picture key, who the faces
 /// of the videos are suggested to be.
 fn named(s: &mut Session) -> (Vec<(u32, String)>, HashMap<u64, Vec<(u32, String)>>) {
-    let keys: Vec<u64> = crate::video::faces::keys(s);
+    let reader = crate::video::faces::reader(s);
+    let keys: Vec<u64> = reader.keys();
     let mut people: Vec<(u32, String)> = Vec::new();
     let mut by_key: HashMap<u64, Vec<(u32, String)>> = HashMap::new();
     for k in keys {
-        for f in crate::video::faces::faces_at(s, k) {
+        for f in reader.faces_at(k) {
             let Some(name) = f["name"].as_str() else { continue };
             let id = match people.iter().find(|(_, n)| n == name) {
                 Some((i, _)) => *i,
@@ -111,6 +112,7 @@ fn named(s: &mut Session) -> (Vec<(u32, String)>, HashMap<u64, Vec<(u32, String)
 }
 
 /// What the meaning of the query says about each picture.
+#[cfg_attr(not(feature = "search"), allow(dead_code))]
 struct Meaning {
     /// Cosine of each search key with the (moved) query: what the pictures are ranked by.
     cos: HashMap<u64, f32>,

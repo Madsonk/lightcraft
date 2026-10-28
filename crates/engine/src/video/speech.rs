@@ -5,7 +5,9 @@
 //! of English (the library is French and English): the sentence that holds every word, the words
 //! within a few seconds of each other, the words anywhere in the video.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -58,16 +60,16 @@ impl Speech {
 
 /// A sentence as `mlx_whisper` writes it (`--output-format json`).
 #[derive(Deserialize)]
-struct RawSegment {
-    start: f64,
-    end: f64,
-    text: String,
+pub struct RawSegment {
+    pub start: f64,
+    pub end: f64,
+    pub text: String,
     #[serde(default)]
-    no_speech_prob: Option<f64>,
+    pub no_speech_prob: Option<f64>,
     #[serde(default)]
-    avg_logprob: Option<f64>,
+    pub avg_logprob: Option<f64>,
     #[serde(default)]
-    compression_ratio: Option<f64>,
+    pub compression_ratio: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -98,14 +100,16 @@ fn norm(s: &str) -> String {
 /// The sentences worth keeping: no stock phrase, no loop (the same sentence more than twice in a
 /// row, or more than four times in the video), nothing Whisper itself flags as silence or noise.
 /// Returns the kept sentences and how many were dropped.
-pub fn clean(raw: Vec<(u64, u64, String, Option<f64>, Option<f64>, Option<f64>)>) -> (Vec<Utterance>, usize) {
+pub fn clean(raw: Vec<RawSegment>) -> (Vec<Utterance>, usize) {
     let mut out: Vec<Utterance> = Vec::new();
     let mut dropped = 0usize;
     let mut run = 0usize;
     let mut last = String::new();
     let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    for (t0, t1, text, no_speech, logprob, ratio) in raw {
-        let text = text.trim().to_string();
+    for seg in raw {
+        let (t0, t1) = ((seg.start * 1000.0).round() as u64, (seg.end * 1000.0).round() as u64);
+        let (no_speech, logprob, ratio) = (seg.no_speech_prob, seg.avg_logprob, seg.compression_ratio);
+        let text = seg.text.trim().to_string();
         let n = norm(&text);
         let letters = n.chars().filter(|c| c.is_alphanumeric()).count();
         let silent = no_speech.is_some_and(|p| p > 0.6) && logprob.is_some_and(|l| l < -1.0);
@@ -131,12 +135,7 @@ pub fn clean(raw: Vec<(u64, u64, String, Option<f64>, Option<f64>, Option<f64>)>
 /// Sentences of `mlx_whisper`'s JSON output: `(sentences, dropped, language)`.
 pub fn parse(json: &[u8]) -> Result<(Vec<Utterance>, usize, String), String> {
     let o: RawOutput = serde_json::from_slice(json).map_err(|e| format!("unreadable transcript: {e}"))?;
-    let raw = o
-        .segments
-        .into_iter()
-        .filter(|s| s.start.is_finite() && s.end.is_finite() && s.start >= 0.0)
-        .map(|s| ((s.start * 1000.0) as u64, (s.end * 1000.0) as u64, s.text, s.no_speech_prob, s.avg_logprob, s.compression_ratio))
-        .collect();
+    let raw = o.segments.into_iter().filter(|s| s.start.is_finite() && s.end.is_finite() && s.start >= 0.0).collect();
     let (u, dropped) = clean(raw);
     Ok((u, dropped, o.language))
 }
@@ -371,6 +370,10 @@ impl Job {
 mod tests {
     use super::*;
 
+    fn seg(t0: u64, t1: u64, text: &str, no_speech: Option<f64>, logprob: Option<f64>, ratio: Option<f64>) -> RawSegment {
+        RawSegment { start: t0 as f64 / 1000.0, end: t1 as f64 / 1000.0, text: text.into(), no_speech_prob: no_speech, avg_logprob: logprob, compression_ratio: ratio }
+    }
+
     fn u(t0: u64, text: &str) -> Utterance {
         Utterance { t0, t1: t0 + 2000, text: text.into() }
     }
@@ -378,16 +381,16 @@ mod tests {
     #[test]
     fn whisper_inventions_are_dropped() {
         let raw = vec![
-            (0, 2000, "  Bonjour tout le monde ".to_string(), Some(0.1), Some(-0.3), Some(1.2)),
-            (2000, 4000, "Sous-titres réalisés par la communauté d'Amara.org".into(), None, None, None),
-            (4000, 5000, "Wow.".into(), None, None, None),
-            (5000, 6000, "Wow.".into(), None, None, None),
-            (6000, 7000, "Wow.".into(), None, None, None),
-            (7000, 8000, "Wow.".into(), None, None, None),
-            (8000, 9000, "ok".into(), Some(0.9), Some(-1.5), None),
-            (9000, 9500, ".".into(), None, None, None),
-            (9500, 12000, "la la la la la la la".into(), None, None, Some(3.1)),
-            (12000, 14000, "On part demain matin".into(), None, None, None),
+            seg(0, 2000, "  Bonjour tout le monde ", Some(0.1), Some(-0.3), Some(1.2)),
+            seg(2000, 4000, "Sous-titres réalisés par la communauté d'Amara.org", None, None, None),
+            seg(4000, 5000, "Wow.", None, None, None),
+            seg(5000, 6000, "Wow.", None, None, None),
+            seg(6000, 7000, "Wow.", None, None, None),
+            seg(7000, 8000, "Wow.", None, None, None),
+            seg(8000, 9000, "ok", Some(0.9), Some(-1.5), None),
+            seg(9000, 9500, ".", None, None, None),
+            seg(9500, 12000, "la la la la la la la", None, None, Some(3.1)),
+            seg(12000, 14000, "On part demain matin", None, None, None),
         ];
         let (u, dropped) = clean(raw);
         let texts: Vec<&str> = u.iter().map(|x| x.text.as_str()).collect();
@@ -397,7 +400,9 @@ mod tests {
 
     #[test]
     fn a_phrase_said_again_and_again_far_apart_is_a_loop_too() {
-        let raw: Vec<_> = (0..8u64).flat_map(|i| [(i * 4000, i * 4000 + 1000, "Merci.".to_string(), None, None, None), (i * 4000 + 1000, i * 4000 + 2000, format!("phrase {i} différente"), None, None, None)]).collect();
+        let raw: Vec<_> = (0..8u64)
+            .flat_map(|i| [seg(i * 4000, i * 4000 + 1000, "Merci.", None, None, None), seg(i * 4000 + 1000, i * 4000 + 2000, &format!("phrase {i} différente"), None, None, None)])
+            .collect();
         let (u, _) = clean(raw);
         assert_eq!(u.iter().filter(|x| x.text == "Merci.").count(), 4);
     }
