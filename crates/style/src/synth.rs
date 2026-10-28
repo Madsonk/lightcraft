@@ -64,9 +64,9 @@ pub fn photographer(feat: &[f32], noise: &mut Rng) -> Targets {
     t[0] = 0.7 * f(feat, "auto_exposure") + 0.15 + 0.08 * noise.normal();
     t[1] = 0.6 * (f(feat, "auto_wb_mired") - f(feat, "asshot_mired")) + 6.0 + 2.0 * noise.normal();
     t[2] = 0.5 * (f(feat, "auto_wb_tint") - f(feat, "asshot_tint")) + 1.5 * noise.normal();
-    t[3] = 14.0 + 0.8 * f(feat, "auto_contrast") + 3.0 * noise.normal();
-    t[4] = 0.7 * f(feat, "auto_highlights") - 8.0 + 3.0 * noise.normal();
-    t[5] = 0.6 * f(feat, "auto_shadows") + 12.0 + 3.0 * noise.normal();
+    t[3] = 14.0 + 6.0 * f(feat, "lum_std") + 3.0 * noise.normal();
+    t[4] = -8.0 + 7.0 * f(feat, "lum_p95") + 3.0 * noise.normal();
+    t[5] = 12.0 - 6.0 * f(feat, "lum_p05") + 3.0 * noise.normal();
     t[6] = 0.5 * f(feat, "auto_whites") + 2.0 * noise.normal();
     t[7] = 0.5 * f(feat, "auto_blacks") - 5.0 + 2.0 * noise.normal();
     t[8] = 22.0 - 40.0 * f(feat, "saturation_mean") + 3.0 * noise.normal();

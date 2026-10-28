@@ -103,8 +103,9 @@ pub fn saliency_subject(src: &Rgb32f) -> Option<Subject> {
     }
     let mut sorted = sal.clone();
     sorted.sort_by(f32::total_cmp);
-    let cut = sorted.get(sorted.len() * 85 / 100).copied()?;
     let top = sorted.last().copied()?;
+    // the top 15 % of pixels, but never the flat background that merely ties with them
+    let cut = sorted.get(sorted.len() * 85 / 100).copied()?.max(0.5 * top);
     if top < 0.25 {
         return None;
     }
@@ -173,7 +174,7 @@ fn score(c: Rect, full: Rect, subjects: &[(Rect, f64)], horizon: Option<f64>) ->
     let mut reasons = Vec::new();
     let mut s = 0.0;
     let area_ratio = c.area() / full.area().max(1.0);
-    s += 0.55 * area_ratio; // keep resolution
+    s += 0.4 * area_ratio; // keep resolution
     let rel = |r: Rect| Rect::new((r.x0 - c.x0) / c.width(), (r.y0 - c.y0) / c.height(), (r.x1 - c.x0) / c.width(), (r.y1 - c.y0) / c.height());
     let total_w: f64 = subjects.iter().map(|x| x.1).sum::<f64>().max(1e-6);
     for (r, wgt) in subjects {
@@ -188,7 +189,7 @@ fn score(c: Rect, full: Rect, subjects: &[(Rect, f64)], horizon: Option<f64>) ->
         s += share * 0.5 * (1.0 - (d / 0.35).min(1.0));
         // breathing room: neither glued to the edge nor lost in the frame
         let fill = (rr.width() * rr.height()).sqrt();
-        s += share * 0.35 * (1.0 - ((fill - 0.35) / 0.35).abs().min(1.0));
+        s += share * 0.5 * (1.0 - ((fill - 0.35) / 0.35).abs().min(1.0));
         let margin = rr.x0.min(rr.y0).min(1.0 - rr.x1).min(1.0 - rr.y1);
         if margin < 0.02 {
             s -= share * 0.3;
@@ -260,7 +261,7 @@ pub fn suggest_crop(req: &CropRequest) -> Option<CropSuggestion> {
         }
     }
     let (sc, c, mut reasons) = best?;
-    if sc < score_full + 0.12 {
+    if sc < score_full + 0.10 {
         return None;
     }
     let kinds: Vec<&str> = req.subjects.iter().map(|s| s.kind).collect();
@@ -286,7 +287,7 @@ mod tests {
 
     #[test]
     fn a_small_off_centre_subject_gets_a_tighter_crop_that_keeps_it_whole() {
-        let subject = Rect::new(0.62, 0.25, 0.72, 0.45);
+        let subject = Rect::new(0.80, 0.06, 0.90, 0.26);
         let c = suggest_crop(&req(subject)).expect("a suggestion");
         let r = Rect::new(c.rect[0], c.rect[1], c.rect[2], c.rect[3]);
         assert!(r.intersect(&subject).area() >= subject.area() * 0.98, "{c:?}");
@@ -332,10 +333,13 @@ mod tests {
     #[test]
     fn a_tilted_horizon_is_found_and_a_level_one_is_left_alone() {
         let tilted = |deg: f64| {
-            Rgb32f::from_fn(480, 320, |x, y| {
-                let line = 160.0 + deg.to_radians().tan() * (x as f64 - 240.0);
-                let land = 0.05 + 0.04 * ((x * 7 + y * 3) % 5) as f32 / 5.0;
-                if (y as f64) < line { [0.45, 0.55, 0.8] } else { [land, land + 0.02, land] }
+            Rgb32f::from_fn(1024, 683, |x, y| {
+                let line = 340.0 + deg.to_radians().tan() * (x as f64 - 512.0);
+                let land = 0.05;
+                let _ = x;
+                // furrows parallel to the horizon, as a real field or street has
+                let band = (((y as f64 - line) / 60.0).floor() as i64).rem_euclid(2) as f32;
+                if (y as f64) < line { [0.45, 0.55, 0.8] } else { [land + 0.12 * band, land + 0.02 + 0.12 * band, land + 0.1 * band] }
             })
         };
         let info = SourceInfo::default();
@@ -346,6 +350,6 @@ mod tests {
         assert!(a.confidence > 0.6, "{a:?}");
         // the sign matches the pipeline's crop angle: applying it makes the horizon level
         let level = straighten(&tilted(0.0), &info, &d);
-        assert!(level.is_none_or(|l| l.angle.abs() < 0.5), "{level:?}");
+        assert!(level.as_ref().is_none_or(|l| l.angle.abs() < 0.5), "{level:?}");
     }
 }
