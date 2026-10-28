@@ -803,6 +803,9 @@ fn fit_box(max_edge: usize) -> lightcraft_codecs::DecodeOptions {
     lightcraft_codecs::DecodeOptions::fit(e, e)
 }
 
+/// Bytes [`fs_preview_loader`] has read from disk so far (diagnostics and the performance benchmark).
+pub static PREVIEW_BYTES_READ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Filesystem-backed embedded-preview hook (native).
 ///
 /// The quick path reads the file's header and its embedded preview and nothing else (see
@@ -819,14 +822,15 @@ pub fn fs_preview_loader() -> PreviewLoader {
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
         let gate = crate::memory::work_gate();
         let _permit = if crate::memory::is_background() { gate.acquire(len.saturating_mul(2)) } else { gate.acquire_urgent(len.saturating_mul(2)) };
-        if let Some(image) = preview_window(path, max_edge)
-            .ok()
-            .flatten()
-            .and_then(|(header, window, read)| quick_image_srgb(&header, &window, read.adobe_rgb, max_edge))
-        {
+        if let Some(image) = preview_window(path, max_edge).ok().flatten().and_then(|(header, window, read)| {
+            PREVIEW_BYTES_READ.fetch_add(read.read, std::sync::atomic::Ordering::Relaxed);
+            quick_image_srgb(&header, &window, read.adobe_rgb, max_edge)
+        }) {
             return Some(image);
         }
-        embedded_preview_srgb(&std::fs::read(path).ok()?, max_edge)
+        let bytes = std::fs::read(path).ok()?;
+        PREVIEW_BYTES_READ.fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Relaxed);
+        embedded_preview_srgb(&bytes, max_edge)
     })
 }
 

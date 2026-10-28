@@ -241,48 +241,40 @@ fn run(dir: &Path, visible: usize) {
     if count > 0 {
         out("analysis_input_per_photo", t.elapsed().as_secs_f64() * 1e3 / count as f64, "ms");
     }
-    // 7. A/B of the embedded-preview read: the whole file vs the first megabytes (same files, same process)
+    // 7. The embedded-preview read as the app does it (header + window) against reading the whole file
     for edge in [256usize, 1024, 2560] {
         let paths: Vec<String> = ids
             .iter()
             .filter_map(|id| match &s.catalog.photo(*id)?.source {
-                lightcraft_catalog::Source::File { path } if lightcraft_engine::files::PREVIEW_PREFIX > 0 => Some(path.clone()),
+                lightcraft_catalog::Source::File { path } => Some(path.clone()),
                 _ => None,
             })
             .filter(|p| !p.ends_with(".jpg"))
             .take(60)
             .collect();
-        let (mut full_bytes, mut hits, mut pre_bytes) = (0u64, 0usize, 0u64);
+        let n = paths.len().max(1) as f64;
+        let (mut full_bytes, mut hits) = (0u64, 0usize);
         let t = Instant::now();
         for p in &paths {
             let b = std::fs::read(p).unwrap();
             full_bytes += b.len() as u64;
             let _ = lightcraft_engine::files::embedded_preview_srgb(&b, edge);
         }
-        let full_ms = t.elapsed().as_secs_f64() * 1e3 / paths.len().max(1) as f64;
+        let full_ms = t.elapsed().as_secs_f64() * 1e3 / n;
+        let before = lightcraft_engine::files::PREVIEW_BYTES_READ.load(std::sync::atomic::Ordering::Relaxed);
         let t = Instant::now();
         for p in &paths {
-            let before = lightcraft_engine::files::PREVIEW_BYTES_READ.load(std::sync::atomic::Ordering::Relaxed);
-            let got = lightcraft_engine::files::preview_from_prefix(p, edge);
-            let after = lightcraft_engine::files::PREVIEW_BYTES_READ.load(std::sync::atomic::Ordering::Relaxed);
-            pre_bytes += after - before;
-            if got.is_some() {
+            if (lightcraft_engine::files::fs_preview_loader())(p, edge).is_some() {
                 hits += 1;
-            } else {
-                // the loader then reads the whole file: count it and its time
-                full_bytes += 0;
-                pre_bytes += std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-                let b = std::fs::read(p).unwrap();
-                let _ = lightcraft_engine::files::embedded_preview_srgb(&b, edge);
             }
         }
-        let pre_ms = t.elapsed().as_secs_f64() * 1e3 / paths.len().max(1) as f64;
-        let n = paths.len().max(1) as f64;
+        let pre_ms = t.elapsed().as_secs_f64() * 1e3 / n;
+        let pre_bytes = lightcraft_engine::files::PREVIEW_BYTES_READ.load(std::sync::atomic::Ordering::Relaxed) - before;
         out(&format!("ab{edge}_whole_file_ms_per_photo"), full_ms, "ms");
-        out(&format!("ab{edge}_prefix_ms_per_photo"), pre_ms, "ms");
+        out(&format!("ab{edge}_window_ms_per_photo"), pre_ms, "ms");
         out(&format!("ab{edge}_whole_file_mb_per_photo"), full_bytes as f64 / n / 1e6, "MB");
-        out(&format!("ab{edge}_prefix_mb_per_photo"), pre_bytes as f64 / n / 1e6, "MB");
-        out(&format!("ab{edge}_prefix_hit_rate"), 100.0 * hits as f64 / n, "%");
+        out(&format!("ab{edge}_window_mb_per_photo"), pre_bytes as f64 / n / 1e6, "MB");
+        out(&format!("ab{edge}_window_hit_rate"), 100.0 * hits as f64 / n, "%");
     }
     out("rss_peak", rss_mb(), "MB");
     let _ = std::fs::remove_dir_all(&tmp);
