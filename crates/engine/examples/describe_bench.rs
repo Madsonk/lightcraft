@@ -58,30 +58,35 @@ fn main() {
     };
     let methods: Vec<(&str, Value)> = vec![
         ("text", json!({"semantic": false, "textAll": false})),
-        ("meaning-fr", json!({"text": false, "lang": "fr", "semanticTop": 1_000_000, "centre": "none", "floor": false, "normalise": false})),
-        ("meaning-en", json!({"text": false, "lang": "en", "semanticTop": 1_000_000, "centre": "none", "floor": false, "normalise": false})),
         ("meaning-both", m("none", json!(false), false, false)),
         ("meaning-both centre=text", m("text", json!(false), false, false)),
-        ("meaning-both centre=gap", m("gap", json!(false), false, false)),
-        ("meaning-both normalise", m("none", json!(false), true, false)),
-        ("meaning-both centre=text normalise", m("text", json!(false), true, false)),
         ("meaning-both floor=0", m("none", json!(0.0), false, false)),
-        ("meaning-both centre=text floor=0", m("text", json!(0.0), false, false)),
-        ("meaning-both centre=text normalise floor=0", m("text", json!(0.0), true, false)),
-        ("meaning-both centre=text normalise floor=0.01", m("text", json!(0.01), true, false)),
-        ("meaning-both centre=text normalise floor=0.02", m("text", json!(0.02), true, false)),
-        ("meaning-both centre=text normalise floor=0.04", m("text", json!(0.04), true, false)),
+        ("meaning-both floor=0.02", m("none", json!(0.02), false, false)),
+        ("meaning-both floor=0.04", m("none", json!(0.04), false, false)),
+        ("meaning-both floor=0.06", m("none", json!(0.06), false, false)),
+        ("meaning-both floor=0.08", m("none", json!(0.08), false, false)),
+        ("meaning-both centre=text floor=0.02", m("text", json!(0.02), false, false)),
+        ("meaning-both centre=text floor=0.04", m("text", json!(0.04), false, false)),
+        ("meaning-both centre=text floor=0.06", m("text", json!(0.06), false, false)),
+        ("meaning-both centre=text floor=0.08", m("text", json!(0.08), false, false)),
         ("fusion-both", m("none", json!(false), false, true)),
-        ("fusion-both centre=text", m("text", json!(false), false, true)),
-        ("fusion-both normalise", m("none", json!(false), true, true)),
-        ("fusion-both centre=text normalise", m("text", json!(false), true, true)),
-        ("fusion-both centre=text normalise floor=0.01", m("text", json!(0.01), true, true)),
-        ("fusion-both centre=text normalise floor=0.02", m("text", json!(0.02), true, true)),
+        ("fusion-both floor=0.04", m("none", json!(0.04), false, true)),
+        ("fusion-both floor=0.06", m("none", json!(0.06), false, true)),
+        ("fusion-both centre=text floor=0.04", m("text", json!(0.04), false, true)),
+        ("fusion-both centre=text floor=0.06", m("text", json!(0.06), false, true)),
     ];
     // nonsense queries, none of them used to calibrate the floor: how many still find something by meaning
     let nonsense = [
-        "quantum chromodynamics lecture", "tableau périodique des éléments", "spreadsheet with tax figures", "carte routière de la Mongolie",
-        "an x-ray of a broken arm", "facture d'électricité", "wprtlk zzqx", "diagramme UML de classes", "a scanned passport page", "partition de piano en do majeur",
+        "quantum chromodynamics lecture",
+        "tableau périodique des éléments",
+        "spreadsheet with tax figures",
+        "carte routière de la Mongolie",
+        "an x-ray of a broken arm",
+        "facture d'électricité",
+        "wprtlk zzqx",
+        "diagramme UML de classes",
+        "a scanned passport page",
+        "partition de piano en do majeur",
     ];
     println!("\n## nonsense queries: results by meaning only (limit {LIMIT})");
     println!("| method | queries with a result | mean results |");
@@ -98,6 +103,23 @@ fn main() {
             total += n;
         }
         println!("| {name} | {with}/{} | {:.1} |", nonsense.len(), total as f64 / nonsense.len() as f64);
+    }
+    println!("\n## real queries (the action of {} moments), results by meaning only: how many still find something", cases.len().min(100));
+    println!("| method | queries with a result | mean results |");
+    println!("|---|---|---|");
+    for (name, extra) in methods.iter().filter(|(n, _)| n.starts_with("meaning")) {
+        let (mut with, mut total, mut n) = (0usize, 0usize, 0usize);
+        for (_, _, act, _) in cases.iter().take(100) {
+            let mut p = json!({"query": act, "kind": "video", "limit": LIMIT});
+            for (k, v) in extra.as_object().unwrap() {
+                p[k] = v.clone();
+            }
+            let r = s.execute("describe.search", &p).ok().map_or(0, |r| r["results"].as_array().map_or(0, Vec::len));
+            with += usize::from(r > 0);
+            total += r;
+            n += 1;
+        }
+        println!("| {name} | {with}/{n} | {:.1} |", total as f64 / n.max(1) as f64);
     }
     for (field, other) in [("action", vec!["scene", "description"]), ("description", vec!["scene", "action"])] {
         println!("\n## query = {field}, searched in {other:?} + pictures");

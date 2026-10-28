@@ -182,7 +182,13 @@ pub fn transcribe(video: &Path, content_key: &str, dir: &Path, model: &str, lang
             cleanup();
             // no soundtrack is not a failure: the video says nothing
             if o.stderr.contains("matches no streams") || o.stderr.contains("does not contain any stream") {
-                let s = Speech { version: VERSION, content_key: content_key.into(), model: model.into(), language: language.into(), ..Default::default() };
+                let s = Speech {
+                    version: VERSION,
+                    content_key: content_key.into(),
+                    model: model.into(),
+                    language: language.into(),
+                    ..Default::default()
+                };
                 s.save(dir)?;
                 return Ok(s);
             }
@@ -194,12 +200,17 @@ pub fn transcribe(video: &Path, content_key: &str, dir: &Path, model: &str, lang
         }
     }
     let mut cmd = Command::new(mw);
-    cmd.arg(&wav).args(["--model", model, "--output-format", "json", "--verbose", "False", "--condition-on-previous-text", "False", "--output-dir"]).arg(&out_dir);
+    cmd.arg(&wav)
+        .args(["--model", model, "--output-format", "json", "--verbose", "False", "--condition-on-previous-text", "False", "--output-dir"])
+        .arg(&out_dir);
     if language != "auto" {
         cmd.args(["--language", language]);
     }
     let r = ffmpeg::run(cmd, WHISPER_TIMEOUT);
-    let json = std::fs::read_dir(&out_dir).ok().and_then(|rd| rd.flatten().map(|e| e.path()).find(|p| p.extension().is_some_and(|x| x == "json"))).and_then(|p| std::fs::read(p).ok());
+    let json = std::fs::read_dir(&out_dir)
+        .ok()
+        .and_then(|rd| rd.flatten().map(|e| e.path()).find(|p| p.extension().is_some_and(|x| x == "json")))
+        .and_then(|p| std::fs::read(p).ok());
     cleanup();
     let json = match (r, json) {
         (Ok(o), Some(j)) if o.ok => j,
@@ -279,7 +290,12 @@ pub fn find(utts: &[Utterance], terms: &[String], window_ms: u64) -> Vec<Hit> {
         // a window that starts on a sentence with one of the words, so it is not found from every sentence before it
         if has(terms, &folded[i]) > 0 && has(terms, &joined) == terms.len() {
             let last = span.last().copied().unwrap_or(i);
-            hits.push(Hit { level: Level::Window, t0: u.t0, t1: utts[last].t1, text: span.iter().map(|j| utts[*j].text.as_str()).collect::<Vec<_>>().join(" ") });
+            hits.push(Hit {
+                level: Level::Window,
+                t0: u.t0,
+                t1: utts[last].t1,
+                text: span.iter().map(|j| utts[*j].text.as_str()).collect::<Vec<_>>().join(" "),
+            });
             covered_until = utts[last].t1;
         }
     }
@@ -297,11 +313,7 @@ pub fn find(utts: &[Utterance], terms: &[String], window_ms: u64) -> Vec<Hit> {
 
 /// Seconds between `ms` and the hit's span (0 inside it).
 pub fn distance_ms(h: &Hit, ms: u64) -> u64 {
-    if ms < h.t0 {
-        h.t0 - ms
-    } else {
-        ms.saturating_sub(h.t1)
-    }
+    if ms < h.t0 { h.t0 - ms } else { ms.saturating_sub(h.t1) }
 }
 
 /// A transcription run: progress and what each video gave (sentences kept, or why not). One video
@@ -371,7 +383,14 @@ mod tests {
     use super::*;
 
     fn seg(t0: u64, t1: u64, text: &str, no_speech: Option<f64>, logprob: Option<f64>, ratio: Option<f64>) -> RawSegment {
-        RawSegment { start: t0 as f64 / 1000.0, end: t1 as f64 / 1000.0, text: text.into(), no_speech_prob: no_speech, avg_logprob: logprob, compression_ratio: ratio }
+        RawSegment {
+            start: t0 as f64 / 1000.0,
+            end: t1 as f64 / 1000.0,
+            text: text.into(),
+            no_speech_prob: no_speech,
+            avg_logprob: logprob,
+            compression_ratio: ratio,
+        }
     }
 
     fn u(t0: u64, text: &str) -> Utterance {
@@ -401,7 +420,12 @@ mod tests {
     #[test]
     fn a_phrase_said_again_and_again_far_apart_is_a_loop_too() {
         let raw: Vec<_> = (0..8u64)
-            .flat_map(|i| [seg(i * 4000, i * 4000 + 1000, "Merci.", None, None, None), seg(i * 4000 + 1000, i * 4000 + 2000, &format!("phrase {i} différente"), None, None, None)])
+            .flat_map(|i| {
+                [
+                    seg(i * 4000, i * 4000 + 1000, "Merci.", None, None, None),
+                    seg(i * 4000 + 1000, i * 4000 + 2000, &format!("phrase {i} différente"), None, None, None),
+                ]
+            })
             .collect();
         let (u, _) = clean(raw);
         assert_eq!(u.iter().filter(|x| x.text == "Merci.").count(), 4);

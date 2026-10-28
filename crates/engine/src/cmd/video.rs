@@ -245,7 +245,8 @@ fn frames(s: &mut Session, p: &Value) -> Result<Value> {
                     if retry_failed {
                         // only the moments the last run could not cut, and their neighbours
                         let dir = video_dir(&root, ck);
-                        let times = frames::Manifest::load(&dir).filter(|m| m.content_key == *ck).map(|m| frames::retry_times(&m)).unwrap_or_default();
+                        let times =
+                            frames::Manifest::load(&dir).filter(|m| m.content_key == *ck).map(|m| frames::retry_times(&m)).unwrap_or_default();
                         if times.is_empty() {
                             return frames::Cut::default();
                         }

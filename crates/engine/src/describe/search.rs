@@ -20,9 +20,9 @@ use lightcraft_catalog::{MediaKind, PhotoId};
 use serde_json::{Value, json};
 
 use super::honest::{self, Centre};
-use crate::video::speech::{self, Level, Speech, same_word};
 use super::{Effective, fold};
 use crate::cmd::{bad, bool_or, f64_or, str_param};
+use crate::video::speech::{self, Level, Speech, same_word};
 use crate::{Result, Session};
 
 /// Words that say nothing about a picture (French and English).
@@ -169,7 +169,8 @@ fn meaning(s: &mut Session, texts: &[String], keys: &[u64], h: Honest) -> std::r
     };
     let moved = honest::moved(&q, h.centre, &text_mean, &image_mean);
     let plain: HashMap<u64, f32> = vectors.iter().map(|(k, v)| (*k, honest::dot(v, &moved))).collect();
-    let raw: HashMap<u64, f32> = if h.centre == Centre::None { plain.clone() } else { vectors.iter().map(|(k, v)| (*k, honest::dot(v, &q))).collect() };
+    let raw: HashMap<u64, f32> =
+        if h.centre == Centre::None { plain.clone() } else { vectors.iter().map(|(k, v)| (*k, honest::dot(v, &q))).collect() };
     let mut cos = plain.clone();
     let mut above = HashSet::new();
     if let Some(c) = calib.filter(|_| h.floor.is_some() || h.normalise) {
@@ -234,10 +235,11 @@ fn speech_per_moment(s: &mut Session, moments: &[Moment], terms: &[String], on: 
 pub const DEFAULT_LANG: &str = "both";
 /// A picture counts as matching by meaning when it is among this many closest to the query.
 pub const DEFAULT_SEMANTIC_TOP: usize = 20;
-/// How the query vector is moved before it is compared (measured with `examples/describe_bench.rs`).
+/// How the query vector is moved before it is compared (measured with `examples/describe_bench.rs`:
+/// centring on the neutral captions is neutral for the fusion, `gap` hurts — see docs/describe.md).
 pub const DEFAULT_CENTRE: Centre = Centre::None;
 /// A meaning match must beat the picture's noise ceiling by this much (`None` = no floor).
-pub const DEFAULT_FLOOR: Option<f32> = None;
+pub const DEFAULT_FLOOR: Option<f32> = Some(0.04);
 /// Whether pictures are ranked by their margin over the noise ceiling instead of the plain cosine.
 pub const DEFAULT_NORMALISE: bool = false;
 /// Reciprocal rank fusion constant (text rank and meaning rank).
@@ -447,7 +449,8 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
         .collect();
     // more words first; for equal words, what is said in one sentence before what is said in a window
     let weight = |i: usize, w: &[&str]| w.len() * 4 + said[i].as_ref().map_or(3, |(l, _, _)| 3 - *l as usize + 1).min(3);
-    let mut text_order: Vec<(usize, usize)> = texts.iter().enumerate().filter(|(_, (_, w))| !w.is_empty()).map(|(i, (_, w))| (i, weight(i, w))).collect();
+    let mut text_order: Vec<(usize, usize)> =
+        texts.iter().enumerate().filter(|(_, (_, w))| !w.is_empty()).map(|(i, (_, w))| (i, weight(i, w))).collect();
     text_order.sort_by_key(|x| std::cmp::Reverse(x.1));
     let text_rank: HashMap<usize, usize> = text_order.iter().enumerate().map(|(r, (i, _))| (*i, r + 1)).collect();
     let mut results: Vec<(f32, Value)> = Vec::new();
@@ -481,13 +484,13 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
         // reciprocal rank fusion of the two orders
         let score = text_rank.get(&mi).map_or(0.0, |r| 1.0 / (RRF_K + *r as f32)) + srank.map_or(0.0, |r| 1.0 / (RRF_K + r as f32));
         match (people_ok, what_ok) {
-            (true, true) => results.push((score, row(m, e.as_ref(), &present, &words, prob, found.as_ref().and_then(|f| f.raw.get(&m.skey).copied()), &said[mi]))),
-            (true, false) if !required.is_empty() => {
-                present_only.push((score, row(m, e.as_ref(), &present, &words, prob, found.as_ref().and_then(|f| f.raw.get(&m.skey).copied()), &said[mi])))
+            (true, true) => {
+                results.push((score, row(m, e.as_ref(), &present, &words, prob, found.as_ref().and_then(|f| f.raw.get(&m.skey).copied()), &said[mi])))
             }
-            (false, true) if !required.is_empty() && !terms.is_empty() => {
-                what_only.push((score, row(m, e.as_ref(), &present, &words, prob, found.as_ref().and_then(|f| f.raw.get(&m.skey).copied()), &said[mi])))
-            }
+            (true, false) if !required.is_empty() => present_only
+                .push((score, row(m, e.as_ref(), &present, &words, prob, found.as_ref().and_then(|f| f.raw.get(&m.skey).copied()), &said[mi]))),
+            (false, true) if !required.is_empty() && !terms.is_empty() => what_only
+                .push((score, row(m, e.as_ref(), &present, &words, prob, found.as_ref().and_then(|f| f.raw.get(&m.skey).copied()), &said[mi]))),
             _ => {}
         }
     }

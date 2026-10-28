@@ -54,10 +54,8 @@ impl Centre {
 
 /// Neutral captions in both languages: generic sentences and every word of the glossary.
 pub fn neutral_captions() -> Vec<String> {
-    let mut v: Vec<String> = ["une photo", "une image", "une vidéo", "un plan", "a photo", "a picture", "a video frame", "a shot"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let mut v: Vec<String> =
+        ["une photo", "une image", "une vidéo", "un plan", "a photo", "a picture", "a video frame", "a shot"].iter().map(|s| s.to_string()).collect();
     for (fr, en) in super::glossary::pairs() {
         v.push(format!("une photo de {fr}"));
         v.push(format!("a photo of {en}"));

@@ -349,7 +349,9 @@ pub fn person_faces(app: &mut LightcraftApp, name: &str) -> Option<Arc<Vec<Video
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|f| Some(VideoFace { video: f["video"].as_u64()?, ms: f["ms"].as_u64()?, frame: f["frame"].as_str()?.to_string(), rect: rect(&f["rect"])? }))
+        .filter_map(|f| {
+            Some(VideoFace { video: f["video"].as_u64()?, ms: f["ms"].as_u64()?, frame: f["frame"].as_str()?.to_string(), rect: rect(&f["rect"])? })
+        })
         .collect();
     let v = Arc::new(faces);
     app.caches.videos.person_faces = Some((name.to_string(), rev, v.clone()));
@@ -503,9 +505,10 @@ pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
         };
         let was = any;
         app.caches.videos.jobs = (now, v, d, p);
-        let still = [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.1["speech"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]]
-            .iter()
-            .any(|j| j["running"] == true);
+        let still =
+            [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.1["speech"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]]
+                .iter()
+                .any(|j| j["running"] == true);
         if was && !still {
             app.caches.videos.dirty = true;
             app.caches.videos.person_faces = None;
@@ -653,7 +656,9 @@ fn list(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                             act(app, "video.faces", json!({"ids": ids, "background": true}));
                         }
                         if text_button(ui, "videosScenes", "Cut pictures at shots", false)
-                            .on_hover_text(tr("Reads each video to find where the shot changes, then cuts a picture in every shot (more in a long one)"))
+                            .on_hover_text(tr(
+                                "Reads each video to find where the shot changes, then cuts a picture in every shot (more in a long one)",
+                            ))
                             .clicked()
                         {
                             act(app, "video.frames", json!({"ids": ids, "plan": "scenes", "background": true}));

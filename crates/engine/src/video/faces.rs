@@ -213,6 +213,25 @@ impl Reader {
     }
 }
 
+/// Put faces at picture keys with a suggested name, as if the models had looked and the photos had
+/// named them (tests of what reads the faces; no model needed).
+#[cfg(test)]
+pub fn inject(s: &mut Session, faces: &[(u64, [f32; 4], &str)]) {
+    for (key, rect, _) in faces {
+        lock(&s.video.faces.store).by_key.entry(*key).or_default().push(VideoFace { rect: *rect, emb: Vec::new() });
+    }
+    let r = reader(s);
+    let mut names = r.names.lock().unwrap_or_else(PoisonError::into_inner);
+    names.by_face.clear();
+    names.stamp = Some(r.stamp);
+    let mut seen: HashMap<u64, usize> = HashMap::new();
+    for (key, _, name) in faces {
+        let i = seen.entry(*key).or_default();
+        names.by_face.insert((*key, *i), Some(name.to_string()));
+        *i += 1;
+    }
+}
+
 /// Who is at `key` (one picture; for many use [`reader`]).
 pub fn faces_at(s: &mut Session, key: u64) -> Vec<Value> {
     reader(s).faces_at(key)

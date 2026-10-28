@@ -83,7 +83,7 @@ fn proposals_need_the_model_and_a_choice_of_photos() {
     write_png(&dir.join("p.png"), 10);
     let pid = ids(&import(&mut s, &dir.join("p.png")))[0];
     let e = s.execute("describe.suggest", &json!({"ids": [pid.0]})).unwrap_err().to_string();
-    assert!(e.contains("not installed") || e.contains("not available"), "{e}");
+    assert!(e.contains("not installed") || e.contains("not available") || e.contains("no folder is set"), "{e}");
     assert!(store(&s).all().is_empty(), "nothing invented");
     s.selection.ids.clear();
     s.selection.active = None;

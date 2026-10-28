@@ -105,7 +105,10 @@ fn the_search_floor_and_centre_are_checked() {
 
 #[test]
 fn what_is_said_in_a_video_is_found() {
-    if !have_ffmpeg() || crate::video::speech::whisper().is_none() || !Command::new("say").arg("-v").arg("?").output().is_ok_and(|o| o.status.success()) {
+    if !have_ffmpeg()
+        || crate::video::speech::whisper().is_none()
+        || !Command::new("say").arg("-v").arg("?").output().is_ok_and(|o| o.status.success())
+    {
         eprintln!("skipped: needs FFmpeg, mlx_whisper and `say`");
         return;
     }
@@ -139,4 +142,36 @@ fn what_is_said_in_a_video_is_found() {
     let none = s.execute("describe.search", &json!({"query": "submarine", "kind": "video", "semantic": false})).unwrap();
     assert!(none["results"].as_array().unwrap().is_empty(), "{none}");
     let _ = temp_dir("unused");
+}
+
+#[test]
+fn a_person_is_found_in_the_pictures_of_videos() {
+    if !have_ffmpeg() {
+        return;
+    }
+    let (mut s, dir) = library();
+    let v = dir.join("clip.mp4");
+    crate::tests_video::make_video(&v, 6, true);
+    let id = *ids(&import(&mut s, &v)).first().unwrap();
+    s.execute("video.frames", &json!({})).unwrap();
+    let ck = crate::media::content_key(s.catalog.photo(id).unwrap());
+    // faces named Awa at 1 s and 5 s, someone else at 3 s
+    crate::video::faces::inject(
+        &mut s,
+        &[
+            (crate::video::frame_key(&ck, 1000), [0.1, 0.1, 0.3, 0.4], "Awa"),
+            (crate::video::frame_key(&ck, 3000), [0.5, 0.2, 0.7, 0.6], "Karim"),
+            (crate::video::frame_key(&ck, 5000), [0.2, 0.2, 0.4, 0.5], "Awa"),
+        ],
+    );
+    let r = s.execute("video.person", &json!({"name": "awa"})).unwrap();
+    assert_eq!((r["total"].as_u64(), r["videos"].as_u64()), (Some(2), Some(1)), "{r}");
+    let ms: Vec<u64> = r["faces"].as_array().unwrap().iter().map(|f| f["ms"].as_u64().unwrap()).collect();
+    assert_eq!(ms, vec![1000, 5000]);
+    assert!(r["faces"][0]["frame"].as_str().unwrap().ends_with(".jpg") && r["faces"][0]["rect"][2].as_f64() == Some(0.3f64 as f32 as f64));
+    assert_eq!(s.execute("video.person", &json!({"name": "Nobody"})).unwrap()["total"], json!(0));
+    assert!(s.execute("video.person", &json!({})).is_err());
+    // the list names them too
+    let l = s.execute("video.list", &json!({"person": "Karim"})).unwrap();
+    assert_eq!(l["total"], json!(1), "{l}");
 }

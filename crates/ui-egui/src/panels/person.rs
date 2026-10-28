@@ -269,7 +269,13 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, name: &str) {
             }
         }
         // faces seen in videos (cut out of their pictures; a click opens that moment of the video)
-        ui.painter().text(pos2(area.left() + PAD, area.top() + videos_top + 14.0), Align2::LEFT_CENTER, crate::i18n::tr("In videos"), t.semibold(15.0), t.text);
+        ui.painter().text(
+            pos2(area.left() + PAD, area.top() + videos_top + 14.0),
+            Align2::LEFT_CENTER,
+            crate::i18n::tr("In videos"),
+            t.semibold(15.0),
+            t.text,
+        );
         let video_sub = match &video_faces {
             None => crate::i18n::tr("Loading the videos…").to_string(),
             Some(v) if v.is_empty() => crate::i18n::tr_format!(

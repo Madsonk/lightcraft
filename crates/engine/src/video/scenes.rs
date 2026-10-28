@@ -75,11 +75,7 @@ pub fn plan(duration_ms: u64, cuts: &[u64], max_gap_ms: u64, max: usize) -> Vec<
         mids = (0..max).map(|i| mids[((i as f64 + 0.5) * step) as usize % mids.len()]).collect();
     } else {
         // the extra pictures of long shots, longest first, while room is left
-        let mut extra: Vec<(u64, u64, u64)> = shots
-            .iter()
-            .filter(|(a, b)| b - a > max_gap)
-            .map(|(a, b)| (b - a, *a, *b))
-            .collect();
+        let mut extra: Vec<(u64, u64, u64)> = shots.iter().filter(|(a, b)| b - a > max_gap).map(|(a, b)| (b - a, *a, *b)).collect();
         extra.sort_by_key(|x| std::cmp::Reverse(x.0));
         let mut room = max - mids.len();
         for (len, a, _) in extra {
