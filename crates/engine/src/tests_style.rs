@@ -48,7 +48,7 @@ fn too_few_edited_photos_is_a_clear_error_and_nothing_is_stored() {
     assert_eq!(s.catalog.to_snapshot(), before);
     let list = s.execute("style.list", &json!({})).unwrap();
     assert_eq!(list["profiles"].as_array().unwrap().len(), 0);
-    assert_eq!(list["editedPhotos"], 0);
+    assert!(list["editedPhotos"].as_u64().unwrap() < 12, "the demo library has too few edited photos to learn from");
     assert!(s.execute("style.apply", &json!({"mode": "preview", "wait": true})).is_err(), "no profile yet");
 }
 

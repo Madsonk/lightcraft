@@ -174,7 +174,7 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
             .or_else(|| rows.iter().find(|r| r["changes"] == true).and_then(|r| r["id"].as_u64()));
         if let Some(id) = review {
             let after = app.session.style_proposal(lightcraft_catalog::PhotoId(id));
-            super::proposals::pair(app, ui, id, after);
+            pair(app, ui, id, after);
             if let Some(row) = rows.iter().find(|r| r["id"].as_u64() == Some(id)) {
                 let line: Vec<String> = row["sliders"]
                     .as_array()
@@ -298,7 +298,7 @@ fn auto_crop(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Va
     });
     if let Some(id) = review {
         let after = app.session.framing_proposal(lightcraft_catalog::PhotoId(id));
-        super::proposals::pair(app, ui, id, after);
+        pair(app, ui, id, after);
         if let Some(row) = rows.iter().find(|r| r["id"].as_u64() == Some(id)) {
             let sug = &row["suggestion"];
             let mut bits = Vec::new();
@@ -324,5 +324,39 @@ fn auto_crop(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Va
         }
     } else if design::button(ui, "autoUndo", &tr("Undo"), Kind::Secondary, !app.session.undo.is_empty()).clicked() {
         let _ = app.run("edit.undo", json!({}));
+    }
+}
+
+/// Before / After of a photo: its current look and the proposed one, side by side (nothing is stored).
+fn pair(app: &mut LightcraftApp, ui: &mut egui::Ui, active: u64, after: Option<lightcraft_develop::DevelopSettings>) {
+    use egui::{Align2, Rect, pos2, vec2};
+    let t = Tokens::get(ui.ctx());
+    let id = lightcraft_catalog::PhotoId(active);
+    let w = ui.available_width();
+    let gap = 8.0;
+    let tile = vec2(((w - gap) / 2.0).max(60.0), ((w - gap) / 2.0 * 0.66).max(40.0));
+    let (r, _) = ui.allocate_exact_size(vec2(w, tile.y + 18.0), egui::Sense::hover());
+    let before = app.session.develop_of(id).map(|d| (*d).clone()).unwrap_or_default();
+    let looks: [(&str, Option<lightcraft_develop::DevelopSettings>, &str); 2] = [("Before", Some(before), "styleBefore"), ("After", after, "styleAfter")];
+    for (i, (label, settings, wid)) in looks.into_iter().enumerate() {
+        let rect = Rect::from_min_size(r.min + vec2(i as f32 * (tile.x + gap), 0.0), tile);
+        crate::widgets::register(ui.ctx(), format!("image:{wid}"), rect);
+        ui.painter().rect_filled(rect, 3.0, t.canvas);
+        match settings {
+            Some(s) => {
+                if let Some(job) = app.session.variant_job(id, &s, 200)
+                    && let Some(tex) = app.renderer.variant(job)
+                {
+                    ui.painter().image(tex.tex.id(), rect, super::presets::cover_uv(rect, tex.size), egui::Color32::WHITE);
+                } else {
+                    ui.painter().text(rect.center(), Align2::CENTER_CENTER, "…", t.font(14.0), t.text_dim);
+                    ui.ctx().request_repaint();
+                }
+            }
+            None => {
+                ui.painter().text(rect.center(), Align2::CENTER_CENTER, tr("No proposal"), t.font(11.0), t.text_dim);
+            }
+        }
+        ui.painter().text(pos2(rect.left(), rect.bottom() + 9.0), Align2::LEFT_CENTER, tr(label), t.semibold(11.0), t.text_label);
     }
 }
