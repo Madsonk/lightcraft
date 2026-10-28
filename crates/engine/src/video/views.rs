@@ -115,7 +115,7 @@ pub fn person(s: &mut Session, p: &Value) -> Result<Value> {
             }
         }
     }
-    found.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    found.sort_by_key(|a| (a.0, a.1));
     let videos = found.iter().map(|x| x.0).collect::<std::collections::BTreeSet<_>>().len();
     let total = found.len();
     let faces: Vec<Value> = found

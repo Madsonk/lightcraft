@@ -301,10 +301,10 @@ pub fn find(utts: &[Utterance], terms: &[String], window_ms: u64) -> Vec<Hit> {
     }
     if hits.is_empty() {
         let all = folded.join(" ");
-        if has(terms, &all) == terms.len() {
-            if let Some(u) = utts.iter().zip(&folded).find(|(_, f)| has(terms, f) > 0).map(|(u, _)| u) {
-                hits.push(Hit { level: Level::Video, t0: u.t0, t1: u.t1, text: u.text.clone() });
-            }
+        if has(terms, &all) == terms.len()
+            && let Some(u) = utts.iter().zip(&folded).find(|(_, f)| has(terms, f) > 0).map(|(u, _)| u)
+        {
+            hits.push(Hit { level: Level::Video, t0: u.t0, t1: u.t1, text: u.text.clone() });
         }
     }
     hits.sort_by_key(|h| (h.level, h.t0));
