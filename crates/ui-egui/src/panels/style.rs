@@ -62,14 +62,14 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
     let train = &status["train"];
     // ---- learning in progress
     if train["state"] == "running" {
-        design::status_line(ui, State::Busy, &tr("Learning how you edit…"));
+        design::status_line(ui, State::Busy, tr("Learning how you edit…"));
         bar(ui, train["percent"].as_f64().unwrap_or(0.0));
         ui.label(
             RichText::new(format!("{} / {}", train["measured"].as_u64().unwrap_or(0), train["total"].as_u64().unwrap_or(0)))
                 .size(11.0)
                 .color(t.text_dim),
         );
-        if design::button(ui, "styleStop", &tr("Stop"), Kind::Quiet, true).clicked() {
+        if design::button(ui, "styleStop", tr("Stop"), Kind::Quiet, true).clicked() {
             let _ = app.run("style.cancel", json!({}));
         }
         return;
@@ -93,7 +93,7 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
                     .size(11.0)
                     .color(t.text_dim),
             );
-        } else if design::button(ui, "styleTrain", &tr("Learn my style"), Kind::Primary, true).clicked() {
+        } else if design::button(ui, "styleTrain", tr("Learn my style"), Kind::Primary, true).clicked() {
             let _ = app.run("style.train", json!({}));
         }
         return;
@@ -144,9 +144,9 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
     let apply = &status["apply"];
     let running = apply["state"] == "running";
     if running {
-        design::status_line(ui, State::Busy, &tr("Preparing the preview…"));
+        design::status_line(ui, State::Busy, tr("Preparing the preview…"));
         bar(ui, apply["percent"].as_f64().unwrap_or(0.0));
-        if design::button(ui, "styleStopPlan", &tr("Stop"), Kind::Quiet, true).clicked() {
+        if design::button(ui, "styleStopPlan", tr("Stop"), Kind::Quiet, true).clicked() {
             let _ = app.run("style.cancel", json!({}));
         }
     } else {
@@ -217,13 +217,13 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
                     }
                 }
             }
-            if state == "applied" && design::button(ui, "styleUndo", &tr("Undo my style"), Kind::Secondary, true).clicked() {
+            if state == "applied" && design::button(ui, "styleUndo", tr("Undo my style"), Kind::Secondary, true).clicked() {
                 let _ = app.run("style.apply", json!({"mode": "undo"}));
             }
         });
     }
     ui.add_space(2.0);
-    if text_button(ui, "styleRetrain", &tr("Learn again"), false)
+    if text_button(ui, "styleRetrain", tr("Learn again"), false)
         .on_hover_text(tr("Replaces this profile with a new one from your edited photos"))
         .clicked()
     {
@@ -286,10 +286,10 @@ fn auto_crop(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Va
     let fr = &status["framing"];
     let running = fr["state"] == "running";
     ui.horizontal_wrapped(|ui| {
-        if design::button(ui, "autoStraighten", &tr("Suggest straighten"), Kind::Secondary, !ids.is_empty() && !running).clicked() {
+        if design::button(ui, "autoStraighten", tr("Suggest straighten"), Kind::Secondary, !ids.is_empty() && !running).clicked() {
             let _ = app.run("autostraighten.suggest", json!({"ids": ids}));
         }
-        if design::button(ui, "autoCrop", &tr("Suggest crop"), Kind::Secondary, !ids.is_empty() && !running).clicked() {
+        if design::button(ui, "autoCrop", tr("Suggest crop"), Kind::Secondary, !ids.is_empty() && !running).clicked() {
             let _ = app.run("autocrop.suggest", json!({"ids": ids, "aspect": aspect}));
         }
     });
@@ -297,9 +297,9 @@ fn auto_crop(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Va
         ui.label(RichText::new(tr("Select a photo first.")).size(11.0).color(t.text_dim));
     }
     if running {
-        design::status_line(ui, State::Busy, &tr("Looking at the photos…"));
+        design::status_line(ui, State::Busy, tr("Looking at the photos…"));
         bar(ui, fr["percent"].as_f64().unwrap_or(0.0));
-        if design::button(ui, "autoStop", &tr("Stop"), Kind::Quiet, true).clicked() {
+        if design::button(ui, "autoStop", tr("Stop"), Kind::Quiet, true).clicked() {
             let _ = app.run("style.cancel", json!({}));
         }
         return;
@@ -348,13 +348,13 @@ fn auto_crop(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Va
     }
     if state == "done" {
         let (cmd, label) = if kind == "crop" { ("autocrop.apply", "Accept the crop") } else { ("autostraighten.apply", "Accept the straighten") };
-        if design::button(ui, "autoAccept", &tr(label), Kind::Primary, true).clicked() {
+        if design::button(ui, "autoAccept", tr(label), Kind::Primary, true).clicked() {
             match app.run(cmd, json!({"confirm": true})) {
                 Ok(v) => app.toast(ui.ctx(), format!("{} {}", v["changed"].as_u64().unwrap_or(0), tr("photos reframed — Undo reverts all of them"))),
                 Err(e) => app.toast(ui.ctx(), e),
             }
         }
-    } else if design::button(ui, "autoUndo", &tr("Undo"), Kind::Secondary, !app.session.undo.is_empty()).clicked() {
+    } else if design::button(ui, "autoUndo", tr("Undo"), Kind::Secondary, !app.session.undo.is_empty()).clicked() {
         let _ = app.run("edit.undo", json!({}));
     }
 }
