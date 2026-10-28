@@ -69,15 +69,17 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     let shown = if app.activity_expanded { tasks.len() } else { tasks.len().min(MAX_ROWS) };
     let hidden = tasks.len().saturating_sub(shown);
-    let max_height = (ctx.content_rect().height() - t.top_bar_h - 60.0).max(80.0);
+    // below the context bar when the workspaces draw one, so the journey stays readable
+    let top = t.top_bar_h + if app.ui.settings.workspaces { crate::context_bar::HEIGHT } else { 0.0 };
+    let max_height = (ctx.content_rect().height() - top - 60.0).max(80.0);
     let mut cancel = None;
     let mut toggle = false;
     let frame = egui::Frame::NONE.fill(t.chrome).stroke(Stroke::new(1.0, t.field_border)).corner_radius(6).inner_margin(Margin::same(MARGIN));
-    egui::Area::new(egui::Id::new("activity-stack")).order(egui::Order::Middle).fixed_pos(pos2(8.0, t.top_bar_h + 8.0)).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("activity-stack")).order(egui::Order::Middle).fixed_pos(pos2(8.0, top + 8.0)).show(ctx, |ui| {
         // An area lays out in the size it had last frame, and the scroll area would take that as all the room there
         // is: the stack would never grow when rows are added. Give it the whole height below the top bar instead
         // (the scroll area keeps to `max_height`).
-        ui.set_max_height((ctx.content_rect().height() - t.top_bar_h - 16.0).max(80.0));
+        ui.set_max_height((ctx.content_rect().height() - top - 16.0).max(80.0));
         frame.show(ui, |ui| {
             let inner = WIDTH - 2.0 * (f32::from(MARGIN) + 1.0);
             ui.set_width(inner);

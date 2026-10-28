@@ -648,6 +648,8 @@ pub fn poll_scan(app: &mut LightcraftApp, ctx: &egui::Context) {
     d.album = task.album.filter(|id| app.session.catalog.album(lightcraft_catalog::AlbumId(*id)).is_some_and(|a| !a.folder && !a.is_smart()));
     d.sources = task.sources;
     d.library = Some(app.session.library_generation());
+    // with workspaces on, the review is a page of the Library space, not a modal
+    let Some(d) = crate::home::capture(app, d, task.copy) else { return };
     app.review_pending = Some(crate::state::Dialog::Import { opts: Box::new(d) });
     show_pending_review(app, ctx);
 }
