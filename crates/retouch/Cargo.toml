@@ -11,6 +11,5 @@ workspace = true
 [dependencies]
 
 [dev-dependencies]
-lightcraft-facemesh = { workspace = true }
 image = { workspace = true }
 serde_json = { workspace = true }
