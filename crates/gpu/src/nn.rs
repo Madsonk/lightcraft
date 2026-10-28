@@ -511,7 +511,6 @@ fn conv_source(bm: u32, bn: u32, bk: u32) -> String {
         .replace("{{BM}}", &bm.to_string())
         .replace("{{BN}}", &bn.to_string())
         .replace("{{BK}}", &bk.to_string())
-        .replace("{{A_VECS}}", &(bk * bm / 4).to_string())
         .replace("{{B_VECS}}", &(bk * bn / 4).to_string())
 }
 
@@ -1022,7 +1021,6 @@ mod tests {
             .replace("{{BM}}", &bm.to_string())
             .replace("{{BN}}", &bn.to_string())
             .replace("{{BK}}", &bk.to_string())
-            .replace("{{A_VECS}}", &(bk * bm / 4).to_string())
             .replace("{{B_VECS}}", &(bk * bn / 4).to_string());
         let d = dev().unwrap();
         let layout = conv_bgl(d);
