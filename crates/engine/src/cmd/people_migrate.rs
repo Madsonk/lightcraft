@@ -164,7 +164,12 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
                 t.no_photo.push(f);
                 continue;
             };
-            let rect = Rect { x0: f64::from(b[0].clamp(0.0, 1.0)), y0: f64::from(b[1].clamp(0.0, 1.0)), x1: f64::from(b[2].clamp(0.0, 1.0)), y1: f64::from(b[3].clamp(0.0, 1.0)) };
+            let rect = Rect {
+                x0: f64::from(b[0].clamp(0.0, 1.0)),
+                y0: f64::from(b[1].clamp(0.0, 1.0)),
+                x1: f64::from(b[2].clamp(0.0, 1.0)),
+                y1: f64::from(b[3].clamp(0.0, 1.0)),
+            };
             for id in ids {
                 let Some(photo) = s.catalog.photo(*id) else { continue };
                 let meta = work.entry(*id).or_insert_with(|| photo.meta.clone());

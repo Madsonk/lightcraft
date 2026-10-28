@@ -10,9 +10,9 @@ use lightcraft_search::{Embedder, HashStore, VectorIndex, hash, preprocess::prep
 use rayon::prelude::*;
 
 use super::Searcher;
+use super::download::Downloader;
 use crate::media::SourceRef;
 use crate::segment::DownloadStatus;
-use super::download::Downloader;
 
 /// The SigLIP 2 files of `google/siglip2-base-patch16-224` at one fixed revision, pinned by size and
 /// SHA-256 (Hugging Face's LFS hashes, checked again on the files as downloaded).

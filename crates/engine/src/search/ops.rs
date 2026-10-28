@@ -25,7 +25,8 @@ fn other(e: impl Into<String>) -> EngineError {
 
 /// The photos a command works on: `ids` when given, else every photo of the library.
 fn scope(s: &Session, p: &Value) -> Vec<PhotoId> {
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() { s.targets(p).unwrap_or_default() } else { s.catalog.photos().filter(|q| q.in_library()).map(|q| q.id).collect() };
+    let ids: Vec<PhotoId> =
+        if p.get("ids").is_some() { s.targets(p).unwrap_or_default() } else { s.catalog.photos().filter(|q| q.in_library()).map(|q| q.id).collect() };
     ids.into_iter().filter(|i| s.catalog.photo(*i).is_some_and(|q| q.kind != MediaKind::Video)).collect()
 }
 
@@ -84,7 +85,8 @@ pub(crate) fn vectors_of(searcher: &Searcher, dir: Option<std::path::PathBuf>, k
 
 /// The pictures cut out of the videos among `ids` (default: the library's), for the search index.
 fn frame_items(s: &mut Session, p: &Value, dir: Option<std::path::PathBuf>, force: bool) -> Result<Vec<Item>> {
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() { s.targets(p)? } else { s.catalog.photos().filter(|q| q.in_library()).map(|q| q.id).collect() };
+    let ids: Vec<PhotoId> =
+        if p.get("ids").is_some() { s.targets(p)? } else { s.catalog.photos().filter(|q| q.in_library()).map(|q| q.id).collect() };
     let loader = s.media.file_loader.clone();
     let mut items = Vec::new();
     let videos: Vec<PhotoId> = ids.into_iter().filter(|i| s.catalog.photo(*i).is_some_and(|q| q.kind == MediaKind::Video)).collect();

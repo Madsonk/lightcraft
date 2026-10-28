@@ -104,7 +104,12 @@ pub fn count_health(cat: &Catalog) -> Health {
         h.no_person += usize::from(!person);
         h.no_rating += usize::from(p.rating == 0);
         h.classified += usize::from(kw && (place || person));
-        h.unnamed_faces += p.meta.regions.iter().filter(|r| r.kind == lightcraft_meta::RegionKind::Face && r.name.as_deref().is_none_or(|n| n.trim().is_empty())).count();
+        h.unnamed_faces += p
+            .meta
+            .regions
+            .iter()
+            .filter(|r| r.kind == lightcraft_meta::RegionKind::Face && r.name.as_deref().is_none_or(|n| n.trim().is_empty()))
+            .count();
         if let Some(c) = p.content_hash.as_deref() {
             *by_hash.entry(c).or_default() += 1;
         }

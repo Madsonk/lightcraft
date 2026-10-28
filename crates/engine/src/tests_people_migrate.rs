@@ -72,7 +72,12 @@ fn people_of_the_earlier_index_become_named_regions_without_loss() {
     mb.regions.push(Region { rect: Rect { x0: 0.11, y0: 0.11, x1: 0.41, y1: 0.41 }, kind: RegionKind::Face, name: None, description: None });
     s.commit("t", lightcraft_catalog::Op::SetMeta { id: b, meta: Box::new(mb) }).unwrap();
     let mut mc = s.catalog.photo(c).unwrap().meta.clone();
-    mc.regions.push(Region { rect: Rect { x0: 0.5, y0: 0.5, x1: 0.8, y1: 0.8 }, kind: RegionKind::Face, name: Some("Zed".into()), description: None });
+    mc.regions.push(Region {
+        rect: Rect { x0: 0.5, y0: 0.5, x1: 0.8, y1: 0.8 },
+        kind: RegionKind::Face,
+        name: Some("Zed".into()),
+        description: None,
+    });
     s.commit("t", lightcraft_catalog::Op::SetMeta { id: c, meta: Box::new(mc) }).unwrap();
     // the earlier index
     let lib = dir.join("lib");
@@ -177,7 +182,8 @@ fn fingerprints(s: &Session) -> Vec<(String, u64, u64, u64, bool)> {
         .step_by(step)
         .map(|p| {
             let meta = std::fs::metadata(p).ok();
-            let mtime = meta.as_ref().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
+            let mtime =
+                meta.as_ref().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
             let mut buf = Vec::new();
             if let Ok(f) = std::fs::File::open(p) {
                 let _ = f.take(256 * 1024).read_to_end(&mut buf);
@@ -210,7 +216,8 @@ fn real_copy_report() {
         let after = fingerprints(&s);
         report["originals"] = json!({"sampled": before.len(), "identical": before == after, "withSidecar": before.iter().filter(|f| f.4).count()});
         // reopen from disk: the committed regions are what a fresh session reads
-        let named = |s: &Session| s.catalog.photos().filter(|p| p.in_library()).flat_map(|p| p.meta.regions.iter()).filter(|r| r.name.is_some()).count();
+        let named =
+            |s: &Session| s.catalog.photos().filter(|p| p.in_library()).flat_map(|p| p.meta.regions.iter()).filter(|r| r.name.is_some()).count();
         let now = named(&s);
         drop(s);
         let mut again = Session::new().with_fs();

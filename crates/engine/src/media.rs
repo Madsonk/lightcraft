@@ -608,7 +608,7 @@ impl MediaCache {
         self.insert_source(id, level, DecodedSource::new(img, None));
     }
 
-    fn insert_source(&mut self, id: PhotoId, level: SourceLevel, img: DecodedSource) {
+    pub(crate) fn insert_source(&mut self, id: PhotoId, level: SourceLevel, img: DecodedSource) {
         let tick = lightcraft_preview::next_tick();
         match level {
             SourceLevel::Thumb => {
@@ -1638,7 +1638,7 @@ impl crate::Session {
     /// reference) until its file is next decoded (issue #730). Bookkeeping, not an undo step; the look does not
     /// change (the pipeline reads the stored settings against the real as-shot white either way), only what As Shot
     /// says and what a smart preview renders with. Only for raws edited in Kelvin.
-    fn learn_as_shot_wb(&mut self, id: PhotoId, info: &SourceInfo) {
+    pub(crate) fn learn_as_shot_wb(&mut self, id: PhotoId, info: &SourceInfo) {
         let Some(p) = self.catalog.photo(id) else { return };
         if !info.raw || info.relative_wb || !p.develops_raw() || p.relative_wb() {
             return;

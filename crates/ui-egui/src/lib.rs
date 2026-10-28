@@ -10,29 +10,27 @@ pub mod album_picker;
 pub mod brush_live;
 pub mod button;
 pub mod canvas_keys;
+pub mod classify;
 mod command_error;
+pub mod context_bar;
 pub mod control;
+pub mod create_space;
 pub mod credits;
 pub mod date_picker;
-pub mod classify;
-pub mod context_bar;
-pub mod create_space;
 pub mod design;
-pub mod home;
-pub mod journey;
-pub mod quick_sort;
-pub mod workspaces;
 pub mod docking;
 mod drop_overlay;
 pub mod export_task;
 pub mod flow;
-pub mod heavy;
 mod focus_scan;
 mod frame_rate;
 pub mod headless;
+pub mod heavy;
+pub mod home;
 pub mod i18n;
 pub mod icons;
 pub mod import;
+pub mod journey;
 pub mod lightroom_destination;
 pub mod lightroom_import;
 pub mod links;
@@ -45,6 +43,7 @@ pub mod panels;
 pub mod pick;
 pub mod print_view;
 pub mod progress;
+pub mod quick_sort;
 pub mod rating;
 pub mod recheck;
 pub mod region;
@@ -62,6 +61,7 @@ pub mod theme;
 pub mod titlebar;
 pub mod widgets;
 pub mod window_place;
+pub mod workspaces;
 
 #[cfg(test)]
 mod tests_activity;
@@ -694,7 +694,14 @@ impl LightcraftApp {
             && self.workspaces.kind == workspaces::Space::Retouch
             && matches!(
                 id,
-                "preset.apply" | "develop.reset" | "develop.paste" | "portrait.retouch" | "portrait.clear" | "photo.setMeta" | "faces.detect" | "photo.analyzeFaces"
+                "preset.apply"
+                    | "develop.reset"
+                    | "develop.paste"
+                    | "portrait.retouch"
+                    | "portrait.clear"
+                    | "photo.setMeta"
+                    | "faces.detect"
+                    | "photo.analyzeFaces"
             )
             && params.get("ids").is_none()
             && (id == "preset.apply" || params.get("id").is_none())

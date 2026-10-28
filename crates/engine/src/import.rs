@@ -705,7 +705,8 @@ impl ScanInput {
         // (no table of the library here: this is the session's thread, and the library may hold
         // millions of photos. The scan looks up what it finds)
         let library = std::sync::Arc::new(s.catalog.clone());
-        let input = ScanInput { probe: adopting_full_hashes(s, s.media.file_probe.clone()), skip, library, cache: std::mem::take(&mut s.import_probes) };
+        let input =
+            ScanInput { probe: adopting_full_hashes(s, s.media.file_probe.clone()), skip, library, cache: std::mem::take(&mut s.import_probes) };
         (input, paths.to_vec())
     }
 

@@ -1425,10 +1425,6 @@ mod tests_face_recognize;
 mod tests_face_tiles;
 #[cfg(test)]
 mod tests_facemesh;
-#[cfg(all(test, feature = "search"))]
-mod tests_search;
-#[cfg(all(test, feature = "search"))]
-mod tests_taste;
 #[cfg(test)]
 mod tests_filesystem_history;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -1463,10 +1459,10 @@ mod tests_merge;
 mod tests_move_to_share;
 #[cfg(test)]
 mod tests_organize;
-#[cfg(test)]
-mod tests_persist;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_people_migrate;
+#[cfg(test)]
+mod tests_persist;
 #[cfg(test)]
 mod tests_portrait_job;
 #[cfg(test)]
@@ -1481,6 +1477,8 @@ mod tests_print;
 mod tests_process;
 #[cfg(test)]
 mod tests_recheck;
+#[cfg(all(test, feature = "search"))]
+mod tests_search;
 #[cfg(test)]
 mod tests_segment;
 #[cfg(test)]
@@ -1493,6 +1491,8 @@ mod tests_slideshow_export;
 mod tests_spots;
 #[cfg(test)]
 mod tests_sync;
+#[cfg(all(test, feature = "search"))]
+mod tests_taste;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_video;
 #[cfg(test)]

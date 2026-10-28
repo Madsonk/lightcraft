@@ -49,12 +49,37 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
     // measure (thumbnail-level sources: fast, and enough for focus at 512 px)
     let mut rows: Vec<(PhotoId, Option<i64>, f32, f32, [f32; 64])> = Vec::new();
     let mut failed = Vec::new();
-    for id in ids {
-        match s.source_now(id, crate::media::SourceLevel::Thumb) {
-            Ok(src) => {
-                let t = s.catalog.photo(id).and_then(|p| p.captured.as_deref().and_then(secs));
+    // the sources are read and measured side by side (a burst of a few dozen raws would otherwise keep the
+    // window waiting for seconds); what each photo learns from its file is applied afterwards, in order
+    let jobs: Vec<(PhotoId, Option<i64>, crate::media::SourceRef)> = ids
+        .into_iter()
+        .filter_map(|id| {
+            let ph = s.catalog.photo(id)?.clone();
+            let t = ph.captured.as_deref().and_then(secs);
+            Some((id, t, s.media.source_ref(&ph, crate::media::SourceLevel::Thumb)))
+        })
+        .collect();
+    use rayon::prelude::*;
+    type Loaded = (PhotoId, Option<i64>, std::result::Result<(crate::media::DecodedSource, f32, f32, [f32; 64]), String>);
+    let loaded: Vec<Loaded> = jobs
+        .into_par_iter()
+        .map(|(id, t, source)| {
+            let r = source.load_source().map(|r| {
                 use lightcraft_pipeline::cull;
-                rows.push((id, t, cull::sharpness(&src), cull::clipped(&src), cull::signature(&src)));
+                let (sharp, clip, sig) = (cull::sharpness(&r.image), cull::clipped(&r.image), cull::signature(&r.image));
+                (r, sharp, clip, sig)
+            });
+            (id, t, r)
+        })
+        .collect();
+    for (id, t, r) in loaded {
+        match r {
+            Ok((r, sharp, clip, sig)) => {
+                if let Some(info) = &r.info {
+                    s.learn_as_shot_wb(id, info);
+                }
+                s.media.insert_source(id, crate::media::SourceLevel::Thumb, r);
+                rows.push((id, t, sharp, clip, sig));
             }
             Err(e) => failed.push(json!([id.0, e])),
         }

@@ -77,7 +77,8 @@ fn exact_groups(s: &Session, ids: &[PhotoId]) -> Vec<Vec<PhotoId>> {
 fn find_duplicates(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "library.findDuplicates";
     let mode = str_param(p, "mode").unwrap_or("exact");
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() { s.targets(p)? } else { s.catalog.photos().filter(|q| q.in_library()).map(|q| q.id).collect() };
+    let ids: Vec<PhotoId> =
+        if p.get("ids").is_some() { s.targets(p)? } else { s.catalog.photos().filter(|q| q.in_library()).map(|q| q.id).collect() };
     let groups: Vec<Value> = match mode {
         "exact" => exact_groups(s, &ids).into_iter().map(|g| json!({"ids": g.iter().map(|i| i.0).collect::<Vec<_>>(), "kind": "exact"})).collect(),
         "near" => {
