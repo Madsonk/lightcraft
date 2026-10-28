@@ -1,0 +1,21 @@
+[package]
+name = "lightcraft-style"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LightCraft style (L3): a photographer's editing style learned from their own edited photos (ridge regression per develop setting), series harmonisation, automatic straighten and crop suggestions. Pure Rust, no I/O, no network"
+
+[lints]
+workspace = true
+
+[dependencies]
+lightcraft-color = { workspace = true }
+lightcraft-raster = { workspace = true }
+lightcraft-develop = { workspace = true }
+lightcraft-pipeline = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+lightcraft-scenes = { workspace = true }

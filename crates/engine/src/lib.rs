@@ -28,6 +28,7 @@ pub mod contact_sheet;
 pub mod crs;
 pub mod crs_masks;
 pub mod cull_job;
+pub mod style_job;
 pub mod demo;
 pub mod denoise;
 pub mod describe;
@@ -304,6 +305,8 @@ pub struct Session {
     pub(crate) faces: faces_index::FacesState,
     /// AI culling (`cull.*`): the job in progress or the last one, and the user's settings.
     pub cull: cull_job::Culler,
+    /// "My style" and automatic framing (`style.*`, `autocrop.*`, `autostraighten.*`): jobs and profiles.
+    pub style: style_job::StyleLab,
     /// Face analysis (eyes open / closed, eye sharpness): the model and the run in progress.
     pub facemesh: facemesh::Faces,
     /// The baked pixels of the portrait sliders (see [`ai`]).
@@ -504,6 +507,7 @@ impl Session {
             #[cfg(not(target_arch = "wasm32"))]
             faces: Default::default(),
             cull: Default::default(),
+            style: Default::default(),
             facemesh: facemesh::Faces::default(),
             ai: ai::Ai::default(),
             video: video::Videos::default(),
@@ -1406,6 +1410,8 @@ mod tests_crop_angle;
 mod tests_crop_aspect;
 #[cfg(test)]
 mod tests_cull;
+#[cfg(test)]
+mod tests_style;
 #[cfg(test)]
 mod tests_denoise;
 #[cfg(all(test, not(target_arch = "wasm32")))]

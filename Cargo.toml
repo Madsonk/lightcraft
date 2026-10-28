@@ -20,6 +20,8 @@ lightcraft-faces = { path = "crates/faces" }
 lightcraft-autoseg = { path = "crates/autoseg" }
 lightcraft-facemesh = { path = "crates/facemesh" }
 lightcraft-culler = { path = "crates/culler" }
+lightcraft-style = { path = "crates/style" }
+lightcraft-autoframe = { path = "crates/autoframe" }
 lightcraft-retouch = { path = "crates/retouch" }
 lightcraft-sysmem = { path = "crates/sysmem" }
 lightcraft-color = { path = "crates/color" }

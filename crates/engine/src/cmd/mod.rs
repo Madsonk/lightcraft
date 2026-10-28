@@ -167,6 +167,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(crate::video::faces::specs());
         v.extend(describe::specs());
         v.extend(crate::cull_job::specs());
+        v.extend(crate::style_job::specs());
         v.extend(facemesh::specs());
         v.extend(autoseg::specs());
         v.extend(dust::specs());
