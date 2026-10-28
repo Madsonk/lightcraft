@@ -78,7 +78,7 @@ fn make(src: &Path, dest: &Path, n: usize) {
 type Pool = JobPool<u64, RenderResult>;
 
 /// Wait until `want` results with a slot in `slots` arrived; returns (ms to first, ms to all).
-fn drain(pool: &Pool, t0: Instant, mut left: std::collections::HashSet<u64>) -> (f64, f64) {
+fn drain(pool: &mut Pool, t0: Instant, mut left: std::collections::HashSet<u64>) -> (f64, f64) {
     let mut first = None;
     while !left.is_empty() {
         match pool.try_recv() {
@@ -128,7 +128,7 @@ fn run(dir: &Path, visible: usize) {
             None => pool.submit(slot, job.key, 10, Box::new(move || lightcraft_engine::memory::in_background(|| job.run()))),
         }
     }
-    let (first, all) = drain(&pool, t0, left);
+    let (first, all) = drain(&mut pool, t0, left);
     out("grid_first_thumb", first, "ms");
     out("grid_visible_first_paint", all, "ms");
     out("grid_preview_mb_read", lightcraft_engine::files::PREVIEW_BYTES_READ.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e6, "MB");
@@ -181,7 +181,7 @@ fn run(dir: &Path, visible: usize) {
         left.insert(id.0);
         pool2.submit(id.0, job.key, 10, Box::new(move || lightcraft_engine::memory::in_background(|| job.run())));
     }
-    let (_, all) = drain(&pool2, t0, left);
+    let (_, all) = drain(&mut pool2, t0, left);
     out("grid_visible_warm_restart", all, "ms");
 
     // 5. next photo in the loupe: stand-in (embedded preview / cached) then the sharp 2560 px render
