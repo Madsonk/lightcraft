@@ -158,18 +158,64 @@ fn a_library_without_the_earlier_index_is_left_alone() {
     let _: Value = json!(null);
 }
 
-/// Not a test of its own: the report of `people.migrate` on a COPY of a real library
-/// (`LC_MIGRATE_COPY` = the copy's folder, `LC_MIGRATE_REPORT` = where to write the JSON,
-/// `LC_MIGRATE_APPLY=1` to apply on the copy). `cargo test … -- --ignored real_copy`.
+/// Size, mtime and a hash of the first 256 KiB of about 200 originals, spread over the library.
+fn fingerprints(s: &Session) -> Vec<(String, u64, u64, u64, bool)> {
+    use std::hash::{Hash, Hasher};
+    use std::io::Read;
+    let paths: Vec<String> = s
+        .catalog
+        .photos()
+        .filter(|p| p.in_library())
+        .filter_map(|p| match &p.source {
+            lightcraft_catalog::Source::File { path } => Some(path.clone()),
+            _ => None,
+        })
+        .collect();
+    let step = (paths.len() / 200).max(1);
+    paths
+        .iter()
+        .step_by(step)
+        .map(|p| {
+            let meta = std::fs::metadata(p).ok();
+            let mtime = meta.as_ref().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
+            let mut buf = Vec::new();
+            if let Ok(f) = std::fs::File::open(p) {
+                let _ = f.take(256 * 1024).read_to_end(&mut buf);
+            }
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            buf.hash(&mut h);
+            let xmp = std::path::Path::new(p).with_extension("xmp").exists();
+            (p.clone(), meta.map_or(0, |m| m.len()), mtime, h.finish(), xmp)
+        })
+        .collect()
+}
+
+/// Not a test of its own: the report of `people.migrate` on a library or a COPY of one
+/// (`LC_MIGRATE_COPY` = its folder, `LC_MIGRATE_REPORT` = where to write the JSON,
+/// `LC_MIGRATE_APPLY=1` to apply). On apply, originals are fingerprinted before and after and
+/// the library is reopened to check the result is what was committed.
+/// `cargo test … -- --ignored real_copy`.
 #[test]
 #[ignore]
 fn real_copy_report() {
     let (Some(copy), Some(out)) = (std::env::var_os("LC_MIGRATE_COPY"), std::env::var_os("LC_MIGRATE_REPORT")) else { return };
     let apply = std::env::var("LC_MIGRATE_APPLY").is_ok_and(|v| v == "1");
     let mut s = Session::new().with_fs();
-    s.open_library(std::path::PathBuf::from(copy), false).unwrap();
+    s.open_library(std::path::PathBuf::from(&copy), false).unwrap();
     let photos = s.catalog.photos().filter(|p| p.in_library()).count();
+    let before = if apply { fingerprints(&s) } else { Vec::new() };
     let mut report = s.execute("people.migrate", &json!({"dryRun": !apply})).unwrap();
     report["photosInCatalogue"] = json!(photos);
+    if apply {
+        let after = fingerprints(&s);
+        report["originals"] = json!({"sampled": before.len(), "identical": before == after, "withSidecar": before.iter().filter(|f| f.4).count()});
+        // reopen from disk: the committed regions are what a fresh session reads
+        let named = |s: &Session| s.catalog.photos().filter(|p| p.in_library()).flat_map(|p| p.meta.regions.iter()).filter(|r| r.name.is_some()).count();
+        let now = named(&s);
+        drop(s);
+        let mut again = Session::new().with_fs();
+        again.open_library(std::path::PathBuf::from(&copy), false).unwrap();
+        report["reopened"] = json!({"namedRegionsBefore": now, "namedRegionsAfterReopen": named(&again), "photos": again.catalog.photos().filter(|p| p.in_library()).count()});
+    }
     std::fs::write(out, serde_json::to_string_pretty(&report).unwrap()).unwrap();
 }
