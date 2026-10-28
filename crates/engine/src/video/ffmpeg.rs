@@ -25,7 +25,7 @@ const MAX_ERRORS: usize = 16 << 10;
 /// Folders looked in after `PATH` (an app started from the Finder has a short `PATH`).
 const FALLBACK_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/opt/local/bin"];
 
-fn find(name: &str, env: &str) -> Option<PathBuf> {
+pub(super) fn find(name: &str, env: &str) -> Option<PathBuf> {
     if let Some(p) = std::env::var_os(env).filter(|p| !p.is_empty()) {
         let p = PathBuf::from(p);
         return p.is_file().then_some(p);

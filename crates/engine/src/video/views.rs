@@ -103,6 +103,38 @@ pub fn list(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"videos": rows, "people": all_people.keys().collect::<Vec<_>>(), "total": rows.len()}))
 }
 
+/// `video.person {name, limit?}`: the pictures of videos where `name` is suggested (by the photos'
+/// named faces) → `{name, total, videos, faces: [{video, file, ms, frame, rect}]}`, by video then time.
+pub fn person(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "video.person";
+    let name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(C, "missing `name`"))?;
+    let want = fold(name);
+    let limit = p.get("limit").and_then(Value::as_u64).unwrap_or(200).clamp(1, 5000) as usize;
+    let analysed: std::collections::HashSet<u64> = super::faces::keys(s).into_iter().collect();
+    let frames = s.video_frames();
+    let mut found: Vec<(u64, u64, String, Value)> = Vec::new();
+    for (k, f) in frames.iter().filter(|(k, _)| analysed.contains(k)) {
+        let Some(id) = f.ids.first() else { continue };
+        for face in faces_at(s, *k) {
+            if face["name"].as_str().is_some_and(|n| fold(n) == want) {
+                found.push((id.0, f.ms, f.file.display().to_string(), face["rect"].clone()));
+            }
+        }
+    }
+    found.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    let videos = found.iter().map(|x| x.0).collect::<std::collections::BTreeSet<_>>().len();
+    let total = found.len();
+    let faces: Vec<Value> = found
+        .into_iter()
+        .take(limit)
+        .map(|(id, ms, frame, rect)| {
+            let file = s.catalog.photo(PhotoId(id)).map(|q| q.file_name.clone());
+            json!({"video": id, "file": file, "ms": ms, "frame": frame, "rect": rect})
+        })
+        .collect();
+    Ok(json!({"name": name, "total": total, "videos": videos, "faces": faces}))
+}
+
 /// `video.moments {id}`: for a video, each of its pictures and described moments in time order;
 /// for a photo, its one "moment". Each: `{ms, frame, faces: [{face, rect, person, name}], people,
 /// annotation: {scene, action, description, status, from, proposals} | null}`.

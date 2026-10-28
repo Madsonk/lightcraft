@@ -5,6 +5,7 @@
 //! panel only draws them and sends the user's gestures back.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 
 use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use serde_json::{Value, json};
@@ -313,6 +314,46 @@ pub struct VideosUi {
     pub after_import: Option<String>,
     /// The Info panel's description of the selected photo or video: (id, catalog revision, moments).
     info: Option<(u64, u64, Value)>,
+    /// The pictures of videos where a person is suggested (name, catalog revision, faces), for their page.
+    person_faces: Option<(String, u64, Arc<Vec<VideoFace>>)>,
+}
+
+/// A face seen in a picture of a video: which video, when, which picture, and where in it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VideoFace {
+    pub video: u64,
+    pub ms: u64,
+    pub frame: String,
+    pub rect: [f32; 4],
+}
+
+/// The pictures of videos where `name` is suggested by the photos' named faces; `None` while the
+/// lists of pictures are being read (the page draws "Loading…" and asks again).
+pub fn person_faces(app: &mut LightcraftApp, name: &str) -> Option<Arc<Vec<VideoFace>>> {
+    let rev = app.session.catalog.revision;
+    if let Some((n, r, v)) = &app.caches.videos.person_faces
+        && n == name
+        && *r == rev
+    {
+        return Some(v.clone());
+    }
+    if !app.session.video_frames_ready() {
+        return None;
+    }
+    let r = app.session.execute("video.person", &json!({"name": name, "limit": 500})).unwrap_or(Value::Null);
+    let rect = |v: &Value| -> Option<[f32; 4]> {
+        let a = v.as_array()?;
+        Some([a.first()?.as_f64()? as f32, a.get(1)?.as_f64()? as f32, a.get(2)?.as_f64()? as f32, a.get(3)?.as_f64()? as f32])
+    };
+    let faces: Vec<VideoFace> = r["faces"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|f| Some(VideoFace { video: f["video"].as_u64()?, ms: f["ms"].as_u64()?, frame: f["frame"].as_str()?.to_string(), rect: rect(&f["rect"])? }))
+        .collect();
+    let v = Arc::new(faces);
+    app.caches.videos.person_faces = Some((name.to_string(), rev, v.clone()));
+    Some(v)
 }
 
 impl VideosUi {
@@ -369,6 +410,7 @@ pub fn timecode(ms: u64) -> String {
 fn act(app: &mut LightcraftApp, id: &str, params: Value) -> Option<Value> {
     let r = app.run(id, params);
     app.caches.videos.dirty = true;
+    app.caches.videos.person_faces = None;
     match r {
         Ok(v) => Some(v),
         Err(e) => {
@@ -429,6 +471,20 @@ pub fn paint_picture(app: &mut LightcraftApp, ui: &egui::Ui, r: Rect, path: &str
     true
 }
 
+/// A face seen in a video, cut out of the picture it was found in and marked "video · m:ss"; the
+/// mark's rectangle is returned (a click on it opens the moment).
+pub fn paint_video_face(app: &mut LightcraftApp, ui: &egui::Ui, r: Rect, v: &VideoFace) -> Rect {
+    let tk = Tokens::get(ui.ctx());
+    paint_picture(app, ui, r, &v.frame, Some(v.rect));
+    let text = crate::i18n::tr_format!("video · {t}", t = timecode(v.ms));
+    let g = ui.painter().layout_no_wrap(text, tk.semibold(9.5), Color32::WHITE);
+    let mark =
+        Rect::from_min_size(pos2(r.left() + 2.0, r.bottom() - g.size().y - 4.0), vec2((g.size().x + 6.0).min(r.width() - 4.0), g.size().y + 2.0));
+    ui.painter().rect_filled(mark, 2.0, Color32::from_black_alpha(170));
+    ui.painter().galley(mark.min + vec2(3.0, 1.0), g, Color32::WHITE);
+    mark
+}
+
 /// Per frame: the background runs of videos and descriptions, with a Cancel button each, above the
 /// app's own task panels.
 pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
@@ -448,6 +504,7 @@ pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
             [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]].iter().any(|j| j["running"] == true);
         if was && !still {
             app.caches.videos.dirty = true;
+            app.caches.videos.person_faces = None;
         }
     }
     // a Video Catcher import whose files are in: now its pictures and moments
@@ -520,6 +577,22 @@ fn title_row(app: &mut LightcraftApp, ui: &mut egui::Ui, back: bool, title: &str
 fn list(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let rev = app.session.catalog.revision;
     if app.caches.videos.stale(rev) {
+        // the lists of pictures are read on another thread: "Loading…" meanwhile, never a frozen window
+        if !app.session.video_frames_ready() {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(120));
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                ui.add_space(PAD);
+                title_row(app, ui, false, tr("Videos"), "");
+            });
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                ui.add_space(PAD);
+                crate::progress::spinner(ui, 14.0);
+                ui.label(egui::RichText::new(tr("Loading the videos…")).color(Tokens::get(ui.ctx()).text_dim));
+            });
+            return;
+        }
         let c = &app.caches.videos;
         let mut p = json!({});
         if let Some(n) = &c.person {

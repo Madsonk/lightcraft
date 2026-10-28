@@ -17,6 +17,8 @@ pub mod faces;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ffmpeg;
 pub mod frames;
+pub mod scenes;
+pub mod speech;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod unreadable;
 #[cfg(not(target_arch = "wasm32"))]
@@ -93,6 +95,10 @@ pub struct Videos {
     pub job: Arc<FramesJob>,
     /// The faces found in the pictures (see [`faces`]).
     pub faces: faces::VideoFaces,
+    /// The `video.transcribe` run in progress (or the last one).
+    pub speech: Arc<speech::Job>,
+    /// Lists of pictures read off the window's thread.
+    warm: Arc<std::sync::Mutex<Warm>>,
 }
 
 /// A `video.frames` run: progress, what each video gave, and its stop button.
@@ -190,7 +196,57 @@ fn signature(s: &crate::Session, root: &Path, rev: u64) -> u64 {
 /// Lists of pictures read at once when the remembered ones are rebuilt.
 const LOAD_THREADS: usize = 32;
 
+/// The lists of pictures of `jobs` (content key, catalog items with it), read side by side: on a cold
+/// or busy disk each open waits tens of milliseconds, and 355 of them one after the other kept the
+/// Videos view blank for 30 s.
+fn load_frames(root: &Path, jobs: Vec<(String, Vec<PhotoId>)>) -> HashMap<u64, FrameAt> {
+    let load = |chunk: &[(String, Vec<PhotoId>)]| -> Vec<(String, Vec<PhotoId>, PathBuf, frames::Manifest)> {
+        chunk
+            .iter()
+            .filter_map(|(ck, ids)| {
+                let dir = video_dir(root, ck);
+                let m = frames::Manifest::load(&dir)?;
+                (m.content_key == *ck).then(|| (ck.clone(), ids.clone(), dir, m))
+            })
+            .collect()
+    };
+    let threads = if cfg!(target_arch = "wasm32") { 1 } else { jobs.len().clamp(1, LOAD_THREADS) };
+    let loaded = if threads == 1 {
+        load(&jobs)
+    } else {
+        let per = jobs.len().div_ceil(threads);
+        std::thread::scope(|sc| {
+            let handles: Vec<_> = jobs.chunks(per).map(|chunk| sc.spawn(|| load(chunk))).collect();
+            handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+        })
+    };
+    let mut map = HashMap::new();
+    for (ck, ids, dir, m) in loaded {
+        for f in m.frames {
+            map.insert(frame_key(&ck, f.ms), FrameAt { ids: ids.clone(), ms: f.ms, file: dir.join(&f.file) });
+        }
+    }
+    map
+}
+
+/// The lists being read off the window's thread (see [`crate::Session::video_frames_ready`]).
+#[derive(Default)]
+pub struct Warm {
+    /// A reading is running.
+    running: bool,
+    /// The last finished reading and the signature it was made for.
+    done: Option<(u64, Arc<HashMap<u64, FrameAt>>)>,
+}
+
 impl crate::Session {
+    fn catalog_videos_by_content(&self) -> Vec<(String, Vec<PhotoId>)> {
+        let mut by_content: HashMap<String, Vec<PhotoId>> = HashMap::new();
+        for p in self.catalog.photos().filter(|p| p.in_library() && p.kind == MediaKind::Video) {
+            by_content.entry(crate::media::content_key(p)).or_default().push(p.id);
+        }
+        by_content.into_iter().collect()
+    }
+
     /// The pictures of the library's videos, by key (empty without a library on disk).
     pub fn video_frames(&mut self) -> Arc<HashMap<u64, FrameAt>> {
         let Some(root) = cache_root(self) else { return Arc::default() };
@@ -200,42 +256,46 @@ impl crate::Session {
         {
             return m.clone();
         }
-        let mut by_content: HashMap<String, Vec<PhotoId>> = HashMap::new();
-        for p in self.catalog.photos().filter(|p| p.in_library() && p.kind == MediaKind::Video) {
-            by_content.entry(crate::media::content_key(p)).or_default().push(p.id);
-        }
-        // the lists are read side by side: on a cold or busy disk each open waits tens of
-        // milliseconds, and 355 of them one after the other kept the Videos view blank for 30 s
-        let jobs: Vec<(String, Vec<PhotoId>)> = by_content.into_iter().collect();
-        let load = |chunk: &[(String, Vec<PhotoId>)]| -> Vec<(String, Vec<PhotoId>, PathBuf, frames::Manifest)> {
-            chunk
-                .iter()
-                .filter_map(|(ck, ids)| {
-                    let dir = video_dir(&root, ck);
-                    let m = frames::Manifest::load(&dir)?;
-                    (m.content_key == *ck).then(|| (ck.clone(), ids.clone(), dir, m))
-                })
-                .collect()
+        let ready = self.video.warm.lock().unwrap_or_else(std::sync::PoisonError::into_inner).done.take_if(|(s, _)| *s == sig);
+        let m = match ready {
+            Some((_, m)) => m,
+            None => Arc::new(load_frames(&root, self.catalog_videos_by_content())),
         };
-        let threads = if cfg!(target_arch = "wasm32") { 1 } else { jobs.len().clamp(1, LOAD_THREADS) };
-        let loaded = if threads == 1 {
-            load(&jobs)
-        } else {
-            let per = jobs.len().div_ceil(threads);
-            std::thread::scope(|sc| {
-                let handles: Vec<_> = jobs.chunks(per).map(|chunk| sc.spawn(|| load(chunk))).collect();
-                handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
-            })
-        };
-        let mut map = HashMap::new();
-        for (ck, ids, dir, m) in loaded {
-            for f in m.frames {
-                map.insert(frame_key(&ck, f.ms), FrameAt { ids: ids.clone(), ms: f.ms, file: dir.join(&f.file) });
-            }
-        }
-        let m = Arc::new(map);
         self.video.cache = Some((sig, m.clone()));
         m
+    }
+
+    /// Whether [`Session::video_frames`] answers at once. When it would not, the lists are read on
+    /// another thread (once) and this says false until they are in: a window shows "Loading…"
+    /// meanwhile instead of freezing.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn video_frames_ready(&mut self) -> bool {
+        let Some(root) = cache_root(self) else { return true };
+        let sig = signature(self, &root, self.video.rev);
+        if self.video.cache.as_ref().is_some_and(|(s, _)| *s == sig) {
+            return true;
+        }
+        let warm = self.video.warm.clone();
+        let mut w = warm.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if w.done.as_ref().is_some_and(|(s, _)| *s == sig) {
+            return true;
+        }
+        if !w.running {
+            w.running = true;
+            let jobs = self.catalog_videos_by_content();
+            let slot = self.video.warm.clone();
+            let started = std::thread::Builder::new().name("video-frames-read".into()).spawn(move || {
+                let m = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| load_frames(&root, jobs))).unwrap_or_default();
+                let mut w = slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                w.done = Some((sig, Arc::new(m)));
+                w.running = false;
+            });
+            if started.is_err() {
+                w.running = false;
+                return true;
+            }
+        }
+        false
     }
 
     /// The pictures of one video, in time order.

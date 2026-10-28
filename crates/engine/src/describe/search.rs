@@ -19,6 +19,8 @@ use std::collections::{HashMap, HashSet};
 use lightcraft_catalog::{MediaKind, PhotoId};
 use serde_json::{Value, json};
 
+use super::honest::{self, Centre};
+use crate::video::speech::{self, Level, Speech, same_word};
 use super::{Effective, fold};
 use crate::cmd::{bad, bool_or, f64_or, str_param};
 use crate::{Result, Session};
@@ -34,16 +36,6 @@ const STOP: &[&str] = &[
 pub const DEFAULT_WINDOW: f64 = 6.0;
 /// Default probability for a match by meaning.
 pub const DEFAULT_MIN_PROBABILITY: f64 = 0.02;
-
-/// Whether a word of a text is a form of a word of the query: a short query word (5 letters or
-/// fewer) must begin the word (« danse » finds « dansent », not « dans »); a longer one shares
-/// its first 5 letters with it (« conduisant » finds « conduit », « voitures » finds « voiture »).
-fn same_word(term: &str, word: &str) -> bool {
-    if term.chars().count() <= 5 {
-        return word.starts_with(term);
-    }
-    term.chars().zip(word.chars()).take_while(|(a, b)| a == b).count() >= 5
-}
 
 /// The query's words matched in `text` (both folded).
 fn matched<'a>(terms: &'a [String], text: &str) -> Vec<&'a str> {
@@ -118,10 +110,22 @@ fn named(s: &mut Session) -> (Vec<(u32, String)>, HashMap<u64, Vec<(u32, String)
     (people, by_key)
 }
 
-/// The cosine of each search key with the meaning of `texts` (their embeddings averaged); `Err`
-/// says why there is none.
+/// What the meaning of the query says about each picture.
+struct Meaning {
+    /// Cosine of each search key with the (moved) query: what the pictures are ranked by.
+    cos: HashMap<u64, f32>,
+    /// Cosine with the query as the model gives it (the probability is read from this one).
+    raw: HashMap<u64, f32>,
+    probability: Box<dyn Fn(f32) -> f32>,
+    /// A match must beat this cosine (the noise ceiling of this library), when a floor is asked.
+    floor: Option<f32>,
+}
+
+/// The cosine of each search key with the meaning of `texts` (their embeddings averaged), moved as
+/// `centre` says, and the noise floor × `floor_factor` when one is asked; `Err` says why there is
+/// none.
 #[cfg(feature = "search")]
-fn meaning(s: &mut Session, texts: &[String], keys: &[u64]) -> std::result::Result<(HashMap<u64, f32>, Box<dyn Fn(f32) -> f32>), String> {
+fn meaning(s: &mut Session, texts: &[String], keys: &[u64], centre: Centre, floor_factor: Option<f32>) -> std::result::Result<Meaning, String> {
     s.searcher.model_dir()?;
     let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
     let all = s.searcher.embed_texts(&refs)?;
@@ -132,17 +136,76 @@ fn meaning(s: &mut Session, texts: &[String], keys: &[u64]) -> std::result::Resu
             *a += b;
         }
     }
-    let n = q.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
-    q.iter_mut().for_each(|x| *x /= n);
+    honest::unit(&mut q);
     let dir = s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.join("search"));
     let vectors = crate::search::vectors_of(&s.searcher, dir, keys)?;
-    let cos: HashMap<u64, f32> = vectors.iter().map(|(k, v)| (*k, v.iter().zip(&q).map(|(a, b)| a * b).sum())).collect();
+    let (text_mean, image_mean) = if centre != Centre::None || floor_factor.is_some() {
+        let c = s.searcher.calibration()?;
+        let views: Vec<&[f32]> = vectors.values().map(Vec::as_slice).collect();
+        (c.text_mean.clone(), honest::mean(&views))
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let moved = honest::moved(&q, centre, &text_mean, &image_mean);
+    let cos: HashMap<u64, f32> = vectors.iter().map(|(k, v)| (*k, honest::dot(v, &moved))).collect();
+    let raw: HashMap<u64, f32> = if centre == Centre::None { cos.clone() } else { vectors.iter().map(|(k, v)| (*k, honest::dot(v, &q))).collect() };
+    let floor = match floor_factor {
+        Some(f) => {
+            let noise = s.searcher.calibration()?.noise.clone();
+            let tops: Vec<f32> = noise
+                .iter()
+                .map(|n| {
+                    let n = honest::moved(n, centre, &text_mean, &image_mean);
+                    vectors.values().map(|v| honest::dot(v, &n)).fold(f32::MIN, f32::max)
+                })
+                .collect();
+            honest::floor(&tops, f)
+        }
+        None => None,
+    };
     let shared = s.searcher.share();
-    Ok((cos, Box::new(move |c| shared.probability(c).unwrap_or(0.0))))
+    Ok(Meaning { cos, raw, probability: Box::new(move |c| shared.probability(c).unwrap_or(0.0)), floor })
 }
 #[cfg(not(feature = "search"))]
-fn meaning(_: &mut Session, _: &[String], _: &[u64]) -> std::result::Result<(HashMap<u64, f32>, Box<dyn Fn(f32) -> f32>), String> {
+fn meaning(_: &mut Session, _: &[String], _: &[u64], _: Centre, _: Option<f32>) -> std::result::Result<Meaning, String> {
     Err(crate::search::UNAVAILABLE.into())
+}
+
+/// Where a moment of a video is near what is said, by level: `(level, ms of the sentence, text)`.
+type SpeechHit = Option<(Level, u64, String)>;
+
+/// For each moment, the best place where every word of the query is said near it (level 1: one
+/// sentence, 2: within a few seconds, 3: somewhere in the video, given to its closest moment).
+fn speech_per_moment(s: &mut Session, moments: &[Moment], terms: &[String], on: bool, window_ms: u64) -> Vec<SpeechHit> {
+    let mut out: Vec<SpeechHit> = vec![None; moments.len()];
+    let Some(root) = crate::video::cache_root(s).filter(|_| on && !terms.is_empty()) else { return out };
+    let mut by_item: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (i, m) in moments.iter().enumerate().filter(|(_, m)| m.ms.is_some()) {
+        by_item.entry(m.item.as_str()).or_default().push(i);
+    }
+    for (item, idxs) in by_item {
+        let Some(sp) = Speech::load(&crate::video::video_dir(&root, item)) else { continue };
+        let hits = speech::find(&sp.utterances, terms, speech::WINDOW_MS);
+        let Some(first) = hits.first() else { continue };
+        if first.level == Level::Video {
+            // somewhere in the video: its closest moment carries it
+            if let Some(&i) = idxs.iter().min_by_key(|i| speech::distance_ms(first, moments[**i].ms.unwrap_or(0))) {
+                out[i] = Some((Level::Video, first.t0, first.text.clone()));
+            }
+            continue;
+        }
+        for i in idxs {
+            let ms = moments[i].ms.unwrap_or(0);
+            out[i] = hits
+                .iter()
+                .filter(|h| h.level != Level::Video)
+                .map(|h| (speech::distance_ms(h, ms), h))
+                .filter(|(d, _)| *d <= window_ms)
+                .min_by_key(|(d, h)| (h.level, *d))
+                .map(|(_, h)| (h.level, h.t0, h.text.clone()));
+        }
+    }
+    out
 }
 
 /// How a French query is put to the semantic model: in French, in English through the
@@ -150,11 +213,16 @@ fn meaning(_: &mut Session, _: &[String], _: &[u64]) -> std::result::Result<(Has
 pub const DEFAULT_LANG: &str = "both";
 /// A picture counts as matching by meaning when it is among this many closest to the query.
 pub const DEFAULT_SEMANTIC_TOP: usize = 20;
+/// How the query vector is moved before it is compared (measured with `examples/describe_bench.rs`).
+pub const DEFAULT_CENTRE: Centre = Centre::None;
+/// The noise ceiling × this: a meaning match must beat it (`None` = no floor).
+pub const DEFAULT_FLOOR: Option<f32> = None;
 /// Reciprocal rank fusion constant (text rank and meaning rank).
 const RRF_K: f32 = 60.0;
 
-fn row(m: &Moment, e: Option<&Effective>, present: &[(u32, String)], words: &[&str], prob: Option<f32>, cos: Option<f32>) -> Value {
+fn row(m: &Moment, e: Option<&Effective>, present: &[(u32, String)], words: &[&str], prob: Option<f32>, cos: Option<f32>, said: &SpeechHit) -> Value {
     json!({
+        "speech": said.as_ref().map(|(l, ms, t)| json!({"level": *l as u8, "ms": ms, "text": t})),
         "id": m.id.0, "kind": if m.ms.is_some() { "video" } else { "photo" }, "ms": m.ms, "frame": m.frame,
         "scene": e.map(|e| e.scene.clone()), "action": e.map(|e| e.action.clone()), "description": e.map(|e| e.description.clone()),
         "status": e.map(|e| e.status), "from": e.map(|e| e.from.clone()),
@@ -270,7 +338,18 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
     }
     // what, by meaning
     let use_meaning = bool_or(p, "semantic", true) && !terms.is_empty();
-    let (cos, prob_of, semantic) = if use_meaning {
+    let centre = match str_param(p, "centre") {
+        None => DEFAULT_CENTRE,
+        Some(c) => Centre::parse(c).ok_or_else(|| bad(C, "`centre` is none, text or gap"))?,
+    };
+    // `floor`: false = no floor, a number = the noise ceiling × that number, absent = the default
+    let floor_factor = match p.get("floor") {
+        None => DEFAULT_FLOOR,
+        Some(Value::Bool(false)) => None,
+        Some(Value::Bool(true)) => Some(1.0),
+        Some(v) => Some(v.as_f64().ok_or_else(|| bad(C, "`floor` is a number or a boolean"))?.clamp(0.0, 10.0) as f32),
+    };
+    let (found, semantic) = if use_meaning {
         let keys: Vec<u64> = moments.iter().map(|m| m.skey).collect();
         let english = super::glossary::to_english(&terms.join(" "));
         let texts = match lang {
@@ -278,30 +357,45 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
             "en" => vec![format!("a photo of {english}")],
             _ => vec![format!("une photo de {rest}"), format!("a photo of {english}")],
         };
-        match meaning(s, &texts, &keys) {
-            Ok((c, f)) => {
-                let n = c.len();
-                let mut v = json!({"used": true, "indexed": n, "lang": lang, "english": english});
+        match meaning(s, &texts, &keys, centre, floor_factor) {
+            Ok(m) => {
+                let n = m.cos.len();
+                let centre_name = match centre {
+                    Centre::None => "none",
+                    Centre::Text => "text",
+                    Centre::Gap => "gap",
+                };
+                let mut v = json!({"used": true, "indexed": n, "lang": lang, "english": english, "centre": centre_name});
                 if use_min_prob {
                     v["minProbability"] = json!(min_prob);
                 } else {
                     v["top"] = json!(semantic_top);
                 }
-                (c, Some(f), v)
+                if let Some(f) = m.floor {
+                    v["floor"] = json!((f * 10000.0).round() / 10000.0);
+                    v["nothingByMeaning"] = json!(!m.cos.values().any(|c| *c > f));
+                }
+                (Some(m), v)
             }
-            Err(e) => (HashMap::new(), None, json!({"used": false, "why": e})),
+            Err(e) => (None, json!({"used": false, "why": e})),
         }
     } else {
-        (HashMap::new(), None, json!({"used": false, "why": if terms.is_empty() { "no words to look for" } else { "semantic: false" }}))
+        (None, json!({"used": false, "why": if terms.is_empty() { "no words to look for" } else { "semantic: false" }}))
     };
-    // the rank of each picture by meaning (1 = closest)
-    let mut by_cos: Vec<(u64, f32)> = cos.iter().map(|(k, c)| (*k, *c)).collect();
+    let floor = found.as_ref().and_then(|m| m.floor);
+    let empty = HashMap::new();
+    let cos = found.as_ref().map_or(&empty, |m| &m.cos);
+    // the rank of each picture by meaning (1 = closest) among those above the floor
+    let mut by_cos: Vec<(u64, f32)> = cos.iter().filter(|(_, c)| floor.is_none_or(|f| **c > f)).map(|(k, c)| (*k, *c)).collect();
     by_cos.sort_by(|a, b| b.1.total_cmp(&a.1));
     let sem_rank: HashMap<u64, usize> = by_cos.iter().enumerate().map(|(i, (k, _))| (*k, i + 1)).collect();
+    // what is said near each moment (every word of the query, in three levels)
+    let said = speech_per_moment(s, &moments, &terms, use_text && bool_or(p, "speech", true), window_ms);
     // the text score of each moment, then its rank among the moments the words reach
     let texts: Vec<(Option<Effective>, Vec<&str>)> = moments
         .iter()
-        .map(|m| {
+        .enumerate()
+        .map(|(mi, m)| {
             let e = store.effective(&m.item, m.ms);
             let text = e
                 .as_ref()
@@ -319,11 +413,16 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
                     fold(&t)
                 })
                 .unwrap_or_default();
-            let words = matched(&terms, &text);
+            let mut words = matched(&terms, &text);
+            if said[mi].is_some() {
+                words = terms.iter().map(String::as_str).collect();
+            }
             (e, words)
         })
         .collect();
-    let mut text_order: Vec<(usize, usize)> = texts.iter().enumerate().filter(|(_, (_, w))| !w.is_empty()).map(|(i, (_, w))| (i, w.len())).collect();
+    // more words first; for equal words, what is said in one sentence before what is said in a window
+    let weight = |i: usize, w: &[&str]| w.len() * 4 + said[i].as_ref().map_or(3, |(l, _, _)| 3 - *l as usize + 1).min(3);
+    let mut text_order: Vec<(usize, usize)> = texts.iter().enumerate().filter(|(_, (_, w))| !w.is_empty()).map(|(i, (_, w))| (i, weight(i, w))).collect();
     text_order.sort_by_key(|x| std::cmp::Reverse(x.1));
     let text_rank: HashMap<usize, usize> = text_order.iter().enumerate().map(|(r, (i, _))| (*i, r + 1)).collect();
     let mut results: Vec<(f32, Value)> = Vec::new();
@@ -347,21 +446,22 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
         let Some((e, words)) = texts.get(mi).map(|(e, w)| (e.clone(), w.clone())) else { continue };
         // every word must be there: « plongée sous-marine » is not « contre-plongée »
         let text_ok = !terms.is_empty() && if text_all { words.len() == terms.len() } else { !words.is_empty() };
-        let prob = cos.get(&m.skey).and_then(|c| prob_of.as_ref().map(|f| f(*c)));
+        let prob = found.as_ref().and_then(|f| f.raw.get(&m.skey).map(|c| (f.probability)(*c)));
         let srank = sem_rank.get(&m.skey).copied();
         // by meaning: among the closest pictures (a rank, not an absolute probability, which SigLIP
         // keeps very low for French sentences), or above `minProbability` when one is asked for
-        let sem_ok = if use_min_prob { prob.is_some_and(|p| p >= min_prob) } else { srank.is_some_and(|r| r <= semantic_top) };
+        let above = floor.is_none_or(|f| cos.get(&m.skey).is_some_and(|c| *c > f));
+        let sem_ok = above && if use_min_prob { prob.is_some_and(|p| p >= min_prob) } else { srank.is_some_and(|r| r <= semantic_top) };
         let what_ok = terms.is_empty() || text_ok || sem_ok;
         // reciprocal rank fusion of the two orders
         let score = text_rank.get(&mi).map_or(0.0, |r| 1.0 / (RRF_K + *r as f32)) + srank.map_or(0.0, |r| 1.0 / (RRF_K + r as f32));
         match (people_ok, what_ok) {
-            (true, true) => results.push((score, row(m, e.as_ref(), &present, &words, prob, cos.get(&m.skey).copied()))),
+            (true, true) => results.push((score, row(m, e.as_ref(), &present, &words, prob, found.as_ref().and_then(|f| f.raw.get(&m.skey).copied()), &said[mi]))),
             (true, false) if !required.is_empty() => {
-                present_only.push((score, row(m, e.as_ref(), &present, &words, prob, cos.get(&m.skey).copied())))
+                present_only.push((score, row(m, e.as_ref(), &present, &words, prob, found.as_ref().and_then(|f| f.raw.get(&m.skey).copied()), &said[mi])))
             }
             (false, true) if !required.is_empty() && !terms.is_empty() => {
-                what_only.push((score, row(m, e.as_ref(), &present, &words, prob, cos.get(&m.skey).copied())))
+                what_only.push((score, row(m, e.as_ref(), &present, &words, prob, found.as_ref().and_then(|f| f.raw.get(&m.skey).copied()), &said[mi])))
             }
             _ => {}
         }

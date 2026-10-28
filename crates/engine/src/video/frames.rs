@@ -122,6 +122,36 @@ pub fn file_name(ms: u64) -> String {
     format!("t{ms:010}.jpg")
 }
 
+/// The moments to try again for a video whose last run left `m.failed`: each failed moment, and
+/// the same moment 0.7 s before and after (a picture at the very end, or on a damaged stretch, is
+/// often found just beside it).
+pub fn retry_times(m: &Manifest) -> Vec<u64> {
+    let end = m.duration_ms.unwrap_or(u64::MAX);
+    let mut v: Vec<u64> = Vec::new();
+    for (ms, _) in &m.failed {
+        v.push(*ms);
+        v.push(ms.saturating_sub(700));
+        if ms + 700 < end {
+            v.push(ms + 700);
+        }
+    }
+    v.sort_unstable();
+    v.dedup();
+    v.retain(|t| !m.has(*t));
+    v
+}
+
+/// After a retry: a failed moment with a picture within a second of it is no longer a failure.
+pub fn resolve_failed(dir: &Path) {
+    let Some(mut m) = Manifest::load(dir) else { return };
+    let before = m.failed.len();
+    let frames: Vec<u64> = m.frames.iter().map(|f| f.ms).collect();
+    m.failed.retain(|(f, _)| !frames.iter().any(|t| t.abs_diff(*f) <= 1000));
+    if m.failed.len() != before {
+        let _ = m.save(dir);
+    }
+}
+
 /// What cutting one video did.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -134,6 +164,9 @@ pub struct Cut {
     /// Stopped because the pictures of the library reached their disk budget.
     pub over_budget: bool,
     pub error: Option<String>,
+    /// Something worth saying that did not stop the run (the plan fell back to evenly spread pictures).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Cut the pictures `times` of `video` into `dir`, keeping those already there (unless `force`),
@@ -230,6 +263,23 @@ mod tests {
             assert!(!p.is_empty() && p.len() <= 12 && p.iter().all(|t| *t < 60_000), "{e:?} {p:?}");
         }
         assert!(plan(Some(60.0), None, 0).len() == 1);
+    }
+
+    #[test]
+    fn a_failed_moment_is_tried_again_beside_itself() {
+        let mut m = Manifest::new("k", "/v.mp4", Some(10_000), "ffmpeg");
+        m.failed = vec![(9_900, "x".into()), (3_000, "y".into())];
+        m.frames.push(Frame { ms: 2_300, file: file_name(2_300), bytes: 1, origin: "ffmpeg".into() });
+        // 9 900 + 700 is past the end; 3 000 − 700 is already cut
+        assert_eq!(retry_times(&m), vec![3_000, 3_700, 9_200, 9_900]);
+        let d = std::env::temp_dir().join(format!("lc-frames-retry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        m.frames.push(Frame { ms: 3_700, file: file_name(3_700), bytes: 1, origin: "ffmpeg".into() });
+        m.save(&d).unwrap();
+        resolve_failed(&d);
+        let after = Manifest::load(&d).unwrap();
+        assert_eq!(after.failed, vec![(9_900, "x".to_string())], "3 000 has a picture 0.7 s away");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

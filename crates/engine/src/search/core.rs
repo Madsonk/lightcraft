@@ -126,6 +126,17 @@ pub struct Core {
     store: Arc<Mutex<Option<Store>>>,
     job: Arc<Job>,
     download: Downloader,
+    /// What the honest scores of `describe.search` need from the model (see [`Calib`]).
+    calib: Arc<Mutex<Option<Arc<Calib>>>>,
+}
+
+/// Vectors of the neutral captions and of the noise queries, asked once per model.
+pub struct Calib {
+    pub model: String,
+    /// Mean of the unit embeddings of the neutral captions.
+    pub text_mean: Vec<f32>,
+    /// Unit embeddings of [`crate::describe::honest::NOISE`].
+    pub noise: Vec<Vec<f32>>,
 }
 
 impl Core {
@@ -137,6 +148,7 @@ impl Core {
             store: self.store.clone(),
             job: self.job.clone(),
             download: Downloader::default(),
+            calib: self.calib.clone(),
         }
     }
 }
@@ -308,6 +320,23 @@ impl Searcher {
         let e = self.embedder()?;
         let _gpu = lock(&self.core.gpu);
         e.embed_texts(texts).map_err(|e| e.to_string())
+    }
+
+    /// The neutral-caption mean and the noise vectors of the loaded model (computed on first use).
+    pub fn calibration(&self) -> Result<Arc<Calib>, String> {
+        let e = self.embedder()?;
+        if let Some(c) = lock(&self.core.calib).as_ref().filter(|c| c.model == e.id()) {
+            return Ok(c.clone());
+        }
+        let neutral = crate::describe::honest::neutral_captions();
+        let refs: Vec<&str> = neutral.iter().map(String::as_str).collect();
+        let vs = self.embed_texts(&refs)?;
+        let views: Vec<&[f32]> = vs.iter().map(Vec::as_slice).collect();
+        let text_mean = crate::describe::honest::mean(&views);
+        let noise = self.embed_texts(crate::describe::honest::NOISE)?;
+        let c = Arc::new(Calib { model: e.id().to_string(), text_mean, noise });
+        *lock(&self.core.calib) = Some(c.clone());
+        Ok(c)
     }
 
     /// The probability the model gives a photo and a caption with this cosine.

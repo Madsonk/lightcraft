@@ -13,6 +13,7 @@
 //!   person said yes). A program never writes `confirmed`.
 
 pub mod glossary;
+pub mod honest;
 pub mod ops;
 pub mod search;
 pub mod suggest;
