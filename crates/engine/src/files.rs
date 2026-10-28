@@ -2901,6 +2901,32 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The sort view reads the camera's preview once, keeps it in the preview cache, and never stands in for an edited
+    /// photo (whose look it would not show).
+    #[test]
+    fn the_sort_view_is_the_embedded_preview_read_once_and_never_for_an_edited_raw() {
+        use crate::media::QuickSource;
+        let dir = std::env::temp_dir().join(format!("lc-sortview-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.cr3");
+        std::fs::write(&path, cr3_with_preview(96, 64)).unwrap();
+        let mut s = crate::Session::new().with_fs();
+        let r = s.execute("library.import", &serde_json::json!({"paths": [path.to_string_lossy()]})).unwrap();
+        let id = lightcraft_catalog::PhotoId(r["imported"][0].as_u64().unwrap());
+        let first = s.sort_view_job(id).unwrap().run();
+        assert_eq!(first.quick, Some(QuickSource::Embedded));
+        assert_eq!(first.rendered.unwrap().image.width, 96);
+        // the second visit comes from the cache: the original is not read again
+        let again = s.sort_view_job(id).unwrap();
+        assert!(again.cached.len() == 1);
+        assert_eq!(again.run().quick, Some(QuickSource::Cached));
+        // an edited raw has no sort view: it renders
+        s.execute("library.select", &serde_json::json!({"ids": [id.0]})).unwrap();
+        s.execute("develop.set", &serde_json::json!({"control": "light.exposure", "value": 1.0})).unwrap();
+        assert!(s.sort_view_job(id).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Issue #1448: the grid renders nothing behind an unedited raw's quick thumbnail, so when the
     /// embedded preview can't be read (and nothing is cached) the quick job itself must render the
     /// raw, or the cell stays empty for good ("no quick preview").

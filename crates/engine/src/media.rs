@@ -1137,6 +1137,10 @@ pub enum QuickSource {
     Small,
 }
 
+/// Long edge of the sort view ([`Session::sort_view_job`]): sharp enough to judge focus and expression on a laptop
+/// screen, small enough to decode in a few ms and to keep a whole shoot of them on the internal disk.
+pub const SORT_VIEW_EDGE: usize = 2048;
+
 /// Something to show *now* for a photo while its real render is prepared. Tried in order: cached
 /// renders, the embedded preview of an unedited raw, a thumbnail-level render.
 #[derive(Clone)]
@@ -1150,6 +1154,9 @@ pub struct QuickJob {
     pub embedded: Option<(String, PreviewLoader, usize)>,
     /// Last resort: run this thumbnail job.
     pub small: Option<Box<RenderJob>>,
+    /// Where to keep what the embedded preview gave (memory, and the library's disk cache on the internal disk), so the
+    /// next visit never reads the original again (the sort view, [`Session::sort_view_job`]).
+    pub store: Option<(Arc<PreviewCache>, Hash128)>,
 }
 
 impl QuickJob {
@@ -1198,6 +1205,9 @@ impl QuickJob {
         if let Some((path, loader, edge)) = &self.embedded
             && let Some(image) = loader(path, *edge)
         {
+            if let Some((cache, k)) = &self.store {
+                cache.put_deferred(*k, Arc::new(image.clone()));
+            }
             return done(rendered(image), Some(QuickSource::Embedded));
         }
         if let Some(job) = self.small {
@@ -1597,7 +1607,34 @@ impl crate::Session {
         let h = Hasher128::new().str(&content_key(&p)).str("quick").u64(p.develop.hash64()).u64(apply_crop as u64).finish();
         let key = h.0 as u64;
         let embedded = self.embedded_of(&p).map(|(path, l)| (path, l, max_edge.clamp(1, SourceLevel::Preview.max_edge())));
-        Some(QuickJob { request_id: 0, photo: id, key, cached, embedded, small: apply_crop.then(|| Box::new(small)) })
+        Some(QuickJob { request_id: 0, photo: id, key, cached, embedded, small: apply_crop.then(|| Box::new(small)), store: None })
+    }
+
+    /// The sort view of a photo: for culling and rating, where the picture only has to be recognised and judged, the
+    /// camera's own JPEG (at most [`SORT_VIEW_EDGE`] px) stands in for the loupe's render of the raw. Only for an
+    /// unedited raw whose file has an embedded preview ([`Self::embedded_thumb_is_final`]); everything else (edited,
+    /// zoomed in, other formats, no preview) renders as usual. The result is kept in the library's preview cache
+    /// (internal disk) under its own key, so a photo seen once is never read from its original again. Never mistaken for
+    /// a final render: its [`QuickSource`] is `Cached`/`Embedded`, and the UI labels it "Preview".
+    pub fn sort_view_job(&mut self, id: PhotoId) -> Option<QuickJob> {
+        let p = self.catalog.photo(id)?.clone();
+        let (path, loader) = self.embedded_of(&p)?;
+        let key = Self::sort_view_key(&p);
+        let h = Hasher128::new().str(&content_key(&p)).str("sortview-job").finish();
+        Some(QuickJob {
+            request_id: 0,
+            photo: id,
+            key: h.0 as u64,
+            cached: vec![(self.media.rendered.clone(), key)],
+            embedded: Some((path, loader, SORT_VIEW_EDGE)),
+            small: None,
+            store: Some((self.media.rendered.clone(), key)),
+        })
+    }
+
+    /// Cache key of a photo's sort view (see [`Self::sort_view_job`]).
+    fn sort_view_key(p: &Photo) -> Hash128 {
+        Hasher128::new().str(&content_key(p)).str("sortview").u64(SORT_VIEW_EDGE as u64).u64(RENDER_CACHE_VERSION).finish()
     }
 
     /// A first grid thumbnail for an unedited raw: the cached render for `job` (the real
@@ -1617,6 +1654,7 @@ impl crate::Session {
             cached: job.cache.clone().into_iter().collect(),
             embedded: Some((path, l, edge)),
             small: Some(Box::new(job.clone())),
+            store: None,
         })
     }
 
@@ -1875,6 +1913,7 @@ mod thumbnail_hash_tests {
             cached: Vec::new(),
             embedded: Some(("x.arw".into(), Arc::new(|_: &str, _: usize| -> Option<Rgba8> { panic!("preview reader bug") }), 256)),
             small: None,
+            store: None,
         };
         let r = quick.run();
         assert_eq!((r.request_id, r.key), (7, 9));

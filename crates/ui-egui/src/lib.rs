@@ -461,6 +461,11 @@ pub struct LightcraftApp {
     /// What the loupe drew last frame: photo and source ("render", "cached", "embedded", "small",
     /// "thumb", "none").
     pub loupe_shown: Option<(lightcraft_catalog::PhotoId, &'static str)>,
+    /// Whether the loupe shows the sort view (the camera's preview, not the raw's render) this frame.
+    pub sort_view_shown: bool,
+    /// The photo the sort view showed before, and the way the user is stepping (+1 forward, -1 back).
+    pub sort_last: Option<lightcraft_catalog::PhotoId>,
+    pub sort_dir: isize,
     /// The window render the loupe asked for last, by job key (see [`region`]); kept for the few
     /// windows whose textures can be on screen, and for the inspector.
     pub region_view: Option<region::RegionView>,
@@ -595,6 +600,9 @@ impl LightcraftApp {
             gesture: None,
             brush_live: None,
             loupe_shown: None,
+            sort_view_shown: false,
+            sort_last: None,
+            sort_dir: 1,
             region_view: None,
             region_before_view: None,
             size_hold: Default::default(),

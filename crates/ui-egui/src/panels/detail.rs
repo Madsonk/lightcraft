@@ -656,7 +656,48 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     // hover and before renders are stand-ins: the preview size is plenty and keeps them cheap
     let se = app.ui.settings.stand_in_edge(want, texture_side);
     let (sw, sh) = if aspect >= 1.0 { (se, short(se, aspect)) } else { (short(se, 1.0 / aspect), se) };
-    if let Some(job) = app.session.loupe_job(id, rw.max(8), rh.max(8), !crop_tool) {
+    // Sort view: for culling and rating, an unedited raw shows the camera's own JPEG (kept on the internal disk), not a
+    // render of the sensor; zooming, editing, comparing or turning the setting off renders the raw as ever.
+    let sort_view = app.ui.settings.sort_preview
+        && app.ui.zoom == Zoom::Fit
+        && !interacting
+        && !crop_tool
+        && !app.ui.soft_proof
+        && app.ui.before_after == BeforeAfter::Off
+        && !ui.input(|i| i.key_down(egui::Key::Backslash))
+        && app.hover_preview.is_none()
+        && matches!(overlay, lightcraft_pipeline::Overlay::None)
+        && app.session.catalog.photo(id).is_some_and(|p| app.session.embedded_thumb_is_final(p))
+        && app.session.sort_view_job(id).is_some();
+    app.sort_view_shown = sort_view;
+    if sort_view {
+        if app.renderer.textures.get(&Slot::Preview).is_none_or(|t| t.photo != id)
+            && let Some(q) = app.session.sort_view_job(id)
+        {
+            app.renderer.request_quick(Slot::Preview, q, 100);
+        }
+        // the neighbours ahead (the way the user is going) and one behind, read while this one is judged
+        let ids = app.session.visible_cloned();
+        if let Some(i) = ids.iter().position(|p| *p == id) {
+            // the way the user is going: from the photo seen before this one (forward when unknown)
+            if app.sort_last.is_some_and(|l| l != id) {
+                let from = app.sort_last.and_then(|l| ids.iter().position(|p| *p == l));
+                app.sort_dir = match from {
+                    Some(f) if f > i => -1,
+                    _ => 1,
+                };
+            }
+            app.sort_last = Some(id);
+            let dir = app.sort_dir;
+            let ahead = (1..=SORT_AHEAD).filter_map(|n| i.checked_add_signed(dir.saturating_mul(n as isize)).and_then(|j| ids.get(j))).copied();
+            let behind = i.checked_add_signed(-dir).and_then(|j| ids.get(j)).copied();
+            for (n, nid) in ahead.chain(behind).enumerate() {
+                if let Some(q) = app.session.sort_view_job(nid) {
+                    app.renderer.prefetch_quick(Slot::Prefetch(n as u8), q, PREFETCH_PRIORITY);
+                }
+            }
+        }
+    } else if let Some(job) = app.session.loupe_job(id, rw.max(8), rh.max(8), !crop_tool) {
         let job = if interacting { job.draft() } else { job };
         // at rest the render is shrunk to exactly the size it is drawn at with a Lanczos filter on
         // the worker, so the window draws it texel for texel instead of shrinking it with 2-tap
@@ -689,7 +730,11 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     };
     // once this photo is on screen: prepare its neighbours in filmstrip order (source decoded and
     // kept, view render cached) so stepping to them is instant
-    if !interacting && !app.renderer.is_pending(Slot::Main) && app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.photo == id) {
+    if !sort_view
+        && !interacting
+        && !app.renderer.is_pending(Slot::Main)
+        && app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.photo == id)
+    {
         let ids = app.session.visible_cloned();
         if let Some(i) = ids.iter().position(|p| *p == id) {
             let next = ids.get(i + 1).copied();
@@ -710,7 +755,8 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         }
     }
     // until the loupe has this photo: show its cached render / embedded preview / a thumbnail
-    if app.renderer.textures.get(&Slot::Main).is_none_or(|t| t.photo != id)
+    if !sort_view
+        && app.renderer.textures.get(&Slot::Main).is_none_or(|t| t.photo != id)
         && let Some(q) = app.session.quick_view_job(id, want.max(8), !crop_tool)
     {
         app.renderer.request_quick(Slot::Preview, q, 110);
@@ -852,6 +898,13 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         }
     }
     app.loupe_shown = Some((id, shown));
+    // never mistaken for the final render: the sort view says what it is
+    if sort_view && shown != "render" {
+        let g = p.layout_no_wrap(crate::i18n::tr("Preview").to_string(), t.font(12.0), Color32::WHITE);
+        let bg = label_badge_rect(img_rect, canvas, g.size(), badge_top_inset);
+        p.rect_filled(bg, 4.0, Color32::from_black_alpha(160));
+        p.galley(bg.min + vec2(8.0, 4.0), g, Color32::WHITE);
+    }
     // a wipe shows the Before whole-frame render on its side of the line…
     let line = crate::region::wipe_line(img_rect, canvas);
     if app.ui.before_after == BeforeAfter::Split
@@ -1452,6 +1505,8 @@ fn navigator(app: &mut LightcraftApp, ui: &mut egui::Ui, canvas: Rect, img: Rect
 
 /// Neighbour prefetch: below on-screen thumbnails, above background thumbnail refreshes.
 const PREFETCH_PRIORITY: u32 = 4;
+/// How many photos ahead of the one judged the sort view reads (its previews are small: a handful of ms each).
+const SORT_AHEAD: usize = 6;
 
 /// How long a render may be on its way, with nothing new on screen, before the loupe says
 /// "Rendering…" (s): as long as the activity stack waits before it shows a task.

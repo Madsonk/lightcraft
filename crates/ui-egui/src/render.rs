@@ -550,6 +550,25 @@ impl Renderer {
         self.pool.submit(slot, key, priority, Box::new(move || Self::run_for(|| job.run(), &display)));
     }
 
+    /// Read a photo's stand-in ahead of need (it lands in the engine's cache; nothing is drawn). Like
+    /// [`Self::prefetch`], once per job key; a newer job in the same slot replaces it while queued.
+    pub fn prefetch_quick(&mut self, slot: Slot, mut job: lightcraft_engine::media::QuickJob, priority: u32) {
+        if self.prefetched.get(&slot) == Some(&job.key) {
+            return;
+        }
+        self.prefetched.insert(slot, job.key);
+        self.pending.insert(slot, (job.key, priority));
+        job.request_id = lightcraft_preview::next_tick();
+        self.requests.insert(slot, Requested { id: job.request_id, source: None });
+        let key = job.key;
+        self.pool.submit(
+            slot,
+            key,
+            priority,
+            Box::new(move || Finished { result: lightcraft_engine::memory::in_background(|| job.run()), color: None }),
+        );
+    }
+
     /// Render a slideshow title screen into `slot` (once per screen key, like [`Self::request`]):
     /// a slide with no photo, composed on a worker (on wasm: the job pool's inline runs, not the
     /// offload, which only knows photo renders).

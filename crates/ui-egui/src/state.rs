@@ -483,6 +483,9 @@ pub struct AppSettings {
     pub import_dropped_directly: bool,
     /// GPU rendering allowed (`app.gpu`).
     pub gpu: bool,
+    /// Sort view: while culling and rating (fit zoom), an unedited raw shows the camera's embedded JPEG, kept on the
+    /// internal disk, instead of a render of the sensor; the raw renders when zooming or editing. Off = always render.
+    pub sort_preview: bool,
     /// Largest long edge (pixels) the user lets the loupe render at; 0 = Automatic (the size it is
     /// drawn at, up to the photo's own pixels and [`LOUPE_EDGE_CEILING`]). Not the old
     /// `previewEdge` key: its 2560 px default was the soft-image bug (issue #323).
@@ -569,6 +572,7 @@ impl Default for AppSettings {
             close_dialogs_outside: false,
             import_dropped_directly: false,
             gpu: true,
+            sort_preview: true,
             preview_limit: 0,
             external_editor: String::new(),
             external_file: EditFile::default(),
