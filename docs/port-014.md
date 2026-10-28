@@ -158,3 +158,13 @@ From 06:33 on 2026-10-27, new executables on this Mac stayed in `_dyld_start` fo
 signed copy of `/bin/echo` too; cargo build scripts of every session). `syspolicyd` was working through a flood of
 dylib assessments from another process. Rebooting or restarting `syspolicyd`, or adding the terminal app under
 Privacy & Security ▸ Developer Tools, is the way out; building on the internal disk does not help.
+
+## 8. State of 28 October 2026 (rule: nothing of the fork is abandoned)
+
+| Step | State |
+|---|---|
+| 1. People data | **Done on the real library** (people.migrate: 75 names / 0 missing, 18 078 + 4 878 existing regions, 302 + 66 added, 13 802 photos, originals identical, reopen OK; backups kept; one conflict, photo 4374 "Alba Madi" vs "Kurtis Madi", catalogue name kept). Unnamed groups stay in `people/legacy-people.json` (read with `people.legacy`). |
+| 2. UX refonte | Workspaces (Library / Retouch / Create), journey bar, context bar, Import home, Sort helper, Create space, ported onto 0.14.0's docking shell and seen in headless snapshots. **Classify** rewritten on upstream commands (counters, places from GPS, same-file, link to People for naming). Left: Retouch left column (needs proposed retouch), module filmstrip under both sidebars, Sorting Help window (below). |
+| 3. Semantic search + taste | Engine ported (crates `search`, `taste`, `search.*`, `taste.*`, `keywords.*`, near-duplicates, `describe.suggest` by meaning); real SigLIP model end-to-end test passes with the files already installed. UI (Sorting Help window with suggested picks / keywords, filter-bar entries) **not yet ported**. |
+| 4. Lot E speed | `perf_bench` + `tools/perf.sh` ported (measure upstream's window read); import of big raws from their head with sampled keys (`ps1-`) merged onto upstream's scan (adoption of full hashes kept, find-missing knows both schemes). Not carried because upstream has the same: the 3 MB prefix read, grid thumbnails from the embedded preview, the GPU denoise race fix. |
+| 5. Left out so far | Depth map / Lens Blur / Depth Range, MI-GAN, proposed retouch, skin harmonization, dodge & burn, SCUNet / SPAN restore, library lock retry, 589 French messages: **still to port**. |
