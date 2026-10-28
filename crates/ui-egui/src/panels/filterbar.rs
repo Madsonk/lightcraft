@@ -263,6 +263,16 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         app.ui.search.clear();
         let _ = app.run("library.clearFilter", json!({}));
     }
+    // picks the taste model proposes among the photos in view (suggestions only: nothing is rated).
+    // It opens Sorting Help at that helper: what it has been measured to be worth comes first.
+    let sp = ui.button(egui::RichText::new(crate::i18n::tr("Suggested picks")).font(t.font(12.5)));
+    register(ui.ctx(), "button:suggestedPicks", sp.rect);
+    let sp = sp.on_hover_text(crate::i18n::tr(
+        "Shows the unrated photos your taste model likes best (learned from your stars: taste.train). Nothing is rated.",
+    ));
+    if sp.clicked() {
+        let _ = app.run("dialog.sortingHelp", json!({"section": "picks"}));
+    }
     // filter presets: apply one, save the current filter, delete
     let presets = crate::widgets::dropdown(ui, "filterPresets", crate::i18n::tr("Presets"), t.font(12.5), t.text);
     register(ui.ctx(), "button:filterPresets", presets.rect);

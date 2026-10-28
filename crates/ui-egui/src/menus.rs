@@ -191,6 +191,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("workspace.classify.places", "Classify Places", None, ""),
     ("workspace.classify.keywords", "Classify Keywords", None, ""),
     ("workspace.classify.rename", "Preview Batch Rename", None, ""),
+    ("dialog.sortingHelp", "Sorting Help…", None, "Photo"),
     ("flow.cullRun", "AI Culling…", None, "Photo"),
     ("flow.cullCancel", "Stop AI Culling", None, "Photo"),
     ("flow.oneClick", "Cull and Retouch in One Click…", None, "Photo"),
@@ -1738,6 +1739,13 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             app.ui.dialog = Some(Dialog::Cull { reject_below: 0.0, pick_best: true, burst_gap, similarity });
             Ok(Value::Null)
         }
+        "dialog.sortingHelp" => {
+            // {section?: "culling" | "picks" | "keywords"}: the helpers' own entry points open it there
+            let section = p.get("section").and_then(Value::as_str).and_then(crate::panels::sorting_help::Section::parse).unwrap_or_default();
+            crate::panels::sorting_help::open(app, section);
+            Ok(Value::Null)
+        }
+        "keywords.suggest" if crate::heavy::wanted(p) => crate::heavy::suggest(app, p),
         "app.whatsNew" => {
             app.ui.dialog = Some(Dialog::WhatsNew);
             Ok(json!({"text": crate::panels::dialogs::WHATS_NEW}))
