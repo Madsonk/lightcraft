@@ -183,6 +183,12 @@ fn group_of(p: &Photo) -> u64 {
     h.finish()
 }
 
+/// Whether the edit moves any slider a style can learn (imported defaults and crops do not count).
+fn moves_sliders(d: &DevelopSettings) -> bool {
+    let info = lightcraft_pipeline::SourceInfo::default();
+    targets::from_settings(d, &info).iter().zip(targets::TARGETS.iter()).any(|(v, sp)| v.abs() >= sp.dead_zone)
+}
+
 fn is_image(p: &Photo) -> bool {
     !p.deleted && matches!(p.kind, MediaKind::Image | MediaKind::Raw)
 }
@@ -220,11 +226,19 @@ fn launch_train(job: Arc<Mutex<TrainJob>>, inputs: Vec<TrainInput>, cfg: Config,
                 let (mut samples, mut failed, mut unedited) = (Vec::new(), Vec::new(), 0usize);
                 for (inp, row) in inputs.iter().zip(rows) {
                     match row {
+                        Some(Ok(Some(s))) if !s.features.iter().all(|v| v.is_finite()) => failed.push((inp.id.0, "non-finite measurements".to_string())),
+                        Some(Ok(Some(s))) if !s.targets.iter().all(|v| v.is_finite()) => failed.push((inp.id.0, "non-finite edit values".to_string())),
                         Some(Ok(Some(s))) => samples.push(s),
                         Some(Ok(None)) => unedited += 1,
                         Some(Err(e)) => failed.push((inp.id.0, e)),
                         None => {}
                     }
+                }
+                // keep what was read even when the learning then refuses (too few usable photos)
+                {
+                    let mut j = lock(&job);
+                    j.failed = failed.clone();
+                    j.unedited = unedited;
                 }
                 let mut progress = |f: f32| {
                     learned.store(f.to_bits(), Ordering::Relaxed);
@@ -354,11 +368,10 @@ fn train(s: &mut Session, p: &Value) -> Result<Value> {
         s.catalog.photos().filter(|ph| is_image(ph)).map(|ph| ph.id).collect()
     };
     // only photos that carry an edit are examples of a style; the pixels decide the rest
-    let default = DevelopSettings::default();
     let mut inputs = Vec::new();
     for id in ids {
         let Some(ph) = s.catalog.photo(id).cloned() else { continue };
-        if !is_image(&ph) || *ph.develop == default {
+        if !is_image(&ph) || !moves_sliders(&ph.develop) {
             continue;
         }
         if let Source::File { path } = &ph.source
@@ -1053,8 +1066,8 @@ fn list(s: &mut Session) -> Result<Value> {
     let all = profiles(s);
     let rows: Vec<Value> = all.values().map(|m| profile_row(m, m.to_json().len())).collect();
     // how many photos could teach a style today, so the empty state can say what is missing
-    let default = DevelopSettings::default();
-    let edited = s.catalog.photos().filter(|p| is_image(p) && *p.develop != default).count();
+    // (a photo counts when one of the learnable sliders is really moved: imported defaults do not)
+    let edited = s.catalog.photos().filter(|p| is_image(p) && moves_sliders(&p.develop)).count();
     Ok(json!({"profiles": rows, "editedPhotos": edited, "sliders": targets::TARGETS.iter().map(|t| json!({"id": t.id, "label": t.label})).collect::<Vec<_>>()}))
 }
 

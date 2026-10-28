@@ -18,7 +18,8 @@ pub struct TargetFit {
     /// `false`: the data did not predict this slider better than the photographer's median, so the
     /// profile only suggests the median (and `apply` can skip it).
     pub learned: bool,
-    /// The photographer's median value of this slider over the training photos.
+    /// What is suggested when the slider is not learned: the photographer's median over the training
+    /// photos, or 0 when leaving the slider alone had the smaller held-out error.
     pub median: f32,
     /// Share of training photos where the slider is moved at all.
     pub used_share: f32,

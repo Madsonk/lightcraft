@@ -27,7 +27,8 @@ pub struct Config {
     pub seed: u64,
     pub lambdas: Vec<f32>,
     pub min_samples: usize,
-    /// A slider counts as learned only if its model error is below this share of the median's.
+    /// A slider counts as learned only if its model error is below this share of the better of the
+    /// median's and "no adjustment" (held-out error).
     pub gate: f32,
 }
 
@@ -169,8 +170,10 @@ pub fn train(samples: &[Sample], name: &str, trained: &str, cfg: &Config, progre
         let used = truth_all.iter().filter(|v| v.abs() >= spec.dead_zone).count() as f32 / truth_all.len().max(1) as f32;
         fits.push(TargetFit {
             id: spec.id.to_string(),
-            learned: mae_model < cfg.gate * mae_median && mae_median > 1e-6,
-            median: med_all,
+            // learned only if it beats BOTH baselines held out: the photographer's median and leaving the slider alone
+            learned: mae_model < cfg.gate * mae_median.min(mae_none) && mae_median.min(mae_none) > 1e-6,
+            // what is suggested when the slider is not learned: the median, or nothing if nothing was better held out
+            median: if mae_none <= mae_median { 0.0 } else { med_all },
             used_share: used,
             ridge: Some(r),
             mae_model,
@@ -277,5 +280,34 @@ mod tests {
     fn one_shoot_only_falls_back_to_photo_folds_and_says_so() {
         let m = fit(40, 1, 6);
         assert_eq!(m.summary.split, "photo");
+    }
+
+    /// `cargo test -p lightcraft-style --release report -- --ignored --nocapture`: the numbers of
+    /// docs/style-ai.md (synthetic photographer with a known rule; the last slider is pure noise).
+    #[test]
+    #[ignore]
+    fn report() {
+        for (n, shoots) in [(60usize, 6usize), (222, 22), (1000, 60)] {
+            let samples = synth::samples(n, shoots, 41);
+            let t0 = std::time::Instant::now();
+            let m = train(&samples, "report", "2026-10-28T00:00:00", &Config::default(), &mut |_| true).unwrap();
+            let secs = t0.elapsed().as_secs_f32();
+            let fresh = synth::samples(300, 30, 977);
+            let t1 = std::time::Instant::now();
+            let preds: Vec<_> = fresh.iter().map(|s| m.predict(&s.features).unwrap()).collect();
+            let infer_us = t1.elapsed().as_secs_f32() * 1e6 / fresh.len() as f32;
+            println!("== {n} training photos in {shoots} shoots: train {secs:.2}s, predict {infer_us:.1} us/photo (features excluded), profile {} bytes, learned {}/14, split {}", m.to_json().len(), m.summary.learned_targets, m.summary.split);
+            println!("{:<18}{:>8}{:>10}{:>10}{:>10}{:>10}", "slider", "learned", "cv model", "cv median", "held model", "held none/median");
+            for (i, f) in m.fits.iter().enumerate() {
+                let (mut em, mut emed, mut en) = (0f32, 0f32, 0f32);
+                for (p, s) in preds.iter().zip(&fresh) {
+                    em += (p[i] - s.targets[i]).abs();
+                    emed += (f.median - s.targets[i]).abs();
+                    en += s.targets[i].abs();
+                }
+                let k = fresh.len() as f32;
+                println!("{:<18}{:>8}{:>10.2}{:>10.2}{:>10.2}   {:.2} / {:.2}", f.id, f.learned, f.mae_model, f.mae_median, em / k, en / k, emed / k);
+            }
+        }
     }
 }

@@ -181,3 +181,49 @@ fn bad_parameters_are_errors_not_panics() {
         assert!(s.execute(cmd, &p).is_err(), "{cmd} {p}");
     }
 }
+
+/// Real data (not run by default): `LC_LRCAT=<copy of a .lrcat> cargo test -p lightcraft-engine
+/// real_catalog_report -- --ignored --nocapture`. Imports the catalogue read-only into an empty
+/// session, learns a style from the edited photos whose original is on disk and prints the
+/// measured error against "no adjustment" and "median adjustment".
+#[test]
+#[ignore]
+fn real_catalog_report() {
+    let Ok(path) = std::env::var("LC_LRCAT") else { return };
+    let mut s = Session::new().with_fs();
+    let r = s.execute("library.importLightroom", &json!({"path": path})).unwrap();
+    println!("import: {}", r.to_string().chars().take(400).collect::<String>());
+    let list = s.execute("style.list", &json!({})).unwrap();
+    println!("edited photos with their original: {}", list["editedPhotos"]);
+    let t0 = std::time::Instant::now();
+    let r = s.execute("style.train", &json!({"name": "Madson", "minPhotos": 12, "folds": 5, "wait": true}));
+    println!("train wall time {:.1}s", t0.elapsed().as_secs_f32());
+    let r = match r {
+        Ok(v) => v,
+        Err(e) => {
+            println!("train failed: {e}");
+            return;
+        }
+    };
+    println!("train result: {}", r.to_string().chars().take(600).collect::<String>());
+    let st = s.execute("style.status", &json!({})).unwrap();
+    println!("status: {}", st["train"].to_string().chars().take(600).collect::<String>());
+    let list = s.execute("style.list", &json!({})).unwrap();
+    let p = &list["profiles"][0];
+    println!(
+        "samples {} shoots {} split {} learned {}/{} skillVsNone {:.3} skillVsMedian {:.3} bytes {} trainSeconds {:.2}",
+        p["samples"], p["shoots"], p["split"], p["learned"], p["targets"], p["skillVsNone"].as_f64().unwrap_or(0.0), p["skillVsMedian"].as_f64().unwrap_or(0.0), p["bytes"], p["trainSeconds"].as_f64().unwrap_or(0.0)
+    );
+    println!("{:<18}{:>8}{:>10}{:>10}{:>10}{:>8}", "slider", "learned", "cv model", "cv median", "cv none", "used%");
+    for f in p["sliders"].as_array().unwrap() {
+        println!(
+            "{:<18}{:>8}{:>10.2}{:>10.2}{:>10.2}{:>8.0}",
+            f["id"].as_str().unwrap_or(""),
+            f["learned"],
+            f["maeModel"].as_f64().unwrap_or(0.0),
+            f["maeMedian"].as_f64().unwrap_or(0.0),
+            f["maeNone"].as_f64().unwrap_or(0.0),
+            100.0 * f["usedShare"].as_f64().unwrap_or(0.0)
+        );
+    }
+}
