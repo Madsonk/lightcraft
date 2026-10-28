@@ -28,7 +28,6 @@ pub mod contact_sheet;
 pub mod crs;
 pub mod crs_masks;
 pub mod cull_job;
-pub mod style_job;
 pub mod demo;
 pub mod denoise;
 pub mod describe;
@@ -89,6 +88,7 @@ pub mod slide_title;
 pub mod slideshow;
 pub mod slideshow_export;
 pub mod smart;
+pub mod style_job;
 pub mod sync;
 pub mod text;
 pub mod video;
@@ -1411,8 +1411,6 @@ mod tests_crop_aspect;
 #[cfg(test)]
 mod tests_cull;
 #[cfg(test)]
-mod tests_style;
-#[cfg(test)]
 mod tests_denoise;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_describe;
@@ -1490,6 +1488,8 @@ mod tests_slide;
 mod tests_slideshow_export;
 #[cfg(test)]
 mod tests_spots;
+#[cfg(test)]
+mod tests_style;
 #[cfg(test)]
 mod tests_sync;
 #[cfg(all(test, not(target_arch = "wasm32")))]

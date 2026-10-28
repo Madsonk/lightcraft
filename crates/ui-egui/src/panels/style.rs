@@ -65,7 +65,9 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
         design::status_line(ui, State::Busy, &tr("Learning how you edit…"));
         bar(ui, train["percent"].as_f64().unwrap_or(0.0));
         ui.label(
-            RichText::new(format!("{} / {}", train["measured"].as_u64().unwrap_or(0), train["total"].as_u64().unwrap_or(0))).size(11.0).color(t.text_dim),
+            RichText::new(format!("{} / {}", train["measured"].as_u64().unwrap_or(0), train["total"].as_u64().unwrap_or(0)))
+                .size(11.0)
+                .color(t.text_dim),
         );
         if design::button(ui, "styleStop", &tr("Stop"), Kind::Quiet, true).clicked() {
             let _ = app.run("style.cancel", json!({}));
@@ -85,12 +87,12 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
                 .color(t.text_dim),
         );
         if edited < MIN_PHOTOS {
-            design::status_line(
-                ui,
-                State::Info,
-                &format!("{edited} {} {}", tr("edited photos found, at least"), MIN_PHOTOS),
+            design::status_line(ui, State::Info, &format!("{edited} {} {}", tr("edited photos found, at least"), MIN_PHOTOS));
+            ui.label(
+                RichText::new(tr("Import your Lightroom catalogue (File ▸ Import Lightroom Catalog) or edit more photos, then come back."))
+                    .size(11.0)
+                    .color(t.text_dim),
             );
-            ui.label(RichText::new(tr("Import your Lightroom catalogue (File ▸ Import Lightroom Catalog) or edit more photos, then come back.")).size(11.0).color(t.text_dim));
         } else if design::button(ui, "styleTrain", &tr("Learn my style"), Kind::Primary, true).clicked() {
             let _ = app.run("style.train", json!({}));
         }
@@ -100,7 +102,11 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
     let samples = profile["samples"].as_u64().unwrap_or(0);
     let learned = profile["learned"].as_u64().unwrap_or(0);
     let total = profile["targets"].as_u64().unwrap_or(0);
-    design::status_line(ui, State::Ok, &format!("{} · {} {} · {learned}/{total} {}", profile["name"].as_str().unwrap_or(""), samples, tr("photos"), tr("settings learned")));
+    design::status_line(
+        ui,
+        State::Ok,
+        &format!("{} · {} {} · {learned}/{total} {}", profile["name"].as_str().unwrap_or(""), samples, tr("photos"), tr("settings learned")),
+    );
     let none = profile["skillVsNone"].as_f64().unwrap_or(0.0);
     let median = profile["skillVsMedian"].as_f64().unwrap_or(0.0);
     ui.label(
@@ -128,7 +134,11 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
     if ui.add(egui::Slider::new(&mut s, 0.0..=100.0).text(tr("Strength")).integer()).changed() {
         put(ui, "styleStrength", s / 100.0);
     }
-    if ui.add(egui::Slider::new(&mut c, 0.0..=100.0).text(tr("Series consistency")).integer()).on_hover_text(tr("Photos of one shoot get the same style, adapted to each photo's exposure")).changed() {
+    if ui
+        .add(egui::Slider::new(&mut c, 0.0..=100.0).text(tr("Series consistency")).integer())
+        .on_hover_text(tr("Photos of one shoot get the same style, adapted to each photo's exposure"))
+        .changed()
+    {
         put(ui, "styleConsistency", c / 100.0);
     }
     let apply = &status["apply"];
@@ -160,7 +170,14 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
         design::status_line(
             ui,
             if changes > 0 { State::Info } else { State::Warning },
-            &format!("{changes} {} · {} {} · {} {}", tr("photos would change"), apply["series"].as_u64().unwrap_or(0), tr("series"), skipped, tr("already edited, kept")),
+            &format!(
+                "{changes} {} · {} {} · {} {}",
+                tr("photos would change"),
+                apply["series"].as_u64().unwrap_or(0),
+                tr("series"),
+                skipped,
+                tr("already edited, kept")
+            ),
         );
         if failed > 0 {
             design::status_line(ui, State::Warning, &format!("{failed} {}", tr("photos could not be read")));
@@ -178,7 +195,12 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
             if let Some(row) = rows.iter().find(|r| r["id"].as_u64() == Some(id)) {
                 let line: Vec<String> = row["sliders"]
                     .as_array()
-                    .map(|a| a.iter().take(6).map(|x| format!("{} {:+}", tr(slider_label(x["id"].as_str().unwrap_or(""))), x["value"].as_f64().unwrap_or(0.0))).collect())
+                    .map(|a| {
+                        a.iter()
+                            .take(6)
+                            .map(|x| format!("{} {:+}", tr(slider_label(x["id"].as_str().unwrap_or(""))), x["value"].as_f64().unwrap_or(0.0)))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 ui.label(RichText::new(line.join(" · ")).size(10.5).color(t.text_dim));
             }
@@ -188,7 +210,9 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
                 let label = format!("{} ({changes})", tr("Apply my style"));
                 if design::button(ui, "styleApply", &label, Kind::Primary, true).clicked() {
                     match app.run("style.apply", json!({"mode": "apply", "confirm": true})) {
-                        Ok(v) => app.toast(ui.ctx(), format!("{} {}", v["changed"].as_u64().unwrap_or(0), tr("photos styled — Undo reverts all of them"))),
+                        Ok(v) => {
+                            app.toast(ui.ctx(), format!("{} {}", v["changed"].as_u64().unwrap_or(0), tr("photos styled — Undo reverts all of them")))
+                        }
                         Err(e) => app.toast(ui.ctx(), e),
                     }
                 }
@@ -199,7 +223,10 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
         });
     }
     ui.add_space(2.0);
-    if text_button(ui, "styleRetrain", &tr("Learn again"), false).on_hover_text(tr("Replaces this profile with a new one from your edited photos")).clicked() {
+    if text_button(ui, "styleRetrain", &tr("Learn again"), false)
+        .on_hover_text(tr("Replaces this profile with a new one from your edited photos"))
+        .clicked()
+    {
         let _ = app.run("style.train", json!({}));
     }
     egui::CollapsingHeader::new(RichText::new(tr("What was measured")).font(t.semibold(11.5))).id_salt("styleMeasured").default_open(false).show(ui, |ui| {
@@ -286,16 +313,21 @@ fn auto_crop(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Va
     let n = fr["suggestions"].as_u64().unwrap_or(0);
     if n == 0 {
         let why = rows.first().and_then(|r| r["reason"].as_str()).unwrap_or("");
-        design::status_line(ui, State::Ok, &if why.is_empty() { tr("Nothing to suggest: framing and horizon look fine.").to_string() } else { why.to_string() });
+        design::status_line(
+            ui,
+            State::Ok,
+            &if why.is_empty() { tr("Nothing to suggest: framing and horizon look fine.").to_string() } else { why.to_string() },
+        );
         return;
     }
     design::status_line(ui, State::Info, &format!("{n} {}", tr("suggestions")));
-    let review = app.session.active().map(|i| i.0).filter(|i| app.session.framing_proposal(lightcraft_catalog::PhotoId(*i)).is_some()).or_else(|| {
-        rows.iter().find_map(|r| {
-            let id = r["id"].as_u64()?;
-            app.session.framing_proposal(lightcraft_catalog::PhotoId(id)).map(|_| id)
-        })
-    });
+    let review =
+        app.session.active().map(|i| i.0).filter(|i| app.session.framing_proposal(lightcraft_catalog::PhotoId(*i)).is_some()).or_else(|| {
+            rows.iter().find_map(|r| {
+                let id = r["id"].as_u64()?;
+                app.session.framing_proposal(lightcraft_catalog::PhotoId(id)).map(|_| id)
+            })
+        });
     if let Some(id) = review {
         let after = app.session.framing_proposal(lightcraft_catalog::PhotoId(id));
         pair(app, ui, id, after);
@@ -337,7 +369,8 @@ fn pair(app: &mut LightcraftApp, ui: &mut egui::Ui, active: u64, after: Option<l
     let tile = vec2(((w - gap) / 2.0).max(60.0), ((w - gap) / 2.0 * 0.66).max(40.0));
     let (r, _) = ui.allocate_exact_size(vec2(w, tile.y + 18.0), egui::Sense::hover());
     let before = app.session.develop_of(id).map(|d| (*d).clone()).unwrap_or_default();
-    let looks: [(&str, Option<lightcraft_develop::DevelopSettings>, &str); 2] = [("Before", Some(before), "styleBefore"), ("After", after, "styleAfter")];
+    let looks: [(&str, Option<lightcraft_develop::DevelopSettings>, &str); 2] =
+        [("Before", Some(before), "styleBefore"), ("After", after, "styleAfter")];
     for (i, (label, settings, wid)) in looks.into_iter().enumerate() {
         let rect = Rect::from_min_size(r.min + vec2(i as f32 * (tile.x + gap), 0.0), tile);
         crate::widgets::register(ui.ctx(), format!("image:{wid}"), rect);

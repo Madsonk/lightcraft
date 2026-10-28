@@ -183,11 +183,7 @@ pub fn train(samples: &[Sample], name: &str, trained: &str, cfg: &Config, progre
     }
     let moved: Vec<&TargetFit> = fits.iter().filter(|f| f.mae_none > 1e-3 && f.used_share >= 0.1).collect();
     let skill = |f: fn(&TargetFit) -> f32| {
-        if moved.is_empty() {
-            0.0
-        } else {
-            moved.iter().map(|t| 1.0 - t.mae_model / f(t).max(1e-6)).sum::<f32>() / moved.len() as f32
-        }
+        if moved.is_empty() { 0.0 } else { moved.iter().map(|t| 1.0 - t.mae_model / f(t).max(1e-6)).sum::<f32>() / moved.len() as f32 }
     };
     let summary = Summary {
         folds: k,
@@ -228,7 +224,11 @@ mod tests {
         let m = fit(150, 15, 3);
         assert_eq!(m.summary.split, "shoot");
         assert!(m.fits[id("exposure")].learned, "exposure follows auto exposure");
-        assert!(m.fits[id("shadows")].learned, "{:?}", m.fits.iter().map(|f| (f.id.clone(), f.learned, f.mae_model, f.mae_median)).collect::<Vec<_>>());
+        assert!(
+            m.fits[id("shadows")].learned,
+            "{:?}",
+            m.fits.iter().map(|f| (f.id.clone(), f.learned, f.mae_model, f.mae_median)).collect::<Vec<_>>()
+        );
         assert!(!m.fits[id("curve_shadows")].learned, "pure noise must not be learned: {:?}", m.fits[id("curve_shadows")]);
         assert!(m.summary.skill_vs_none > 0.3, "{:?}", m.summary);
         // on photos it never saw the model beats both baselines on the learned sliders
@@ -296,7 +296,12 @@ mod tests {
             let t1 = std::time::Instant::now();
             let preds: Vec<_> = fresh.iter().map(|s| m.predict(&s.features).unwrap()).collect();
             let infer_us = t1.elapsed().as_secs_f32() * 1e6 / fresh.len() as f32;
-            println!("== {n} training photos in {shoots} shoots: train {secs:.2}s, predict {infer_us:.1} us/photo (features excluded), profile {} bytes, learned {}/14, split {}", m.to_json().len(), m.summary.learned_targets, m.summary.split);
+            println!(
+                "== {n} training photos in {shoots} shoots: train {secs:.2}s, predict {infer_us:.1} us/photo (features excluded), profile {} bytes, learned {}/14, split {}",
+                m.to_json().len(),
+                m.summary.learned_targets,
+                m.summary.split
+            );
             println!("{:<18}{:>8}{:>10}{:>10}{:>10}{:>10}", "slider", "learned", "cv model", "cv median", "held model", "held none/median");
             for (i, f) in m.fits.iter().enumerate() {
                 let (mut em, mut emed, mut en) = (0f32, 0f32, 0f32);

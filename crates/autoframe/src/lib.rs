@@ -222,12 +222,8 @@ pub fn suggest_crop(req: &CropRequest) -> Option<CropSuggestion> {
     let full_frame = lightcraft_geom::crop_fit_angle(w, h, req.angle, Some(aspect));
     // subjects into the rotated frame, in pixels
     let rot = lightcraft_geom::Affine::rotate_about(req.angle.to_radians(), Point::new(w / 2.0, h / 2.0));
-    let subjects: Vec<(Rect, f64)> = req
-        .subjects
-        .iter()
-        .map(|s| (rot.transform_rect_bbox(&s.rect.scale(w, h)), s.weight))
-        .filter(|(r, _)| !r.is_empty())
-        .collect();
+    let subjects: Vec<(Rect, f64)> =
+        req.subjects.iter().map(|s| (rot.transform_rect_bbox(&s.rect.scale(w, h)), s.weight)).filter(|(r, _)| !r.is_empty()).collect();
     if subjects.is_empty() {
         return None;
     }

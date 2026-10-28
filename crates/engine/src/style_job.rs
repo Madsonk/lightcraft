@@ -17,10 +17,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use lightcraft_autoframe::{self as framing, CropRequest, Subject};
 use lightcraft_catalog::{MediaKind, Op, Photo, PhotoId, Source};
 use lightcraft_develop::DevelopSettings;
 use lightcraft_geom::{CropGeometry, Rect};
-use lightcraft_autoframe::{self as framing, CropRequest, Subject};
 use lightcraft_style::{Config, Sample, StyleModel, targets};
 use serde_json::{Value, json};
 use web_time::Instant;
@@ -76,7 +76,11 @@ fn flag(p: &Value, key: &str, default: bool, c: &str) -> Result<bool> {
 fn unit(p: &Value, key: &str, default: f32, c: &str) -> Result<f32> {
     match p.get(key) {
         None | Some(Value::Null) => Ok(default),
-        Some(v) => v.as_f64().filter(|n| n.is_finite() && (0.0..=1.0).contains(n)).map(|n| n as f32).ok_or_else(|| bad(c, format!("{key} must be a number 0..1"))),
+        Some(v) => v
+            .as_f64()
+            .filter(|n| n.is_finite() && (0.0..=1.0).contains(n))
+            .map(|n| n as f32)
+            .ok_or_else(|| bad(c, format!("{key} must be a number 0..1"))),
     }
 }
 
@@ -84,7 +88,11 @@ fn name_of(p: &Value, c: &str) -> Result<String> {
     match p.get("name").or_else(|| p.get("profile")) {
         None | Some(Value::Null) => Ok(DEFAULT_NAME.to_string()),
         Some(v) => {
-            let n = v.as_str().map(str::trim).filter(|n| !n.is_empty() && n.chars().count() <= 60).ok_or_else(|| bad(c, "name must be 1..60 characters"))?;
+            let n = v
+                .as_str()
+                .map(str::trim)
+                .filter(|n| !n.is_empty() && n.chars().count() <= 60)
+                .ok_or_else(|| bad(c, "name must be 1..60 characters"))?;
             Ok(n.to_string())
         }
     }
@@ -194,7 +202,13 @@ fn is_image(p: &Photo) -> bool {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn launch_train(job: Arc<Mutex<TrainJob>>, inputs: Vec<TrainInput>, cfg: Config, trained: String, dir: Option<PathBuf>) -> std::result::Result<(), String> {
+fn launch_train(
+    job: Arc<Mutex<TrainJob>>,
+    inputs: Vec<TrainInput>,
+    cfg: Config,
+    trained: String,
+    dir: Option<PathBuf>,
+) -> std::result::Result<(), String> {
     let (measured, learned, cancel, name) = {
         let j = lock(&job);
         (j.measured.clone(), j.learned.clone(), j.cancel.clone(), j.name.clone())
@@ -226,8 +240,12 @@ fn launch_train(job: Arc<Mutex<TrainJob>>, inputs: Vec<TrainInput>, cfg: Config,
                 let (mut samples, mut failed, mut unedited) = (Vec::new(), Vec::new(), 0usize);
                 for (inp, row) in inputs.iter().zip(rows) {
                     match row {
-                        Some(Ok(Some(s))) if !s.features.iter().all(|v| v.is_finite()) => failed.push((inp.id.0, "non-finite measurements".to_string())),
-                        Some(Ok(Some(s))) if !s.targets.iter().all(|v| v.is_finite()) => failed.push((inp.id.0, "non-finite edit values".to_string())),
+                        Some(Ok(Some(s))) if !s.features.iter().all(|v| v.is_finite()) => {
+                            failed.push((inp.id.0, "non-finite measurements".to_string()))
+                        }
+                        Some(Ok(Some(s))) if !s.targets.iter().all(|v| v.is_finite()) => {
+                            failed.push((inp.id.0, "non-finite edit values".to_string()))
+                        }
                         Some(Ok(Some(s))) => samples.push(s),
                         Some(Ok(None)) => unedited += 1,
                         Some(Err(e)) => failed.push((inp.id.0, e)),
@@ -462,7 +480,14 @@ struct PlanInput {
 struct Mask([bool; targets::N_TARGETS]);
 
 #[cfg(not(target_arch = "wasm32"))]
-fn launch_plan(job: Arc<Mutex<PlanJob>>, inputs: Vec<PlanInput>, model: StyleModel, mask: Mask, overwrite: bool, groups: usize) -> std::result::Result<(), String> {
+fn launch_plan(
+    job: Arc<Mutex<PlanJob>>,
+    inputs: Vec<PlanInput>,
+    model: StyleModel,
+    mask: Mask,
+    overwrite: bool,
+    groups: usize,
+) -> std::result::Result<(), String> {
     let (progress, cancel, strength, consistency) = {
         let j = lock(&job);
         (j.progress.clone(), j.cancel.clone(), j.strength, j.consistency)
@@ -636,7 +661,9 @@ fn preview(s: &mut Session, p: &Value) -> Result<Value> {
     let name = name_of(p, C)?;
     let model = match all.get(&name) {
         Some(m) => m.clone(),
-        None if p.get("name").is_none() && p.get("profile").is_none() && all.len() == 1 => all.values().next().cloned().ok_or_else(|| bad(C, "no profile"))?,
+        None if p.get("name").is_none() && p.get("profile").is_none() && all.len() == 1 => {
+            all.values().next().cloned().ok_or_else(|| bad(C, "no profile"))?
+        }
         None => return Err(bad(C, format!("no style profile named \"{name}\" (style.list, style.train)"))),
     };
     let strength = unit(p, "strength", 1.0, C)?;
@@ -653,7 +680,8 @@ fn preview(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(C, "no photos to style (videos and deleted photos are skipped)"));
     }
     let series = group_photos(photos.clone());
-    let group_index: std::collections::HashMap<PhotoId, usize> = series.iter().enumerate().flat_map(|(g, ids)| ids.iter().map(move |id| (*id, g))).collect();
+    let group_index: std::collections::HashMap<PhotoId, usize> =
+        series.iter().enumerate().flat_map(|(g, ids)| ids.iter().map(move |id| (*id, g))).collect();
     let mut inputs = Vec::with_capacity(photos.len());
     for ph in &photos {
         let source = s.media.source_ref_uncached(ph, SourceLevel::Thumb);
@@ -833,8 +861,10 @@ fn frame_one(inp: &FrameInput, opts: &FrameOptions) -> FrameRow {
             FrameRow {
                 id: inp.id,
                 before: inp.develop.clone(),
-                report: head(json!({"suggestion": usable.then_some(json!({"angle": (x.angle * 100.0).round() / 100.0, "confidence": x.confidence, "kind": x.kind, "lines": x.lines, "horizonY": x.horizon_y})),
-                    "reason": if !usable { json!("the detected lines disagree: not sure enough to suggest") } else if x.angle.abs() < 0.1 { json!("already level") } else { Value::Null }})),
+                report: head(
+                    json!({"suggestion": usable.then_some(json!({"angle": (x.angle * 100.0).round() / 100.0, "confidence": x.confidence, "kind": x.kind, "lines": x.lines, "horizonY": x.horizon_y})),
+                    "reason": if !usable { json!("the detected lines disagree: not sure enough to suggest") } else if x.angle.abs() < 0.1 { json!("already level") } else { Value::Null }}),
+                ),
                 proposed,
             }
         }
@@ -844,7 +874,11 @@ fn frame_one(inp: &FrameInput, opts: &FrameOptions) -> FrameRow {
             let mut subjects: Vec<Subject> = inp
                 .faces
                 .iter()
-                .map(|f| Subject { rect: Rect::new(f[0] as f64, f[1] as f64, f[2] as f64, f[3] as f64).inflate(0.01, 0.01), weight: 1.0, kind: "visage" })
+                .map(|f| Subject {
+                    rect: Rect::new(f[0] as f64, f[1] as f64, f[2] as f64, f[3] as f64).inflate(0.01, 0.01),
+                    weight: 1.0,
+                    kind: "visage",
+                })
                 .collect();
             if subjects.is_empty()
                 && let Some(sub) = framing::saliency_subject(src)
@@ -852,7 +886,14 @@ fn frame_one(inp: &FrameInput, opts: &FrameOptions) -> FrameRow {
                 subjects.push(sub);
             }
             let aspect = opts.aspect.map(|(a, b)| a as f64 / b.max(1) as f64);
-            let req = CropRequest { width: w, height: h, angle, aspect, subjects, horizon: st.as_ref().filter(|x| x.confidence >= 0.5).and_then(|x| x.horizon_y) };
+            let req = CropRequest {
+                width: w,
+                height: h,
+                angle,
+                aspect,
+                subjects,
+                horizon: st.as_ref().filter(|x| x.confidence >= 0.5).and_then(|x| x.horizon_y),
+            };
             let Some(c) = framing::suggest_crop(&req) else {
                 // no better framing, but a straighten alone may still be worth proposing
                 let mut d = (*inp.develop).clone();
@@ -879,8 +920,10 @@ fn frame_one(inp: &FrameInput, opts: &FrameOptions) -> FrameRow {
             FrameRow {
                 id: inp.id,
                 before: inp.develop.clone(),
-                report: head(json!({"suggestion": {"rect": c.rect, "angle": c.angle, "kept": c.kept, "score": c.score, "scoreFull": c.score_full, "reasons": c.reasons},
-                    "straightenConfidence": st.as_ref().map(|x| x.confidence)})),
+                report: head(
+                    json!({"suggestion": {"rect": c.rect, "angle": c.angle, "kept": c.kept, "score": c.score, "scoreFull": c.score_full, "reasons": c.reasons},
+                    "straightenConfidence": st.as_ref().map(|x| x.confidence)}),
+                ),
                 proposed,
             }
         }
@@ -909,7 +952,11 @@ fn launch_frame(job: Arc<Mutex<FrameJob>>, inputs: Vec<FrameInput>, opts: FrameO
                         Some(r)
                     })
                     .collect();
-                if cancel.load(Ordering::Relaxed) || rows.iter().any(Option::is_none) { None } else { Some(rows.into_iter().flatten().collect::<Vec<_>>()) }
+                if cancel.load(Ordering::Relaxed) || rows.iter().any(Option::is_none) {
+                    None
+                } else {
+                    Some(rows.into_iter().flatten().collect::<Vec<_>>())
+                }
             });
             let mut j = lock(&job);
             j.elapsed = Some(j.started.elapsed());
@@ -960,7 +1007,8 @@ fn suggest_frames(s: &mut Session, p: &Value, kind: FrameKind) -> Result<Value> 
     let aspect = parse_aspect(p.get("aspect"), c)?;
     let straighten_first = flag(p, "straighten", true, c)?;
     let min_confidence = unit(p, "minConfidence", 0.6, c)?;
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() { checked_targets(s, c, p)? } else { s.active().into_iter().collect() };
+    let ids: Vec<PhotoId> =
+        if p.get("ids").is_some() || p.get("id").is_some() { checked_targets(s, c, p)? } else { s.active().into_iter().collect() };
     if ids.is_empty() {
         return Err(bad(c, "no photo selected: pass id or ids"));
     }
@@ -1068,7 +1116,9 @@ fn list(s: &mut Session) -> Result<Value> {
     // how many photos could teach a style today, so the empty state can say what is missing
     // (a photo counts when one of the learnable sliders is really moved: imported defaults do not)
     let edited = s.catalog.photos().filter(|p| is_image(p) && moves_sliders(&p.develop)).count();
-    Ok(json!({"profiles": rows, "editedPhotos": edited, "sliders": targets::TARGETS.iter().map(|t| json!({"id": t.id, "label": t.label})).collect::<Vec<_>>()}))
+    Ok(
+        json!({"profiles": rows, "editedPhotos": edited, "sliders": targets::TARGETS.iter().map(|t| json!({"id": t.id, "label": t.label})).collect::<Vec<_>>()}),
+    )
 }
 
 fn cancel(s: &mut Session) -> Result<Value> {

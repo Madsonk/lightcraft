@@ -36,8 +36,9 @@ pub fn image(seed: u64) -> Rgb32f {
     let horizon = r.range(0.3, 0.7);
     let sky = [r.range(0.2, 0.5), r.range(0.3, 0.6), r.range(0.5, 0.9)];
     let ground = [r.range(0.1, 0.4), r.range(0.1, 0.4), r.range(0.05, 0.3)];
-    let blobs: Vec<(f32, f32, f32, [f32; 3])> =
-        (0..3).map(|_| (r.range(0.1, 0.9), r.range(0.1, 0.9), r.range(0.05, 0.2), [r.range(0.0, 1.0), r.range(0.0, 1.0), r.range(0.0, 1.0)])).collect();
+    let blobs: Vec<(f32, f32, f32, [f32; 3])> = (0..3)
+        .map(|_| (r.range(0.1, 0.9), r.range(0.1, 0.9), r.range(0.05, 0.2), [r.range(0.0, 1.0), r.range(0.0, 1.0), r.range(0.0, 1.0)]))
+        .collect();
     Rgb32f::from_fn(96, 64, |x, y| {
         let (u, v) = (x as f32 / 96.0, y as f32 / 64.0);
         let mut c = if v < horizon { sky } else { ground };
