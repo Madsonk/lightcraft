@@ -169,11 +169,13 @@ Limits, measured or not:
 - LightCraft on a **cold** disk cache of the originals (see above) and on a NAS.
 - LightCraft's UI paint times (the benchmark is headless); use `ui.inspect` → `perf` in the running app for those.
 - Culling/analysis models (lot A) and GPU thumbnail rendering.
-- `cargo xtask ci` run on this branch on 27 to 28 Oct 2026 (one run, log kept): `fmt` ok; `clippy --workspace --all-targets -D warnings` ok;
-  `heif` ok; `cargo test --workspace`: every test passes (about 1 000, among them the five new tests of this work) **except two
-  GPU tests in `crates/gpu/src/nn.rs`** (`the_gpu_gives_what_the_reference_gives`, `a_runner_serves_many_tiles_from_many_threads`:
-  "GPU and pure-Rust CPU differ" on Apple M4 / Metal). They fail the same way when the compiled test binary is run again, and
-  `crates/gpu` is not touched by any commit of this work, so they are not caused by it; they were not run on the base commit.
-  The chain stopped there, so `parity`, `layers`, `assets` and `wasm` did not run in it. Run alone, `layers` reports 6 crates
-  missing from its table (`lightcraft-restore`, `-retouch`, `-search`, `-taste`…: other lots' crates) and `assets` reports
-  `crates/codecs/tests/data/*` fixtures without an attribution entry: both predate this work. `parity` and `wasm` were not run (they compile).
+- `cargo xtask ci` on this branch (27 to 28 Oct 2026): `fmt`, `clippy --workspace --all-targets -D warnings` and `heif` ok;
+  `cargo test --workspace`: everything passes except two GPU tests (`the_gpu_gives_what_the_reference_gives`,
+  `a_runner_serves_many_tiles_from_many_threads`, Apple M4 / Metal). They were not caused by this work (`crates/gpu` is identical
+  to the base commit's) and are **fixed by commit `8749fbd2`**: the shared tile `As` of `nn_conv.wgsl` was a `vec4` array
+  written one lane at a time by different invocations, a data race (WGSL lets a component write access the whole vector), so
+  results were wrong (off by 0.83 of the output's size with several threads); one scalar per pixel instead, as in upstream 0.14.0.
+  After it both tests pass 3 runs out of 3 (GPU vs reference within 1e-6, tolerance 2e-4).
+  `cargo xtask parity` ok; `cargo xtask wasm` found a real error of this work (the head probe used a native-only function),
+  fixed in `09f3914e`, then ok for all 30 crates. Run alone, `layers` reports 6 crates of other lots missing from its table
+  and `assets` reports `crates/codecs/tests/data/*` fixtures without an attribution entry: both predate this work and are not fixed here.
