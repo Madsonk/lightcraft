@@ -217,11 +217,13 @@ pub const PROBE_HEAD: usize = 2 << 20;
 /// sampled content key (`ps1-`: size, then 1 MiB from the start, the middle and the end, as for videos) instead of
 /// the hash of every byte. `None` when the head is not enough (not a raw, a variant shown from its preview, a header that
 /// reaches past the head, an unreadable file): the caller then reads the whole file as before.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn probe_head(path: &str) -> Option<ProbeInfo> {
     probe_head_why(path).ok()
 }
 
 /// [`probe_head`] saying why the whole file has to be read instead.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn probe_head_why(path: &str) -> Result<ProbeInfo, String> {
     use std::io::Read;
     let p = std::path::Path::new(path);
@@ -727,6 +729,7 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
         // a big raw is described from its first megabytes and a sampled content key: its 20 to 50 MB are not read
         // (a USB disk or a share reads them at 20 to 30 MB/s). Anything the head does not settle is read whole.
+        #[cfg(not(target_arch = "wasm32"))]
         if len > PROBE_HEAD_MIN
             && let Some(info) = probe_head(path)
         {
