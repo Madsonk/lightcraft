@@ -138,7 +138,7 @@ fn culling_chooses_open_eyes_over_a_slightly_sharper_frame() {
     let flag = |s: &Session, id: PhotoId| s.catalog.photo(id).unwrap().flag;
     assert_eq!(flag(&s, open), Flag::Pick, "{r}");
     assert_eq!(flag(&s, blink), Flag::None);
-    assert_eq!(r["closedEyes"], 1);
+    assert_eq!(r["closedEyes"], 1, "{r}");
     // rejecting closed eyes: the blink goes (no model needed: its photos already have faces)
     s.facemesh.dir = Some(dir.join("no-model"));
     let r = s.execute("photo.analyze", &json!({"ids": ids, "rejectClosedEyes": true})).unwrap();

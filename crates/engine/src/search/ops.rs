@@ -25,7 +25,7 @@ fn other(e: impl Into<String>) -> EngineError {
 
 /// The photos a command works on: `ids` when given, else every photo of the library.
 fn scope(s: &Session, p: &Value) -> Vec<PhotoId> {
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() { s.targets(p)? } else { s.catalog.photos().filter(|q| q.in_library()).map(|q| q.id).collect() };
+    let ids: Vec<PhotoId> = if p.get("ids").is_some() { s.targets(p).unwrap_or_default() } else { s.catalog.photos().filter(|q| q.in_library()).map(|q| q.id).collect() };
     ids.into_iter().filter(|i| s.catalog.photo(*i).is_some_and(|q| q.kind != MediaKind::Video)).collect()
 }
 
