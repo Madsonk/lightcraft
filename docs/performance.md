@@ -63,30 +63,14 @@ LightCraft on 13 camera JPEGs (same size class, `perf_bench run` on a 13-file fo
 **Not equivalent**: Aftershoot's figure spans opening the album screen and its UI, ours is the engine alone with no
 painting. It shows the engine is not the slower side for JPEG thumbnails; it does not prove LightCraft's UI is as fast.
 
-## Optimisation landed: read only the head of a raw for its embedded preview
+## Reading the head of a raw for its embedded preview (upstream 0.14.0's way)
 
-Before, `fs_preview_loader` (grid first paint, neighbour stand-ins, face/analysis scans) read the **whole** raw (12 to 50 MB)
-to extract a 0.3 to 2 MB JPEG. Now it first reads the first 3 MB and takes the preview from there when it is a complete JPEG
-(segments walked to the start of scan, ends with the end-of-image marker: a cut-off file is never accepted, even when it still
-holds the EXIF thumbnail's own marker) of at least the requested size. Otherwise, and for Nikon files (their colour space is
-read from a maker note that may lie further in), it reads the whole file as before. Code: `crates/engine/src/files.rs`
-(`preview_from_prefix`, `is_whole_jpeg`); a bytes counter `files::PREVIEW_BYTES_READ` backs the numbers.
-
-A/B in one process, 60 raw files of the set, same files read both ways:
-
-| Requested edge | Whole file: ms / MB per photo | Prefix: ms / MB per photo | Prefix used |
-|---|---|---|---|
-| 256 px (grid) | 20.4 ms / 20.5 MB | 15.4 ms / 7.0 MB | 68 % of the files |
-| 1024 px (analysis) | 21.1 ms / 20.5 MB | 19.8 ms / 7.0 MB | 68 % |
-| 2560 px (loupe stand-in) | 31.1 ms / 20.5 MB | 32.0 ms / 13.8 MB | 40 % |
-
-Bytes read per photo drop by 66 % (grid, analysis) and 33 % (loupe); the time gain is only −25 % at 256 px here because every
-file was in the page cache. The real gain is expected on a cold card, USB disk or NAS, where reading 20 MB costs far more than
-decoding; that is **not measured** (no `purge` without sudo). End to end the first grid paint went from 479 and 509 ms to
-374 and 397 ms and analysis input from 19.8 to 16.7 ms, within the noise for the first. Tests:
-`crates/engine/tests/preview_prefix.rs` (cut-off JPEG refused; on the corpus, the prefix picture has the same size and a mean
-difference under 3/255 against the whole-file picture). The picture can differ slightly from before when a larger preview
-sits at the end of the file and a smaller one (still at least the requested size) sits in the head.
+The fork's own version of this (a 3 MB prefix read, `preview_from_prefix`) is **not carried**: upstream 0.14.0 reads the
+header and exactly the preview window it points to (`docs/raw-preview-reads.md`, `files::preview_window`), which is
+better (5.9 MB of a 56 MB raw, no 3 MB guess, planned reads for containers the header cannot point into). Both were
+measured; the fork's numbers (bytes per photo down 66 % at 256 px against reading the whole file) are in the git
+history (`ca036d1b`). `perf_bench` now measures upstream's loader: `files::PREVIEW_BYTES_READ` counts the bytes
+`fs_preview_loader` reads, and section 7 of the benchmark compares it with reading the whole file.
 
 Not changed (deliberately): the content hash read at import still reads the whole file, and changing it would alter the
 catalogue's `content_hash` (a format change that needs a tested migration).
