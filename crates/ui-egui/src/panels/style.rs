@@ -56,7 +56,6 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 }
 
 fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Value, listing: &Value) {
-    design::section_title(ui, "My style");
     let edited = listing["editedPhotos"].as_u64().unwrap_or(0);
     let profiles = listing["profiles"].as_array().cloned().unwrap_or_default();
     let train = &status["train"];
@@ -131,11 +130,15 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
     let consistency: f32 = temp(ui, "styleConsistency", 0.7f32);
     let mut s = strength * 100.0;
     let mut c = consistency * 100.0;
-    if ui.add(egui::Slider::new(&mut s, 0.0..=100.0).text(tr("Strength")).integer()).changed() {
+    // label above, slider as wide as the panel: a slider with its text beside it widens the whole panel
+    ui.spacing_mut().slider_width = (ui.available_width() - 60.0).max(80.0);
+    ui.label(RichText::new(tr("Strength")).size(11.5).color(t.text_label));
+    if ui.add(egui::Slider::new(&mut s, 0.0..=100.0).integer()).changed() {
         put(ui, "styleStrength", s / 100.0);
     }
+    ui.label(RichText::new(tr("Series consistency")).size(11.5).color(t.text_label));
     if ui
-        .add(egui::Slider::new(&mut c, 0.0..=100.0).text(tr("Series consistency")).integer())
+        .add(egui::Slider::new(&mut c, 0.0..=100.0).integer())
         .on_hover_text(tr("Photos of one shoot get the same style, adapted to each photo's exposure"))
         .changed()
     {
@@ -198,7 +201,7 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
                     .map(|a| {
                         a.iter()
                             .take(6)
-                            .map(|x| format!("{} {:+}", tr(slider_label(x["id"].as_str().unwrap_or(""))), x["value"].as_f64().unwrap_or(0.0)))
+                            .map(|x| format!("{} {:+.2}", tr(slider_label(x["id"].as_str().unwrap_or(""))), x["value"].as_f64().unwrap_or(0.0)))
                             .collect()
                     })
                     .unwrap_or_default();
