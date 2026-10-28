@@ -1,5 +1,4 @@
-//! VID-6: pictures cut at the changes of shot, failed pictures tried again, the lists of pictures
-//! read off the window's thread, what is said in a video (needs `mlx_whisper` and macOS `say`; the
+//! VID-6: pictures cut at the changes of shot, failed pictures tried again, what is said in a video (needs `mlx_whisper` and macOS `say`; the
 //! test skips without them) and the honest scores of the search by meaning (model-free parts).
 
 use std::path::Path;
@@ -69,28 +68,6 @@ fn a_failed_picture_is_tried_again_beside_itself() {
     // nothing failed any more: the second retry cuts nothing
     let r = s.execute("video.frames", &json!({"retryFailed": true})).unwrap();
     assert_eq!(r["cut"].as_u64(), Some(0), "{r}");
-}
-
-#[test]
-fn the_lists_of_pictures_are_read_off_the_windows_thread() {
-    if !have_ffmpeg() {
-        return;
-    }
-    let (mut s, dir) = library();
-    let v = dir.join("clip.mp4");
-    crate::tests_video::make_video(&v, 6, true);
-    import(&mut s, &v);
-    s.execute("video.frames", &json!({})).unwrap();
-    // the remembered lists are stale after the run: the first answer is "not yet", then it is ready
-    let first = s.video_frames_ready();
-    let t0 = std::time::Instant::now();
-    while !s.video_frames_ready() {
-        assert!(t0.elapsed().as_secs() < 20, "never ready");
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    assert!(!first, "a first call that is ready would not have needed the thread");
-    assert_eq!(s.video_frames().len(), 3);
-    assert!(s.video_frames_ready(), "ready stays ready until something changes");
 }
 
 #[test]

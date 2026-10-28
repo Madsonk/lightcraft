@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 
 use crate::Session;
 use crate::describe::{Annotation, Store};
-use crate::tests_video::{have_ffmpeg, ids, import, library, make_video, temp_dir};
+use crate::tests_video::{have_ffmpeg, ids, import, library, make_video};
 
 fn store(s: &Session) -> Store {
     Store::open(Some(&s.library.as_ref().unwrap().dir))
@@ -83,7 +83,7 @@ fn proposals_need_the_model_and_a_choice_of_photos() {
     write_png(&dir.join("p.png"), 10);
     let pid = ids(&import(&mut s, &dir.join("p.png")))[0];
     let e = s.execute("describe.suggest", &json!({"ids": [pid.0]})).unwrap_err().to_string();
-    assert!(e.contains("not installed") || e.contains("not available") || e.contains("no folder is set"), "{e}");
+    assert!(e.contains("not installed") || e.contains("not available") || e.contains("search model"), "{e}");
     assert!(store(&s).all().is_empty(), "nothing invented");
     s.selection.ids.clear();
     s.selection.active = None;
@@ -177,7 +177,6 @@ fn video_catchers_videos_missing_from_the_catalog_are_imported_when_asked() {
 
 /// What the Videos view draws: the list (people, analysis, filters), a video's moments, a photo's
 /// one moment, and the player's command line.
-
 /// Videos an import could not read are listed with their cause; a file that imports later leaves
 /// the list.
 #[test]

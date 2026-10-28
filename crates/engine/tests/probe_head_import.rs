@@ -50,8 +50,7 @@ fn old_catalogue_and_sampled_keys_live_together() {
     }
     let mut s = lightcraft_engine::Session::new().with_fs();
     // 1. a catalogue made the old way: the hash of every byte
-    s.media.file_probe =
-        Some(Arc::new(|p: &str| probe_bytes(&p.rsplit('/').next().unwrap().to_string(), &std::fs::read(p).map_err(|e| e.to_string())?)));
+    s.media.file_probe = Some(Arc::new(|p: &str| probe_bytes(p.rsplit('/').next().unwrap(), &std::fs::read(p).map_err(|e| e.to_string())?)));
     let old = import(&mut s, &[a.to_string_lossy().to_string()], ImportMode::Add).unwrap();
     assert_eq!(old.imported.len(), 2, "{:?}", old.failed);
     let old_hashes: Vec<_> = old.imported.iter().map(|i| s.catalog.photo(PhotoId(*i)).unwrap().content_hash.clone().unwrap()).collect();

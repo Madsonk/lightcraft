@@ -209,3 +209,26 @@ fn force_keeps_video_catchers_pictures_and_a_stopped_run_leaves_a_whole_list() {
         assert!(std::fs::read_dir(&vdir).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().ends_with(".part")), "no half-written file left");
     }
 }
+
+#[test]
+fn the_lists_of_pictures_are_read_off_the_session_and_remembered() {
+    let (mut s, _dir) = library();
+    // nothing remembered yet: a job says what to read, runs without the session, and its answer is kept
+    assert!(!s.video_frames_warm());
+    let job = s.video_frames_job().expect("a job to run");
+    let loaded = std::thread::spawn(move || job.run()).join().unwrap();
+    s.video_frames_apply(loaded);
+    assert!(s.video_frames_warm(), "remembered: a list built now reads no file of the pictures");
+    assert!(s.video_frames_job().is_none());
+    // a library that changed meanwhile drops what the worker read
+    let job = {
+        s.video.rev += 1;
+        s.video_frames_job().expect("changed: read again")
+    };
+    let loaded = job.run();
+    s.video.rev += 1;
+    s.video_frames_apply(loaded);
+    assert!(!s.video_frames_warm(), "stale: not kept");
+    assert!(s.video_frames().is_empty());
+    assert!(s.video_frames_warm());
+}

@@ -200,7 +200,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, name: &str) {
     let ppp = ui.ctx().pixels_per_point();
     let edge = super::people::tile_edge(app.ui.thumb_size);
     let mut hit: Option<(Hit, Face)> = None;
-    let video_faces = super::videos::person_faces(app, &shown_name);
+    let video_faces = super::videos::person_faces(app, ui.ctx(), &shown_name);
     if video_faces.is_none() {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
     }

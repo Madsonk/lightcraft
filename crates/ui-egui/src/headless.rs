@@ -364,6 +364,9 @@ impl Headless {
             || self.app.import.is_some()
             || self.app.export.is_some()
             || self.app.session.denoise_busy()
+            || self.app.caches.videos.frames.pending() > 0
+            || self.app.caches.videos.is_warming()
+            || self.app.caches.videos.player.as_ref().is_some_and(|p| p.loading())
             || !self.app.tasks.is_empty()
             || !self.app.synthetic.is_empty()
             || !self.events.is_empty()
