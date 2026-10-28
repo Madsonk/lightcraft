@@ -128,3 +128,23 @@ Limits, measured or not:
 - Culling/analysis models (lot A) and GPU thumbnail rendering.
 - `cargo clippy -D warnings` and the full `cargo xtask ci` were **not run** on this branch (the shared machine could not
   afford another workspace build); `cargo fmt` and the two new tests are green. Run `cargo xtask ci` before merging.
+
+## Sort view (culling): the camera's preview instead of the raw
+
+At fit zoom an unedited raw shows its embedded JPEG (`Session::sort_view_job`, 2048 px), kept in the preview cache on the
+internal disk, with the next six photos in the direction of travel read ahead. Zooming, editing, comparing, mask
+overlays, soft proofing or turning off Settings ▸ Performance ▸ `sort_preview` renders the raw as before. The loupe
+says "Preview" while it shows the preview. No catalogue change.
+
+Measured with `perf_bench` (new `sort_view_*` metrics) on the 40 CR2 of the USB disk (`usb40`, 24 visible), same run,
+macOS page cache warm (no `purge`):
+
+| per photo | before (loupe render of the raw) | sort view |
+|---|---|---|
+| first view | 286 ms (sharp, cold) | 47 ms |
+| second view | 38 ms (prefetched) | 1.6 ms (cached, internal disk) |
+| step with 6 ahead read | — | 2.0 ms median, 7 of 10 steps already cached |
+
+Limits: warm page cache (earlier cold USB runs: raw 905 ms), so the real first view of an unseen photo is bounded by the
+3 MiB prefix read (~100 ms at 22 MB/s); the ~20 requests per arrow were not traced; no background build of the cache at
+import yet (it fills as photos are seen or read ahead); CR3/NEF/ORF/DNG/JPEG preview loaders unchanged.
