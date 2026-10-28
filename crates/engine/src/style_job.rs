@@ -349,7 +349,7 @@ fn train(s: &mut Session, p: &Value) -> Result<Value> {
         Some(v) => v.as_u64().filter(|n| (2..=10).contains(n)).ok_or_else(|| bad(C, "folds must be 2..10"))? as usize,
     };
     let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() {
-        s.checked_targets(C, p)?
+        checked_targets(s, C, p)?
     } else {
         s.catalog.photos().filter(|ph| is_image(ph)).map(|ph| ph.id).collect()
     };
@@ -631,7 +631,7 @@ fn preview(s: &mut Session, p: &Value) -> Result<Value> {
     let overwrite = flag(p, "overwrite", false, C)?;
     let wait = flag(p, "wait", false, C)?;
     let mask = mask_from(p, &model, C)?;
-    let ids: Vec<PhotoId> = s.checked_targets(C, p)?;
+    let ids: Vec<PhotoId> = checked_targets(s, C, p)?;
     if ids.len() > LIMIT {
         return Err(bad(C, format!("at most {LIMIT} photos per preview")));
     }
@@ -947,7 +947,7 @@ fn suggest_frames(s: &mut Session, p: &Value, kind: FrameKind) -> Result<Value> 
     let aspect = parse_aspect(p.get("aspect"), c)?;
     let straighten_first = flag(p, "straighten", true, c)?;
     let min_confidence = unit(p, "minConfidence", 0.6, c)?;
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() { s.checked_targets(c, p)? } else { s.active().into_iter().collect() };
+    let ids: Vec<PhotoId> = if p.get("ids").is_some() || p.get("id").is_some() { checked_targets(s, c, p)? } else { s.active().into_iter().collect() };
     if ids.is_empty() {
         return Err(bad(c, "no photo selected: pass id or ids"));
     }
@@ -1200,4 +1200,20 @@ fn group_photos(mut photos: Vec<Arc<Photo>>) -> Vec<Vec<PhotoId>> {
         previous = Some(photo);
     }
     out
+}
+
+/// The photos a command targets (`ids`, `id` or the selection): at least one, all present, no duplicates.
+fn checked_targets(s: &Session, command: &str, p: &Value) -> Result<Vec<PhotoId>> {
+    if p.get("id").is_some_and(|v| !v.is_null()) && p.get("ids").is_some_and(|v| !v.is_null()) {
+        return Err(bad(command, "give either id or ids, not both"));
+    }
+    let ids = s.targets(p).map_err(|e| bad(command, e.to_string()))?;
+    if ids.is_empty() {
+        return Err(bad(command, "no target photos"));
+    }
+    if let Some(id) = ids.iter().find(|id| s.catalog.photo(**id).is_none()) {
+        return Err(bad(command, format!("no such photo {}", id.0)));
+    }
+    let mut seen = std::collections::HashSet::new();
+    Ok(ids.into_iter().filter(|id| seen.insert(*id)).collect())
 }
