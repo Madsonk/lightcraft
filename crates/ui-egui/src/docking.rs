@@ -407,6 +407,17 @@ pub fn show(app: &mut crate::LightcraftApp, ui: &mut egui::Ui) {
     }
     // Legacy visibility commands may replace the layout before this render starts.
     cancel_replaced_gesture(app, Some(&workspace));
+    // Import and Classify bring their own columns: no side panels around them
+    if crate::workspaces::owns_window(app)
+        && let Some(step) = crate::workspaces::step_of(app)
+    {
+        app.ui.docking = Some(workspace);
+        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.grid_bg)).show(ui, |ui| match step {
+            crate::workspaces::Step::Import => crate::home::show(app, ui),
+            _ => crate::classify::show(app, ui),
+        });
+        return;
+    }
     // Tool/Canvas callbacks dispatch app commands and must see the real workspace.
     app.ui.docking = Some(workspace.clone());
     let mut style = DockStyle::from_ui(ui);

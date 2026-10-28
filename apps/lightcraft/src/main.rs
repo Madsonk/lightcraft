@@ -1022,6 +1022,11 @@ fn main() -> eframe::Result {
                     keep_file: keep_prefs_file,
                     ..Default::default()
                 };
+                // the workspaces: <config>/workspaces.json beside ui.json (nothing read or written for --memory or LIGHTCRAFT_NO_PREFS)
+                lightcraft_ui_egui::workspaces::attach(
+                    &mut app,
+                    if in_memory { None } else { prefs_path().and_then(|p| p.parent().map(|d| d.join(lightcraft_ui_egui::workspaces::FILE))) },
+                );
                 // after the snapshot above, so the writer saves the switched-off preference
                 if let Some(notice) = gpu_crash {
                     app.ui.settings.gpu = false;

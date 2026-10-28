@@ -24,6 +24,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 app.ui.focus_keywords = None;
                 egui::ScrollArea::vertical().id_salt("right-scroll").auto_shrink([false, false]).show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
+                    sorting_help(app, ui);
                     if fold_header(app, ui, "keywording", "Keywords") {
                         padded(ui, |ui| {
                             ui.label(egui::RichText::new(crate::i18n::tr("Select photos to give them keywords.")).color(t.text_dim));
@@ -1098,7 +1099,15 @@ fn meta_field(app: &mut LightcraftApp, ui: &mut egui::Ui, label: &str, key: &str
     ui.add_space(6.0);
 }
 
+/// The Sort step's helper (bursts, soft photos, next unsorted), open at the top of the sidebar.
+fn sorting_help(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    if crate::quick_sort::visible(app) {
+        egui::CollapsingHeader::new(crate::i18n::tr("Sorting Help")).default_open(true).show(ui, |ui| crate::quick_sort::show(app, ui));
+    }
+}
+
 fn keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
+    sorting_help(app, ui);
     // (the box is the selection's: the active photo only says that there is one)
     if app.session.catalog.photo(id).is_none() {
         return;

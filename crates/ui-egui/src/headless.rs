@@ -271,6 +271,8 @@ impl Headless {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut app = app.with_control(rx);
         app.headless_host = true;
+        // no workspaces.json to read or write: the window opens as the Library space is meant to look
+        crate::workspaces::attach(&mut app, None);
         Headless {
             app,
             view: HeadlessView::new(),

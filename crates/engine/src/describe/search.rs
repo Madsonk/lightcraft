@@ -120,6 +120,27 @@ fn named(s: &mut Session) -> (Vec<(u32, String)>, HashMap<u64, Vec<(u32, String)
 
 /// The cosine of each search key with the meaning of `texts` (their embeddings averaged); `Err`
 /// says why there is none.
+#[cfg(feature = "search")]
+fn meaning(s: &mut Session, texts: &[String], keys: &[u64]) -> std::result::Result<(HashMap<u64, f32>, Box<dyn Fn(f32) -> f32>), String> {
+    s.searcher.model_dir()?;
+    let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+    let all = s.searcher.embed_texts(&refs)?;
+    let first = all.first().ok_or("no embedding")?;
+    let mut q = vec![0.0f32; first.len()];
+    for v in &all {
+        for (a, b) in q.iter_mut().zip(v) {
+            *a += b;
+        }
+    }
+    let n = q.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
+    q.iter_mut().for_each(|x| *x /= n);
+    let dir = s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.join("search"));
+    let vectors = crate::search::vectors_of(&s.searcher, dir, keys)?;
+    let cos: HashMap<u64, f32> = vectors.iter().map(|(k, v)| (*k, v.iter().zip(&q).map(|(a, b)| a * b).sum())).collect();
+    let shared = s.searcher.share();
+    Ok((cos, Box::new(move |c| shared.probability(c).unwrap_or(0.0))))
+}
+#[cfg(not(feature = "search"))]
 fn meaning(_: &mut Session, _: &[String], _: &[u64]) -> std::result::Result<(HashMap<u64, f32>, Box<dyn Fn(f32) -> f32>), String> {
     Err(crate::search::UNAVAILABLE.into())
 }

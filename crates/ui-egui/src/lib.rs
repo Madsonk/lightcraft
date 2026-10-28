@@ -681,6 +681,21 @@ impl LightcraftApp {
             }
             return r.map_err(CommandError::from);
         }
+        // in the Retouch space the edit commands act on the photo in hand, not on the whole selection
+        let mut params = params;
+        if workspaces::enabled(self)
+            && self.workspaces.kind == workspaces::Space::Retouch
+            && matches!(
+                id,
+                "preset.apply" | "develop.reset" | "develop.paste" | "portrait.retouch" | "portrait.clear" | "photo.setMeta" | "faces.detect" | "photo.analyzeFaces"
+            )
+            && params.get("ids").is_none()
+            && (id == "preset.apply" || params.get("id").is_none())
+            && let Some(active) = self.session.active()
+            && let Some(object) = params.as_object_mut()
+        {
+            object.insert("ids".into(), serde_json::json!([active.0]));
+        }
         let params = if id == "crop.aspect"
             && params.get("aspect").and_then(Value::as_str) == Some("toggle")
             && self.crop_tool_aspect().is_some()

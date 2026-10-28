@@ -909,6 +909,8 @@ fn cell(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square
         p.line_segment([c + vec2(s * 0.3, -s * 0.3), c + vec2(s, -s * 0.3)], Stroke::new(1.2, Color32::WHITE));
         p.galley(pos2(br.left() + 22.0, br.center().y - g.size().y / 2.0), g, Color32::WHITE);
     }
+    // Quick sort suggestions (soft, burst, same file) in the Sort step; a raw shown from its preview has a pill there already
+    crate::quick_sort::badges(app, ui, id, img_rect, if photo.preview_only.is_some() { 18.0 } else { 0.0 });
     if let Some(why) = &photo.preview_only {
         // a raw shown from its embedded JPEG: a small amber "Preview" pill at the image's bottom
         // left, above the badge bar (always shown: it changes what editing does)

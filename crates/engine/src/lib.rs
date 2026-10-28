@@ -306,6 +306,8 @@ pub struct Session {
     pub cull: cull_job::Culler,
     /// Face analysis (eyes open / closed, eye sharpness): the model and the run in progress.
     pub facemesh: facemesh::Faces,
+    /// Semantic search and near-duplicates: the SigLIP model, the index, the indexing run.
+    pub searcher: search::Searcher,
     /// The baked pixels of the portrait sliders (see [`ai`]).
     pub ai: ai::Ai,
     /// Videos: the pictures cut out of them (`<library>/video/`).
@@ -505,6 +507,7 @@ impl Session {
             faces: Default::default(),
             cull: Default::default(),
             facemesh: facemesh::Faces::default(),
+            searcher: search::Searcher::default(),
             ai: ai::Ai::default(),
             video: video::Videos::default(),
             describe: describe::Describe::default(),
@@ -1422,6 +1425,10 @@ mod tests_face_recognize;
 mod tests_face_tiles;
 #[cfg(test)]
 mod tests_facemesh;
+#[cfg(all(test, feature = "search"))]
+mod tests_search;
+#[cfg(all(test, feature = "search"))]
+mod tests_taste;
 #[cfg(test)]
 mod tests_filesystem_history;
 #[cfg(all(test, not(target_arch = "wasm32")))]

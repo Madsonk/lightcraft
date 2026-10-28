@@ -47,6 +47,8 @@ lightcraft-retouch = { workspace = true }
 lightcraft-culler = { workspace = true }
 lightcraft-facemesh = { workspace = true, optional = true }
 lightcraft-autoseg = { workspace = true, optional = true }
+lightcraft-search = { workspace = true, optional = true }
+lightcraft-taste = { workspace = true, optional = true }
 
 # model downloads run natively only (the web build fetches no models)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -57,6 +59,8 @@ chrono = { workspace = true }
 [features]
 # Analyze Faces (eyes open / closed, eye sharpness, the mesh of the portrait sliders) with MediaPipe Face Landmarker. Off for the web build.
 faces = ["dep:lightcraft-facemesh"]
+# Semantic search (SigLIP) and near-duplicate detection. Off for the web build.
+search = ["dep:lightcraft-search", "dep:lightcraft-taste"]
 # Automatic masks: SegFormer (sky, people, landscape) and an ISNet matting network (subject). Off for the web build.
 autoseg = ["dep:lightcraft-autoseg"]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.

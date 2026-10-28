@@ -22,6 +22,8 @@ pub(crate) mod face_detect;
 mod face_models;
 pub(crate) mod face_recognize;
 mod facemesh;
+mod search;
+mod taste;
 pub mod filters;
 mod focus;
 pub mod geocode;
@@ -168,6 +170,8 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(describe::specs());
         v.extend(crate::cull_job::specs());
         v.extend(facemesh::specs());
+        v.extend(search::specs());
+        v.extend(taste::specs());
         v.extend(autoseg::specs());
         v.extend(dust::specs());
         v.extend(portrait::specs());
