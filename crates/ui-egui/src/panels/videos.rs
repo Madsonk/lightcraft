@@ -364,6 +364,7 @@ impl VideosUi {
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // for the view's UI tests (`tests_videos` of the fork), not ported yet
 impl VideosUi {
     /// Put data in the view as if the engine had answered it (tests of what any data draws).
     pub(crate) fn inject(&mut self, rev: u64, list: Option<Value>, sheet: Option<(u64, Value)>, search: Option<Value>) {
@@ -489,7 +490,9 @@ pub fn paint_video_face(app: &mut LightcraftApp, ui: &egui::Ui, r: Rect, v: &Vid
 /// app's own task panels.
 pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
     let now = ctx.input(|i| i.time);
-    let any = [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]].iter().any(|j| j["running"] == true);
+    let any = [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.1["speech"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]]
+        .iter()
+        .any(|j| j["running"] == true);
     if now - app.caches.videos.jobs.0 > if any { 0.5 } else { 3.0 } {
         let v = app.session.execute("video.status", &json!({"jobOnly": true})).unwrap_or(Value::Null);
         let d = app.session.execute("describe.status", &json!({})).unwrap_or(Value::Null);
@@ -500,8 +503,9 @@ pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
         };
         let was = any;
         app.caches.videos.jobs = (now, v, d, p);
-        let still =
-            [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]].iter().any(|j| j["running"] == true);
+        let still = [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.1["speech"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]]
+            .iter()
+            .any(|j| j["running"] == true);
         if was && !still {
             app.caches.videos.dirty = true;
             app.caches.videos.person_faces = None;
@@ -527,6 +531,7 @@ pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
     let mut slot = app.tasks.labels().len();
     let rows = [
         ("videoFrames", "Cutting pictures from videos", app.caches.videos.jobs.1["job"].clone(), "video.cancel"),
+        ("videoSpeech", "Listening to videos", app.caches.videos.jobs.1["speech"].clone(), "video.cancel"),
         ("describeSuggest", "Proposing descriptions", app.caches.videos.jobs.2.clone(), "describe.cancel"),
         ("videoFaces", "Finding faces", app.caches.videos.jobs.3["job"].clone(), "video.facesCancel"),
     ];
@@ -646,6 +651,24 @@ fn list(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                             .clicked()
                         {
                             act(app, "video.faces", json!({"ids": ids, "background": true}));
+                        }
+                        if text_button(ui, "videosScenes", "Cut pictures at shots", false)
+                            .on_hover_text(tr("Reads each video to find where the shot changes, then cuts a picture in every shot (more in a long one)"))
+                            .clicked()
+                        {
+                            act(app, "video.frames", json!({"ids": ids, "plan": "scenes", "background": true}));
+                        }
+                        if text_button(ui, "videosRetry", "Retry failed pictures", false)
+                            .on_hover_text(tr("Cuts again the pictures that could not be cut, and the ones just beside them"))
+                            .clicked()
+                        {
+                            act(app, "video.frames", json!({"ids": ids, "retryFailed": true, "background": true}));
+                        }
+                        if text_button(ui, "videosSpeech", "Transcribe speech", false)
+                            .on_hover_text(tr("Listens to the videos (Whisper, one at a time) so that what is said can be searched"))
+                            .clicked()
+                        {
+                            act(app, "video.transcribe", json!({"ids": ids, "background": true}));
                         }
                     }
                 });

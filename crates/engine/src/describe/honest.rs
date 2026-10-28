@@ -7,8 +7,10 @@
 //!   from the glossary) before it is compared; with `gap` the mean of the library's pictures is
 //!   added back, which moves the query into the pictures' cone;
 //! - **a floor** — a handful of nonsense queries is asked to the same library; the best cosine any
-//!   of them reaches is the *noise ceiling*, and a meaning match must beat it. A query that beats
-//!   nothing finds nothing instead of the 20 least-bad pictures.
+//!   of them reaches *with a given picture* is that picture's *noise ceiling*, and a meaning match
+//!   must beat it by a margin. A query that beats nothing finds nothing instead of the 20 least-bad
+//!   pictures. With `normalise` the pictures are also ranked by that margin, which demotes the ones
+//!   that are close to every sentence.
 
 /// Queries that describe nothing a library of people and places shows.
 pub const NOISE: &[&str] = &[
@@ -99,9 +101,11 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
 
-/// The noise ceiling × `factor`: the best cosine each noise query reaches, the highest of them.
-pub fn floor(noise_tops: &[f32], factor: f32) -> Option<f32> {
-    noise_tops.iter().copied().reduce(f32::max).map(|m| m * factor)
+/// The noise ceiling of one picture: the best cosine any nonsense query reaches with it. A picture
+/// that is close to every sentence (a "hub") has a high ceiling, so a query must beat *that* to mean
+/// anything about the picture.
+pub fn ceiling(noise: &[Vec<f32>], picture: &[f32]) -> f32 {
+    noise.iter().map(|n| dot(n, picture)).fold(f32::MIN, f32::max)
 }
 
 #[cfg(test)]
@@ -114,16 +118,17 @@ mod tests {
         let q = [1.0, 1.0];
         let v = moved(&q, Centre::Text, &tm, &[]);
         assert!((v[0]).abs() < 1e-6 && (v[1] - 1.0).abs() < 1e-6, "{v:?}");
-        let g = moved(&q, Centre::Gap, &tm, &[0.0, -1.0]);
+        let g = moved(&q, Centre::Gap, &tm, &[0.0, 1.0]);
         assert!((dot(&g, &g) - 1.0).abs() < 1e-5);
         assert_eq!(moved(&[3.0, 4.0], Centre::None, &tm, &[]), vec![0.6, 0.8]);
     }
 
     #[test]
-    fn the_floor_is_the_highest_noise() {
-        assert_eq!(floor(&[0.1, 0.3, 0.2], 1.0), Some(0.3));
-        assert_eq!(floor(&[0.1, 0.3], 2.0), Some(0.6));
-        assert_eq!(floor(&[], 1.0), None);
+    fn the_ceiling_is_the_best_noise_with_that_picture() {
+        let noise = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        assert_eq!(ceiling(&noise, &[0.6, 0.8]), 0.8);
+        assert_eq!(ceiling(&noise, &[-1.0, -1.0]), -1.0);
+        assert!(ceiling(&[], &[1.0]) < -1e30);
     }
 
     #[test]

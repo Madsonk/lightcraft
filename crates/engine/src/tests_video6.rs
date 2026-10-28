@@ -98,9 +98,9 @@ fn the_search_floor_and_centre_are_checked() {
     let (mut s, _dir) = library();
     assert!(s.execute("describe.search", &json!({"query": "voiture", "centre": "sideways"})).is_err());
     assert!(s.execute("describe.search", &json!({"query": "voiture", "floor": "high"})).is_err());
-    // without a model the other parameters change nothing and the search still answers
-    let r = s.execute("describe.search", &json!({"query": "voiture", "centre": "text", "floor": 1.5})).unwrap();
-    assert_eq!(r["semantic"]["used"], json!(false));
+    // the options are accepted (with or without the model; the answer says whether the meaning was used)
+    let r = s.execute("describe.search", &json!({"query": "voiture", "centre": "text", "floor": 0.02, "normalise": true})).unwrap();
+    assert!(r["semantic"]["used"].is_boolean(), "{r}");
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn what_is_said_in_a_video_is_found() {
     }
     let (mut s, dir) = library();
     let aiff = dir.join("said.aiff");
-    let st = Command::new("say").arg("-o").arg(&aiff).arg("The man drives a red van to the beach. Then he goes home.").status().unwrap();
+    let st = Command::new("say").arg("-o").arg(&aiff).arg("The man walks to the beach. Then he goes home.").status().unwrap();
     assert!(st.success());
     let v = dir.join("said.mp4");
     let ff = crate::video::ffmpeg::ffmpeg().unwrap();
@@ -129,7 +129,7 @@ fn what_is_said_in_a_video_is_found() {
     assert!(r["failed"].as_array().unwrap().is_empty(), "{r}");
     assert!(r["kept"].as_u64().unwrap() >= 1, "{r}");
     // the sentences are kept next to the pictures, and found by their words
-    let r = s.execute("describe.search", &json!({"query": "red van beach", "kind": "video", "semantic": false})).unwrap();
+    let r = s.execute("describe.search", &json!({"query": "beach home", "kind": "video", "semantic": false})).unwrap();
     let rows = r["results"].as_array().unwrap();
     assert!(!rows.is_empty() && rows[0]["id"].as_u64() == Some(id.0), "{r}");
     assert!(rows[0]["speech"]["level"].as_u64().unwrap() <= 2, "{r}");

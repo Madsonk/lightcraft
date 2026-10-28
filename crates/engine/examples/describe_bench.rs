@@ -46,23 +46,37 @@ fn main() {
     cases.truncate(max);
     println!("{} questions ({} videos)", cases.len(), ids.len());
     const LIMIT: usize = 200;
-    let both = |centre: &str, floor: Value| json!({"lang": "both", "textAll": false, "semanticTop": 1_000_000, "centre": centre, "floor": floor});
-    let meaning = |centre: &str, floor: Value| json!({"text": false, "lang": "both", "semanticTop": 1_000_000, "centre": centre, "floor": floor});
+    // (centre, floor margin or false, normalise)
+    let m = |centre: &str, floor: Value, norm: bool, fusion: bool| {
+        let mut v = json!({"lang": "both", "semanticTop": 1_000_000, "centre": centre, "floor": floor, "normalise": norm});
+        if fusion {
+            v["textAll"] = json!(false);
+        } else {
+            v["text"] = json!(false);
+        }
+        v
+    };
     let methods: Vec<(&str, Value)> = vec![
         ("text", json!({"semantic": false, "textAll": false})),
-        ("meaning-fr", json!({"text": false, "lang": "fr", "semanticTop": 1_000_000, "centre": "none", "floor": false})),
-        ("meaning-en", json!({"text": false, "lang": "en", "semanticTop": 1_000_000, "centre": "none", "floor": false})),
-        ("meaning-both", meaning("none", json!(false))),
-        ("meaning-both centre=text", meaning("text", json!(false))),
-        ("meaning-both centre=gap", meaning("gap", json!(false))),
-        ("meaning-both floor=1", meaning("none", json!(1.0))),
-        ("meaning-both centre=text floor=1", meaning("text", json!(1.0))),
-        ("meaning-both centre=gap floor=1", meaning("gap", json!(1.0))),
-        ("meaning-both centre=text floor=2", meaning("text", json!(2.0))),
-        ("fusion-both", both("none", json!(false))),
-        ("fusion-both centre=text", both("text", json!(false))),
-        ("fusion-both centre=gap", both("gap", json!(false))),
-        ("fusion-both centre=text floor=1", both("text", json!(1.0))),
+        ("meaning-fr", json!({"text": false, "lang": "fr", "semanticTop": 1_000_000, "centre": "none", "floor": false, "normalise": false})),
+        ("meaning-en", json!({"text": false, "lang": "en", "semanticTop": 1_000_000, "centre": "none", "floor": false, "normalise": false})),
+        ("meaning-both", m("none", json!(false), false, false)),
+        ("meaning-both centre=text", m("text", json!(false), false, false)),
+        ("meaning-both centre=gap", m("gap", json!(false), false, false)),
+        ("meaning-both normalise", m("none", json!(false), true, false)),
+        ("meaning-both centre=text normalise", m("text", json!(false), true, false)),
+        ("meaning-both floor=0", m("none", json!(0.0), false, false)),
+        ("meaning-both centre=text floor=0", m("text", json!(0.0), false, false)),
+        ("meaning-both centre=text normalise floor=0", m("text", json!(0.0), true, false)),
+        ("meaning-both centre=text normalise floor=0.01", m("text", json!(0.01), true, false)),
+        ("meaning-both centre=text normalise floor=0.02", m("text", json!(0.02), true, false)),
+        ("meaning-both centre=text normalise floor=0.04", m("text", json!(0.04), true, false)),
+        ("fusion-both", m("none", json!(false), false, true)),
+        ("fusion-both centre=text", m("text", json!(false), false, true)),
+        ("fusion-both normalise", m("none", json!(false), true, true)),
+        ("fusion-both centre=text normalise", m("text", json!(false), true, true)),
+        ("fusion-both centre=text normalise floor=0.01", m("text", json!(0.01), true, true)),
+        ("fusion-both centre=text normalise floor=0.02", m("text", json!(0.02), true, true)),
     ];
     // nonsense queries, none of them used to calibrate the floor: how many still find something by meaning
     let nonsense = [

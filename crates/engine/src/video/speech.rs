@@ -286,7 +286,7 @@ pub fn find(utts: &[Utterance], terms: &[String], window_ms: u64) -> Vec<Hit> {
     if hits.is_empty() {
         let all = folded.join(" ");
         if has(terms, &all) == terms.len() {
-            if let Some((i, u)) = utts.iter().enumerate().find(|(i, _)| has(terms, &folded[*i]) > 0) {
+            if let Some(u) = utts.iter().zip(&folded).find(|(_, f)| has(terms, f) > 0).map(|(u, _)| u) {
                 hits.push(Hit { level: Level::Video, t0: u.t0, t1: u.t1, text: u.text.clone() });
             }
         }
@@ -409,13 +409,13 @@ mod tests {
 
     #[test]
     fn mlx_whisper_json_is_read() {
-        let j = br#"{"text":"x","language":"fr","segments":[{"start":0.0,"end":2.5,"text":" Il conduit une voiture.","no_speech_prob":0.01,"avg_logprob":-0.2,"compression_ratio":1.1},{"start":3.0,"end":2.0,"text":"inversé"}]}"#;
+        let j = r#"{"text":"x","language":"fr","segments":[{"start":0.0,"end":2.5,"text":" Il conduit une voiture.","no_speech_prob":0.01,"avg_logprob":-0.2,"compression_ratio":1.1},{"start":3.0,"end":2.0,"text":"inversé"}]}"#.as_bytes();
         let (u, dropped, lang) = parse(j).unwrap();
         assert_eq!((lang.as_str(), dropped), ("fr", 0));
         assert_eq!(u[0], Utterance { t0: 0, t1: 2500, text: "Il conduit une voiture.".into() });
         assert_eq!(u[1].t1, 3000, "an end before the start is the start");
         assert!(parse(b"nope").is_err());
-        assert!(parse(br#"{"segments":[{"start":-1,"end":2,"text":"avant zéro"}]}"#).unwrap().0.is_empty());
+        assert!(parse(r#"{"segments":[{"start":-1,"end":2,"text":"avant zéro"}]}"#.as_bytes()).unwrap().0.is_empty());
     }
 
     #[test]

@@ -114,20 +114,38 @@ fn named(s: &mut Session) -> (Vec<(u32, String)>, HashMap<u64, Vec<(u32, String)
 /// What the meaning of the query says about each picture.
 #[cfg_attr(not(feature = "search"), allow(dead_code))]
 struct Meaning {
-    /// Cosine of each search key with the (moved) query: what the pictures are ranked by.
+    /// What the pictures are ranked by: the cosine with the (moved) query, minus the picture's noise
+    /// ceiling when `normalise` is asked.
     cos: HashMap<u64, f32>,
     /// Cosine with the query as the model gives it (the probability is read from this one).
     raw: HashMap<u64, f32>,
     probability: Box<dyn Fn(f32) -> f32>,
-    /// A match must beat this cosine (the noise ceiling of this library), when a floor is asked.
+    /// A match must beat the picture's noise ceiling by this margin, when a floor is asked.
     floor: Option<f32>,
+    /// The pictures that do, when a floor is asked.
+    above: HashSet<u64>,
+}
+
+impl Meaning {
+    fn passes(&self, key: u64) -> bool {
+        self.floor.is_none() || self.above.contains(&key)
+    }
+}
+
+/// The options of the meaning side of a search.
+#[derive(Clone, Copy)]
+struct Honest {
+    centre: Centre,
+    /// Margin over the noise ceiling (cosine units), if a floor is asked.
+    floor: Option<f32>,
+    /// Rank by the margin over the noise ceiling instead of the plain cosine.
+    normalise: bool,
 }
 
 /// The cosine of each search key with the meaning of `texts` (their embeddings averaged), moved as
-/// `centre` says, and the noise floor × `floor_factor` when one is asked; `Err` says why there is
-/// none.
+/// `h.centre` says, and the noise floor when one is asked; `Err` says why there is none.
 #[cfg(feature = "search")]
-fn meaning(s: &mut Session, texts: &[String], keys: &[u64], centre: Centre, floor_factor: Option<f32>) -> std::result::Result<Meaning, String> {
+fn meaning(s: &mut Session, texts: &[String], keys: &[u64], h: Honest) -> std::result::Result<Meaning, String> {
     s.searcher.model_dir()?;
     let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
     let all = s.searcher.embed_texts(&refs)?;
@@ -141,35 +159,36 @@ fn meaning(s: &mut Session, texts: &[String], keys: &[u64], centre: Centre, floo
     honest::unit(&mut q);
     let dir = s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.join("search"));
     let vectors = crate::search::vectors_of(&s.searcher, dir, keys)?;
-    let (text_mean, image_mean) = if centre != Centre::None || floor_factor.is_some() {
-        let c = s.searcher.calibration()?;
-        let views: Vec<&[f32]> = vectors.values().map(Vec::as_slice).collect();
-        (c.text_mean.clone(), honest::mean(&views))
-    } else {
-        (Vec::new(), Vec::new())
-    };
-    let moved = honest::moved(&q, centre, &text_mean, &image_mean);
-    let cos: HashMap<u64, f32> = vectors.iter().map(|(k, v)| (*k, honest::dot(v, &moved))).collect();
-    let raw: HashMap<u64, f32> = if centre == Centre::None { cos.clone() } else { vectors.iter().map(|(k, v)| (*k, honest::dot(v, &q))).collect() };
-    let floor = match floor_factor {
-        Some(f) => {
-            let noise = s.searcher.calibration()?.noise.clone();
-            let tops: Vec<f32> = noise
-                .iter()
-                .map(|n| {
-                    let n = honest::moved(n, centre, &text_mean, &image_mean);
-                    vectors.values().map(|v| honest::dot(v, &n)).fold(f32::MIN, f32::max)
-                })
-                .collect();
-            honest::floor(&tops, f)
+    let calib = if h.centre != Centre::None || h.floor.is_some() || h.normalise { Some(s.searcher.calibration()?) } else { None };
+    let (text_mean, image_mean) = match &calib {
+        Some(c) => {
+            let views: Vec<&[f32]> = vectors.values().map(Vec::as_slice).collect();
+            (c.text_mean.clone(), honest::mean(&views))
         }
-        None => None,
+        None => (Vec::new(), Vec::new()),
     };
+    let moved = honest::moved(&q, h.centre, &text_mean, &image_mean);
+    let plain: HashMap<u64, f32> = vectors.iter().map(|(k, v)| (*k, honest::dot(v, &moved))).collect();
+    let raw: HashMap<u64, f32> = if h.centre == Centre::None { plain.clone() } else { vectors.iter().map(|(k, v)| (*k, honest::dot(v, &q))).collect() };
+    let mut cos = plain.clone();
+    let mut above = HashSet::new();
+    if let Some(c) = calib.filter(|_| h.floor.is_some() || h.normalise) {
+        let noise: Vec<Vec<f32>> = c.noise.iter().map(|n| honest::moved(n, h.centre, &text_mean, &image_mean)).collect();
+        for (k, v) in &vectors {
+            let margin = plain[k] - honest::ceiling(&noise, v);
+            if h.floor.is_some_and(|m| margin > m) {
+                above.insert(*k);
+            }
+            if h.normalise {
+                cos.insert(*k, margin);
+            }
+        }
+    }
     let shared = s.searcher.share();
-    Ok(Meaning { cos, raw, probability: Box::new(move |c| shared.probability(c).unwrap_or(0.0)), floor })
+    Ok(Meaning { cos, raw, probability: Box::new(move |c| shared.probability(c).unwrap_or(0.0)), floor: h.floor, above })
 }
 #[cfg(not(feature = "search"))]
-fn meaning(_: &mut Session, _: &[String], _: &[u64], _: Centre, _: Option<f32>) -> std::result::Result<Meaning, String> {
+fn meaning(_: &mut Session, _: &[String], _: &[u64], _: Honest) -> std::result::Result<Meaning, String> {
     Err(crate::search::UNAVAILABLE.into())
 }
 
@@ -217,8 +236,10 @@ pub const DEFAULT_LANG: &str = "both";
 pub const DEFAULT_SEMANTIC_TOP: usize = 20;
 /// How the query vector is moved before it is compared (measured with `examples/describe_bench.rs`).
 pub const DEFAULT_CENTRE: Centre = Centre::None;
-/// The noise ceiling × this: a meaning match must beat it (`None` = no floor).
+/// A meaning match must beat the picture's noise ceiling by this much (`None` = no floor).
 pub const DEFAULT_FLOOR: Option<f32> = None;
+/// Whether pictures are ranked by their margin over the noise ceiling instead of the plain cosine.
+pub const DEFAULT_NORMALISE: bool = false;
 /// Reciprocal rank fusion constant (text rank and meaning rank).
 const RRF_K: f32 = 60.0;
 
@@ -344,13 +365,15 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
         None => DEFAULT_CENTRE,
         Some(c) => Centre::parse(c).ok_or_else(|| bad(C, "`centre` is none, text or gap"))?,
     };
-    // `floor`: false = no floor, a number = the noise ceiling × that number, absent = the default
-    let floor_factor = match p.get("floor") {
+    // `floor`: false = no floor, a number = the margin over the picture's noise ceiling (true = 0),
+    // absent = the default
+    let floor = match p.get("floor") {
         None => DEFAULT_FLOOR,
         Some(Value::Bool(false)) => None,
-        Some(Value::Bool(true)) => Some(1.0),
-        Some(v) => Some(v.as_f64().ok_or_else(|| bad(C, "`floor` is a number or a boolean"))?.clamp(0.0, 10.0) as f32),
+        Some(Value::Bool(true)) => Some(0.0),
+        Some(v) => Some(v.as_f64().ok_or_else(|| bad(C, "`floor` is a number or a boolean"))?.clamp(-1.0, 1.0) as f32),
     };
+    let honest_opts = Honest { centre, floor, normalise: bool_or(p, "normalise", DEFAULT_NORMALISE) };
     let (found, semantic) = if use_meaning {
         let keys: Vec<u64> = moments.iter().map(|m| m.skey).collect();
         let english = super::glossary::to_english(&terms.join(" "));
@@ -359,7 +382,7 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
             "en" => vec![format!("a photo of {english}")],
             _ => vec![format!("une photo de {rest}"), format!("a photo of {english}")],
         };
-        match meaning(s, &texts, &keys, centre, floor_factor) {
+        match meaning(s, &texts, &keys, honest_opts) {
             Ok(m) => {
                 let n = m.cos.len();
                 let centre_name = match centre {
@@ -373,9 +396,10 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
                 } else {
                     v["top"] = json!(semantic_top);
                 }
+                v["normalise"] = json!(honest_opts.normalise);
                 if let Some(f) = m.floor {
                     v["floor"] = json!((f * 10000.0).round() / 10000.0);
-                    v["nothingByMeaning"] = json!(!m.cos.values().any(|c| *c > f));
+                    v["nothingByMeaning"] = json!(m.above.is_empty());
                 }
                 (Some(m), v)
             }
@@ -384,11 +408,10 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
     } else {
         (None, json!({"used": false, "why": if terms.is_empty() { "no words to look for" } else { "semantic: false" }}))
     };
-    let floor = found.as_ref().and_then(|m| m.floor);
     let empty = HashMap::new();
     let cos = found.as_ref().map_or(&empty, |m| &m.cos);
     // the rank of each picture by meaning (1 = closest) among those above the floor
-    let mut by_cos: Vec<(u64, f32)> = cos.iter().filter(|(_, c)| floor.is_none_or(|f| **c > f)).map(|(k, c)| (*k, *c)).collect();
+    let mut by_cos: Vec<(u64, f32)> = cos.iter().filter(|(k, _)| found.as_ref().is_none_or(|m| m.passes(**k))).map(|(k, c)| (*k, *c)).collect();
     by_cos.sort_by(|a, b| b.1.total_cmp(&a.1));
     let sem_rank: HashMap<u64, usize> = by_cos.iter().enumerate().map(|(i, (k, _))| (*k, i + 1)).collect();
     // what is said near each moment (every word of the query, in three levels)
@@ -452,7 +475,7 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
         let srank = sem_rank.get(&m.skey).copied();
         // by meaning: among the closest pictures (a rank, not an absolute probability, which SigLIP
         // keeps very low for French sentences), or above `minProbability` when one is asked for
-        let above = floor.is_none_or(|f| cos.get(&m.skey).is_some_and(|c| *c > f));
+        let above = found.as_ref().is_some_and(|f| f.passes(m.skey));
         let sem_ok = above && if use_min_prob { prob.is_some_and(|p| p >= min_prob) } else { srank.is_some_and(|r| r <= semantic_top) };
         let what_ok = terms.is_empty() || text_ok || sem_ok;
         // reciprocal rank fusion of the two orders
