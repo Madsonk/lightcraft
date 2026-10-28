@@ -293,6 +293,14 @@ impl ImportTask {
         self
     }
 
+    /// Stop starting new files (the Cancel button of the progress window and of the home screen's task list).
+    pub fn request_cancel(&mut self) {
+        self.cancelled = true;
+        if let Some(run) = &self.run {
+            run.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
     /// `{done, total, imported, cancelled}` for `ui.inspect`.
     pub fn status(&self) -> Value {
         json!({"done": self.done, "total": self.total, "imported": self.imported, "cancelled": self.cancelled})
@@ -1399,7 +1407,7 @@ pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
     });
 }
 
-fn candidate_cell(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog, i: usize, rect: Rect) {
+pub(crate) fn candidate_cell(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog, i: usize, rect: Rect) {
     let t = Tokens::get(ui.ctx());
     let c = d.candidates[i].clone();
     let ok = d.importable(i);
@@ -1639,6 +1647,74 @@ impl SourceSummary {
     }
 }
 
+/// The Album field of the import settings (an existing album, a new one, or none).
+pub(crate) fn album_field(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
+    let albums: Vec<(u64, String)> = {
+        let mut v: Vec<(u64, String)> =
+            app.session.catalog.albums().filter(|a| !a.folder && !a.is_smart()).map(|a| (a.id.0, a.name.clone())).collect();
+        v.sort_by_key(|(_, n)| n.to_lowercase());
+        v
+    };
+    field(ui, "Album", |ui| {
+        let cur = match d.album {
+            Some(a) => albums.iter().find(|x| x.0 == a).map(|x| x.1.clone()).unwrap_or_default(),
+            None if !d.new_album.is_empty() => crate::i18n::tr("New album").into(),
+            None => crate::i18n::tr("None").into(),
+        };
+        egui::ComboBox::from_id_salt("import-album").selected_text(cur).show_ui(ui, |ui| {
+            if ui.selectable_label(d.album.is_none() && d.new_album.is_empty(), crate::i18n::tr("None")).clicked() {
+                d.album = None;
+                d.new_album.clear();
+            }
+            if ui.selectable_label(d.album.is_none() && !d.new_album.is_empty(), crate::i18n::tr("New album…")).clicked() {
+                d.album = None;
+                if d.new_album.is_empty() {
+                    d.new_album = crate::i18n::tr("Imported Photos").into();
+                }
+            }
+            for (id, name) in &albums {
+                if ui.selectable_label(d.album == Some(*id), name).clicked() {
+                    d.album = Some(*id);
+                    d.new_album.clear();
+                }
+            }
+        });
+        if d.album.is_none() && !d.new_album.is_empty() {
+            let r = ui.add(egui::TextEdit::singleline(&mut d.new_album).desired_width(f32::INFINITY));
+            register(ui.ctx(), "field:importAlbumName", r.rect);
+        }
+    });
+}
+
+/// The Preset field of the import settings (the look new photos start with).
+pub(crate) fn preset_field(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
+    field(ui, "Preset", |ui| {
+        let cur = app
+            .session
+            .presets
+            .iter()
+            .find(|p| p.id == d.preset)
+            .map(|p| crate::i18n::builtin_label(&p.name, p.builtin).to_string())
+            .unwrap_or_else(|| crate::i18n::tr("None").into());
+        egui::ComboBox::from_id_salt("import-preset").selected_text(cur).height(300.0).show_ui(ui, |ui| {
+            if ui.selectable_label(d.preset.is_empty(), crate::i18n::tr("None")).clicked() {
+                d.preset.clear();
+            }
+            for p in &app.session.presets {
+                if ui
+                    .selectable_label(
+                        d.preset == p.id,
+                        format!("{} — {}", crate::i18n::builtin_label(&p.group, p.builtin), crate::i18n::builtin_label(&p.name, p.builtin)),
+                    )
+                    .clicked()
+                {
+                    d.preset = p.id.clone();
+                }
+            }
+        });
+    });
+}
+
 fn inspect_sources(sources: &[String]) -> SourceSummary {
     let name = |p: &str| std::path::Path::new(p).file_name().map_or_else(|| p.to_string(), |n| n.to_string_lossy().to_string());
     match sources {
@@ -1652,7 +1728,7 @@ fn inspect_sources(sources: &[String]) -> SourceSummary {
 }
 
 /// A labelled row (fixed label column).
-fn field<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+pub(crate) fn field<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(vec2(78.0, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {

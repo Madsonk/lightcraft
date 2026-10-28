@@ -70,7 +70,8 @@ pub(crate) fn legacy_boxes(dir: &Path) -> HashMap<(u64, u16), [f32; 4]> {
     let f32_at = |r: &[u8], at: usize| r.get(at..at + 4).and_then(|b| b.try_into().ok()).map(f32::from_le_bytes).unwrap_or(0.0);
     let mut pending: HashMap<u64, (u16, Vec<[f32; 4]>)> = HashMap::new();
     let mut out = HashMap::new();
-    for r in bytes.get(start..).unwrap_or(&[]).chunks_exact(REC) {
+    let records = bytes.get(start..).unwrap_or(&[]);
+    for r in (0..records.len() / REC).filter_map(|i| records.get(i * REC..(i + 1) * REC)) {
         let key = u64::from_le_bytes(r[..8].try_into().unwrap_or_default());
         let idx = u16::from_le_bytes(r[8..10].try_into().unwrap_or_default());
         let n = u16::from_le_bytes(r[10..12].try_into().unwrap_or_default());

@@ -452,6 +452,8 @@ impl LightTheme {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppSettings {
+    /// Workspaces (Library, Retouch, Create) with the context bar and the journey. Off: the official window.
+    pub workspaces: bool,
     /// Library opened at launch when no `--library` is given (empty = the default location).
     pub library_path: String,
     /// Libraries opened recently, newest first (File ▸ Open Recent Library; at most
@@ -555,6 +557,8 @@ pub enum LightroomImport {
 impl Default for AppSettings {
     fn default() -> Self {
         AppSettings {
+            // on in the app and the CLI; the crate's own unit tests start in the classic window
+            workspaces: !cfg!(test),
             library_path: String::new(),
             recent_libraries: Vec::new(),
             recent_opened: Default::default(),

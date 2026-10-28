@@ -161,6 +161,30 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("panel.remove", "Remove", Some("H"), "Window"),
     ("panel.portrait", "Portrait Retouch", Some("Shift+T"), "Window"),
     ("panel.aiPicks", "AI Picks", Some("Shift+K"), "Window"),
+    ("workspace.library", "Library", Some("Ctrl+1"), ""),
+    ("workspace.retouch", "Retouch", Some("Ctrl+2"), ""),
+    ("workspace.create", "Create", Some("Ctrl+3"), ""),
+    ("workspace.switch", "Open Workspace", None, ""),
+    ("workspace.reset", "Reset Workspace", None, "Window>Workspaces"),
+    ("workspace.saveAs", "Save Workspace As…", None, "Window>Workspaces"),
+    ("workspace.delete", "Delete Workspace", None, "Window>Workspaces"),
+    ("workspace.retouchSelection", "Retouch Selection", None, ""),
+    ("workspace.backToLibrary", "Back to Library", None, ""),
+    ("workspace.clearContext", "Clear Filter and Selection", None, ""),
+    ("workspace.step", "Open Library Step", None, ""),
+    ("workspace.home.scan", "Scan for Import", None, ""),
+    ("workspace.home.device", "Scan a Card", None, ""),
+    ("workspace.home.settings", "Import Settings", None, ""),
+    ("workspace.home.import", "Import and Open Sort", None, ""),
+    ("workspace.home.moreOptions", "More Import Options", None, ""),
+    ("workspace.home.clear", "Clear the Import Scan", None, ""),
+    ("workspace.home.resume", "Resume in Sort", None, ""),
+    ("workspace.sort.analyze", "Find Bursts and Soft Photos", None, ""),
+    ("workspace.sort.cancel", "Stop the Analysis", None, ""),
+    ("workspace.sort.sensitivity", "Soft Photo Sensitivity", None, ""),
+    ("workspace.sort.select", "Select Suggestions", None, ""),
+    ("workspace.sort.stackBursts", "Stack the Bursts", None, ""),
+    ("workspace.sort.next", "Next Unsorted Photo", None, ""),
     ("flow.cullRun", "AI Culling…", None, "Photo"),
     ("flow.cullCancel", "Stop AI Culling", None, "Photo"),
     ("flow.oneClick", "Cull and Retouch in One Click…", None, "Photo"),
@@ -451,6 +475,9 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         // the app's own context: a fresh one's repaints reach no window and its clock starts at zero
         let ctx = app.tasks.repaint.clone().unwrap_or_default();
         return Some(crate::lightroom_import::command(app, id, p, &ctx));
+    }
+    if id.starts_with("workspace.") {
+        return Some(crate::workspaces::command(app, id, p));
     }
     if id == "photo.reload" {
         // the files are read in the background (a raw's decode takes a second or more)
@@ -2400,6 +2427,8 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         "dialog.slideshowExport" | "app.slideshowExport" => {
             !cfg!(target_arch = "wasm32") && !app.session.slideshow_export.as_ref().is_some_and(|r| r.running())
         }
+        "workspace.delete" => crate::workspaces::enabled(app) && !crate::workspaces::Workspaces::is_builtin(&app.workspaces.current),
+        s if s.starts_with("workspace.") => crate::workspaces::enabled(app),
         s if s.starts_with("panel.") || s.starts_with("tool.") || s.starts_with("section.") => app.session.active().is_some() || s == "panel.close",
         "app.export" | "dialog.export" | "dialog.createPreset" | "dialog.rename" | "dialog.captureTime" | "dialog.copySettings" => {
             app.session.active().is_some()

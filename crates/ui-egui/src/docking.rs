@@ -461,7 +461,12 @@ pub fn show(app: &mut crate::LightcraftApp, ui: &mut egui::Ui) {
             t.grid_bg
         };
         crate::panels::compare::prepare(app);
+        let create_center = crate::workspaces::create_center(app);
+        let step = crate::workspaces::step_of(app).filter(|_| crate::workspaces::owns_window(app));
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(bg)).show(ui, |ui| match app.ui.view {
+            _ if step == Some(crate::workspaces::Step::Import) => crate::home::show(app, ui),
+            _ if step == Some(crate::workspaces::Step::Classify) => crate::classify::show(app, ui),
+            crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid if create_center => crate::create_space::show(app, ui),
             crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid => crate::panels::grid::show(app, ui),
             crate::state::ViewMode::Detail => crate::panels::detail::show(app, ui),
             crate::state::ViewMode::Compare => crate::panels::compare::show_compare(app, ui),

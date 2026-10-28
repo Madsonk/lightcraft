@@ -14,7 +14,14 @@ mod command_error;
 pub mod control;
 pub mod credits;
 pub mod date_picker;
+pub mod classify;
+pub mod context_bar;
+pub mod create_space;
 pub mod design;
+pub mod home;
+pub mod journey;
+pub mod quick_sort;
+pub mod workspaces;
 pub mod docking;
 mod drop_overlay;
 pub mod export_task;
@@ -500,6 +507,8 @@ pub struct LightcraftApp {
     pub tasks: tasks::Tasks,
     /// The cull → retouch flow: AI picks, portrait retouch, one click, tour.
     pub flow: flow::Flow,
+    /// Workspaces (Library, Retouch, Create) and the state of their screens.
+    pub workspaces: workspaces::Workspaces,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
     pub last_export_result: Option<Value>,
     /// The last slideshow export's end has been told (a toast).
@@ -604,6 +613,7 @@ impl LightcraftApp {
             export: None,
             tasks: Default::default(),
             flow: Default::default(),
+            workspaces: Default::default(),
             last_export_result: None,
             slideshow_export_reported: true,
             hover_preview: None,
@@ -1244,6 +1254,7 @@ impl LightcraftApp {
         recheck::tick(self);
         tasks::poll(self, ctx);
         flow::tick(self, ctx);
+        workspaces::tick(self, ctx.input(|i| i.time));
         self.facemesh_poll(ctx);
         self.preview_build_status(ctx);
         self.save_status(ctx);
@@ -1648,8 +1659,11 @@ impl LightcraftApp {
         // Order matters: earlier panels take the full edge (top bar spans the window; the tool strip,
         // right panels and left panel run to the bottom; the bottom bar sits between them).
         panels::topbar::show(self, ui);
+        context_bar::show(self, ui);
         panels::library_problem::banner(self, ui);
-        panels::strip::show(self, ui);
+        if !workspaces::hides_strip(self) {
+            panels::strip::show(self, ui);
+        }
         // filled: the gaps the dock leaves between its panes show chrome, not the dark clear colour
         let chrome = theme::Tokens::get(&ctx).chrome;
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(chrome)).show(ui, |ui| docking::show(self, ui));
@@ -1658,6 +1672,7 @@ impl LightcraftApp {
         panels::notices::show(self, &ctx);
         panels::dialogs::show(self, &ctx);
         panels::library_problem::show(self, &ctx);
+        tasks::show(self, &ctx);
         flow::overlays(self, &ctx);
         panels::videos::jobs(self, &ctx);
         export_task::poll(self, &ctx);
