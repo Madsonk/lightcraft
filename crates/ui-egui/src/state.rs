@@ -1306,6 +1306,12 @@ pub enum Dialog {
         burst_gap: f32,
         similarity: f32,
     },
+    /// Photo ▸ Sorting Help: Assisted Culling (reject photos below this focus score, 0 = none; pick the best
+    /// of each burst), Suggested picks and Suggested keywords in one window.
+    SortingHelp {
+        reject_below: f32,
+        pick_best: bool,
+    },
     /// Help ▸ System Info: (label, value) rows.
     DenoiseModel {
         info: serde_json::Value,

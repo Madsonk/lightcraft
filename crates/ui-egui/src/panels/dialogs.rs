@@ -253,6 +253,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
         Dialog::FaceModel { .. } => "Add Face Model",
         Dialog::WhatsNew => "What's New",
         Dialog::Cull { .. } => "Assisted Culling",
+        Dialog::SortingHelp { .. } => crate::panels::sorting_help::TITLE,
         Dialog::SmartRules { id: None, .. } => "New Smart Album",
         Dialog::SmartRules { .. } => "Edit Smart Album",
         Dialog::AutoStack { .. } => "Auto-Stack by Capture Time",
@@ -384,6 +385,11 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     clamp_cull_burst(burst_gap, similarity);
                     ui.label(egui::RichText::new(crate::i18n::tr("Lower it when a panning or moving burst splits into several groups.")).color(t.text_dim));
                     ui.label(egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.")).color(t.text_dim));
+                }
+                Dialog::SortingHelp { reject_below, pick_best } => {
+                    if crate::panels::sorting_help::body(app, ui, &t, reject_below, pick_best) {
+                        close = true;
+                    }
                 }
                 Dialog::WhatsNew => {
                     egui::ScrollArea::vertical().max_height(list_height(ui, 460.0)).auto_shrink([false, true]).show(ui, |ui| {
@@ -2041,7 +2047,7 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
         Dialog::AutoStack { gap } => app.run("stack.auto", json!({"gap": gap})),
         Dialog::DenoiseModel { info, accepted } => crate::panels::denoise::install(app, info, *accepted),
         Dialog::FaceModel { path, info, accepted } => crate::panels::faces::install(app, path, info, *accepted),
-        Dialog::AllMetadata { .. } | Dialog::SystemInfo { .. } | Dialog::WhatsNew => Ok(serde_json::Value::Null),
+        Dialog::AllMetadata { .. } | Dialog::SystemInfo { .. } | Dialog::WhatsNew | Dialog::SortingHelp { .. } => Ok(serde_json::Value::Null),
         Dialog::Cull { reject_below, pick_best, burst_gap, similarity } => {
             app.ui.cull_burst = Some((*burst_gap, *similarity));
             app.run("photo.analyze", cull_params(*reject_below, *pick_best, *burst_gap, *similarity))
@@ -2490,6 +2496,7 @@ fn only_shows(dlg: &Dialog) -> bool {
             | Dialog::SystemInfo { .. }
             | Dialog::AllMetadata { .. }
             | Dialog::WhatsNew
+            | Dialog::SortingHelp { .. }
             | Dialog::ManageEffects { .. }
             | Dialog::ViewOptions
     ) || matches!(dlg, Dialog::SynchronizeFolder { counts: Some(c), .. } if c.up_to_date())

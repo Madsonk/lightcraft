@@ -26,6 +26,7 @@ pub mod docking;
 mod drop_overlay;
 pub mod export_task;
 pub mod flow;
+pub mod heavy;
 mod focus_scan;
 mod frame_rate;
 pub mod headless;
@@ -509,6 +510,10 @@ pub struct LightcraftApp {
     pub flow: flow::Flow,
     /// Workspaces (Library, Retouch, Create) and the state of their screens.
     pub workspaces: workspaces::Workspaces,
+    /// What each finished background task (suggested keywords) ended with, by label (`ui.inspect` → `lastTask`).
+    pub last_task: std::collections::BTreeMap<String, Value>,
+    /// Photo ▸ Sorting Help: the last answers of its helpers.
+    pub sorting: panels::sorting_help::State,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
     pub last_export_result: Option<Value>,
     /// The last slideshow export's end has been told (a toast).
@@ -614,6 +619,8 @@ impl LightcraftApp {
             tasks: Default::default(),
             flow: Default::default(),
             workspaces: Default::default(),
+            last_task: Default::default(),
+            sorting: Default::default(),
             last_export_result: None,
             slideshow_export_reported: true,
             hover_preview: None,

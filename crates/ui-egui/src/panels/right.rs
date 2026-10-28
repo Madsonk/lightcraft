@@ -1303,7 +1303,43 @@ fn keywording(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 }
             });
         }
+        ui.add_space(10.0);
+        suggested_keywords(app, ui);
     });
+}
+
+/// The keywords suggested for a photo by the controlled vocabulary (zero-shot on the search
+/// model) and by what the library has learned of the user's own keywords. Nothing is added until
+/// a chip is clicked (or "Add all"); the "automatically" box is off by default. The helper itself
+/// (run in the background, with its measured reliability and the keywords to click) lives in
+/// Photo ▸ Sorting Help, next to Assisted Culling and Suggested picks.
+fn suggested_keywords(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(crate::i18n::tr("Suggested keywords")).color(t.text_dim));
+        let r = text_button(ui, "kwSuggestRun", "Suggest", false).on_hover_text(crate::i18n::tr(
+            "Opens Sorting Help: the search model looks at the photos (the first use loads it: about a minute). Nothing is added until you click a keyword.",
+        ));
+        if r.clicked() {
+            let _ = app.run("dialog.sortingHelp", json!({"section": "keywords"}));
+        }
+    });
+    let auto_id = egui::Id::new("kw-auto-accept");
+    let mut auto: bool = match ui.data(|d| d.get_temp::<bool>(auto_id)) {
+        Some(b) => b,
+        None => {
+            let b = app.run("keywords.settings", json!({})).ok().and_then(|v| v["autoAccept"].as_bool()).unwrap_or(false);
+            ui.data_mut(|d| d.insert_temp(auto_id, b));
+            b
+        }
+    };
+    let changed = ui
+        .checkbox(&mut auto, crate::i18n::tr("Add suggestions above 90 % automatically"))
+        .on_hover_text(crate::i18n::tr("Off by default. When on, Suggest also adds the keywords at or above the threshold."))
+        .changed();
+    if changed && app.run("keywords.settings", json!({"autoAccept": auto})).is_ok() {
+        ui.data_mut(|d| d.insert_temp(auto_id, auto));
+    }
 }
 
 /// Keeps the Keyword List where it is on screen when the Keywords box above it (starting at
