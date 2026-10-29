@@ -45,6 +45,8 @@ unicode-segmentation = "1.13"
 lightcraft-segment = { workspace = true, optional = true }
 lightcraft-retouch = { workspace = true }
 lightcraft-culler = { workspace = true }
+lightcraft-style = { workspace = true }
+lightcraft-autoframe = { workspace = true }
 lightcraft-facemesh = { workspace = true, optional = true }
 lightcraft-autoseg = { workspace = true, optional = true }
 lightcraft-search = { workspace = true, optional = true }

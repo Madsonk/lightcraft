@@ -41,6 +41,7 @@ pub mod slide_titles;
 pub mod slideshow;
 pub mod sorting_help;
 pub mod strip;
+pub mod style;
 pub mod topbar;
 pub mod unnamed;
 pub mod videos;

@@ -88,6 +88,7 @@ pub mod slide_title;
 pub mod slideshow;
 pub mod slideshow_export;
 pub mod smart;
+pub mod style_job;
 pub mod sync;
 pub mod text;
 pub mod video;
@@ -304,6 +305,8 @@ pub struct Session {
     pub(crate) faces: faces_index::FacesState,
     /// AI culling (`cull.*`): the job in progress or the last one, and the user's settings.
     pub cull: cull_job::Culler,
+    /// "My style" and automatic framing (`style.*`, `autocrop.*`, `autostraighten.*`): jobs and profiles.
+    pub style: style_job::StyleLab,
     /// Face analysis (eyes open / closed, eye sharpness): the model and the run in progress.
     pub facemesh: facemesh::Faces,
     /// Semantic search and near-duplicates: the SigLIP model, the index, the indexing run.
@@ -506,6 +509,7 @@ impl Session {
             #[cfg(not(target_arch = "wasm32"))]
             faces: Default::default(),
             cull: Default::default(),
+            style: Default::default(),
             facemesh: facemesh::Faces::default(),
             searcher: search::Searcher::default(),
             ai: ai::Ai::default(),
@@ -1489,6 +1493,8 @@ mod tests_slide;
 mod tests_slideshow_export;
 #[cfg(test)]
 mod tests_spots;
+#[cfg(test)]
+mod tests_style;
 #[cfg(test)]
 mod tests_sync;
 #[cfg(all(test, feature = "search"))]

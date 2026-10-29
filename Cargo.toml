@@ -22,6 +22,8 @@ lightcraft-facemesh = { path = "crates/facemesh" }
 lightcraft-culler = { path = "crates/culler" }
 lightcraft-search = { path = "crates/search" }
 lightcraft-taste = { path = "crates/taste" }
+lightcraft-style = { path = "crates/style" }
+lightcraft-autoframe = { path = "crates/autoframe" }
 lightcraft-retouch = { path = "crates/retouch" }
 lightcraft-sysmem = { path = "crates/sysmem" }
 lightcraft-color = { path = "crates/color" }

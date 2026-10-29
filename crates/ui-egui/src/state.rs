@@ -41,6 +41,8 @@ pub enum RightPanel {
     Profiles,
     /// Portrait retouch by sliders: groups, Before / After, auto, open eyes.
     Portrait,
+    /// "My style" and "Auto crop": learned style, straighten and crop suggestions.
+    Style,
     /// AI Culling: run it on the view, read the buckets, apply the proposed stars and flags.
     AiPicks,
 }
@@ -56,6 +58,7 @@ impl RightPanel {
                 | RightPanel::Masking
                 | RightPanel::RedEye
                 | RightPanel::Portrait
+                | RightPanel::Style
         )
     }
 }

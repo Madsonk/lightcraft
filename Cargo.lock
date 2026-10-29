@@ -3112,6 +3112,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-autoframe"
+version = "0.14.0"
+dependencies = [
+ "lightcraft-develop",
+ "lightcraft-geom",
+ "lightcraft-pipeline",
+ "lightcraft-raster",
+ "serde",
+]
+
+[[package]]
 name = "lightcraft-autoseg"
 version = "0.14.0"
 dependencies = [
@@ -3259,6 +3270,7 @@ dependencies = [
  "harfrust",
  "jxl-oxide",
  "libc",
+ "lightcraft-autoframe",
  "lightcraft-autoseg",
  "lightcraft-catalog",
  "lightcraft-codecs",
@@ -3286,6 +3298,7 @@ dependencies = [
  "lightcraft-search",
  "lightcraft-segment",
  "lightcraft-slideshow",
+ "lightcraft-style",
  "lightcraft-taste",
  "lightcraft-testkit",
  "lightcraft-tiff",
@@ -3561,6 +3574,20 @@ dependencies = [
  "lightcraft-raster",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lightcraft-style"
+version = "0.14.0"
+dependencies = [
+ "lightcraft-color",
+ "lightcraft-develop",
+ "lightcraft-pipeline",
+ "lightcraft-raster",
+ "lightcraft-scenes",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
