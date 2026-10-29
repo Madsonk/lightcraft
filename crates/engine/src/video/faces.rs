@@ -114,6 +114,7 @@ fn recognizer(s: &mut Session, c: &str) -> Result<(Arc<lightcraft_faces::runtime
 }
 
 /// The named faces of the photos the People view knows, as `(name, embedding)`.
+#[cfg(not(target_arch = "wasm32"))]
 fn gallery(s: &mut Session) -> Arc<Vec<(String, Arc<[f32]>)>> {
     let named = s.catalog.photos().filter(|p| p.in_library()).map(|p| p.meta.regions.len()).sum::<usize>();
     let stamp = (s.faces.index.len(), named);
@@ -140,7 +141,14 @@ fn gallery(s: &mut Session) -> Arc<Vec<(String, Arc<[f32]>)>> {
     g
 }
 
+/// Who is at `key` (nobody is known in the browser: the faces of videos are found by the desktop app).
+#[cfg(target_arch = "wasm32")]
+pub fn faces_at(_: &mut Session, _: u64) -> Vec<Value> {
+    Vec::new()
+}
+
 /// Who is at `key`: `[{face, rect, person: null, name}]`, `name` a suggestion from the photos' names.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn faces_at(s: &mut Session, key: u64) -> Vec<Value> {
     prepare_reading(s);
     let found: Vec<VideoFace> = lock(&s.video.faces.store).by_key.get(&key).cloned().unwrap_or_default();

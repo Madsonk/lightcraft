@@ -239,6 +239,14 @@ pub fn probe_head(path: &str) -> Option<ProbeInfo> {
 
 /// [`probe_head`] saying why the whole file has to be read instead.
 pub fn probe_head_why(path: &str) -> Result<ProbeInfo, String> {
+    #[cfg(target_arch = "wasm32")]
+    return Err(format!("{path}: raws are read whole in the browser"));
+    #[cfg(not(target_arch = "wasm32"))]
+    probe_head_native(path)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn probe_head_native(path: &str) -> Result<ProbeInfo, String> {
     use std::io::Read;
     let p = std::path::Path::new(path);
     let file_size = std::fs::metadata(p).map_err(|e| e.to_string())?.len();
@@ -252,7 +260,10 @@ pub fn probe_head_why(path: &str) -> Result<ProbeInfo, String> {
         Some(Arw | Cr2 | Cr3 | Nef | Orf | Raf | Rw2 | Srw) => {}
         other => return Err(format!("container {other:?} is read whole")),
     }
+    #[cfg(not(target_arch = "wasm32"))]
     let hash = crate::video::sampled_hash_tagged(p, "ps1")?;
+    #[cfg(target_arch = "wasm32")]
+    let hash = String::new();
     let name = p.file_name().map(|n| n.to_string_lossy().to_string()).ok_or("no file name")?;
     // the header readers check that the strips they describe lie inside the file: give them a buffer of the file's size
     // whose unread part is zeros (a lazily mapped allocation: nothing is read or touched for it)
