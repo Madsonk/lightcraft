@@ -129,6 +129,53 @@ impl eframe::App for App {
     }
 }
 
+/// What the window shows while the library opens: a first frame that says so, then the app (the catalog
+/// opening blocks the thread, and before this the window stayed empty for as long as it took).
+struct Boot {
+    build: Option<Box<dyn FnOnce() -> App>>,
+    app: Option<App>,
+    frames: u8,
+}
+
+impl eframe::App for Boot {
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        if let Some(app) = self.app.as_mut() {
+            eframe::App::logic(app, ctx, frame);
+            return;
+        }
+        // the first frame is drawn (and shown) before the library is opened
+        self.frames = self.frames.saturating_add(1);
+        if self.frames >= 2
+            && let Some(build) = self.build.take()
+        {
+            let mut app = build();
+            eframe::App::logic(&mut app, ctx, frame);
+            self.app = Some(app);
+            ctx.request_repaint();
+        }
+    }
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if let Some(app) = self.app.as_mut() {
+            eframe::App::raw_input_hook(app, ctx, raw);
+        }
+    }
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        if let Some(app) = self.app.as_mut() {
+            eframe::App::ui(app, ui, frame);
+            return;
+        }
+        ui.centered_and_justified(|ui| {
+            ui.label(egui::RichText::new(lightcraft_ui_egui::i18n::tr("Opening the library…")).size(18.0));
+        });
+        ui.ctx().request_repaint();
+    }
+    fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        if let Some(app) = self.app.as_mut() {
+            eframe::App::on_exit(app, gl);
+        }
+    }
+}
+
 /// How long quitting waits for renders that are running (issue #620). A GPU render takes well under
 /// a second; anything slower gives way to quitting.
 const EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
@@ -259,80 +306,87 @@ fn main() -> eframe::Result {
                 // the window's renderer is up (eframe calls this after creating it)
                 win_files_app.started(window_renderer);
                 came_up_app.store(true, std::sync::atomic::Ordering::Relaxed);
-                let (mut session, mut problem) = open_session(in_memory, &launch, seed_demo && files.is_empty());
-                // AI masks: the SAM 3 checkpoint (facebook/sam3) in <config>/models/sam3, or LIGHTCRAFT_SAM3_DIR
-                // (never required: without it, AI masks offer to download it; see docs/ai-masks.md)
-                // and the user's own download locations, one base URL per line (LIGHTCRAFT_SAM3_MIRRORS too)
-                session = session.with_default_sam3_model();
-                // HDR display: SDR unless the surface, platform and display all allow HDR
-                hdr_display::report(cc.wgpu_render_state.as_ref().map(|r| r.target_format));
-                let mut app = LightcraftApp::new(session, services(cc, app_log_file.as_deref()));
-                app.set_startup_update_check(true);
-                if let Some(ui) = prefs {
-                    app.ui = ui;
-                }
-                // the recent libraries to choose from (issue #1290), checked on a worker once shown
-                if launch == Launch::Ask {
-                    problem = Some(LibraryProblem::choose_later(&app.ui.settings));
-                }
-                app.alt_asks_for_library = matches!(launch, Launch::Open { alt_asks: true, .. });
-                lightcraft_ui_egui::i18n::set_language(app.ui.language);
-                app.integrated_titlebar = cfg!(target_os = "macos");
-                app.notices.extend(prefs_warning);
-                app.notices.extend(launch_notices);
-                app.notices.extend(window_notice);
-                app.gpu_notice = true;
-                // an empty library opens where Import is offered (a grid, with the sidebar); before
-                // the snapshot below, so this alone isn't written to the settings file
-                if problem.is_none() && files.is_empty() {
-                    lightcraft_ui_egui::panels::empty_library::open_on_empty_library(&mut app);
-                }
-                // what's on disk now: only changes are written
-                let writer = PrefsWriter {
-                    path: if in_memory { None } else { prefs_path() },
-                    written: serde_json::to_vec_pretty(&app.ui).unwrap_or_default(),
-                    library: app.ui.settings.library_path.clone(),
-                    keep_file: keep_prefs_file,
-                    ..Default::default()
-                };
-                // the workspaces: <config>/workspaces.json beside ui.json (nothing read or written for --memory or LIGHTCRAFT_NO_PREFS)
-                lightcraft_ui_egui::workspaces::attach(
-                    &mut app,
-                    if in_memory { None } else { prefs_path().and_then(|p| p.parent().map(|d| d.join(lightcraft_ui_egui::workspaces::FILE))) },
-                );
-                // after the snapshot above, so the writer saves the switched-off preference
-                if let Some(notice) = gpu_crash {
-                    app.ui.settings.gpu = false;
-                    app.notices.push(notice);
-                }
-                if let Some(port) = control_port {
-                    let rx = control_server::start(port, cc.egui_ctx.clone());
-                    app = app.with_control(rx);
-                }
-                if let Some(mut p) = problem {
-                    // imported once the user has chosen where (into the library, or the temporary session)
-                    p.pending_import = files;
-                    app.library_problem = Some(p);
-                } else if !files.is_empty() {
-                    // listed and read on the import worker once the window shows (issue #374: never
-                    // here, before the first frame, where a large folder kept the window from
-                    // appearing)
-                    if let Err(e) = lightcraft_ui_egui::import::start_paths(&mut app, files) {
-                        log::warn!("import at launch: {e}");
+                // the window is up: what takes time (the catalog opening, on a cold disk several seconds) waits for the
+                // first frame, which says so
+                let ctx = cc.egui_ctx.clone();
+                let render_format = cc.wgpu_render_state.as_ref().map(|r| r.target_format);
+                let svc = services(cc, app_log_file.as_deref());
+                let build: Box<dyn FnOnce() -> App> = Box::new(move || {
+                    let (mut session, mut problem) = open_session(in_memory, &launch, seed_demo && files.is_empty());
+                    // AI masks: the SAM 3 checkpoint (facebook/sam3) in <config>/models/sam3, or LIGHTCRAFT_SAM3_DIR
+                    // (never required: without it, AI masks offer to download it; see docs/ai-masks.md)
+                    // and the user's own download locations, one base URL per line (LIGHTCRAFT_SAM3_MIRRORS too)
+                    session = session.with_default_sam3_model();
+                    // HDR display: SDR unless the surface, platform and display all allow HDR
+                    hdr_display::report(render_format);
+                    let mut app = LightcraftApp::new(session, svc);
+                    app.set_startup_update_check(true);
+                    if let Some(ui) = prefs {
+                        app.ui = ui;
                     }
-                    app.ui.view = lightcraft_ui_egui::state::ViewMode::PhotoGrid;
-                }
-                // native menu bar generated from the command registry (macOS; elsewhere the menus are
-                // drawn in the window's top bar). LIGHTCRAFT_NO_NATIVE_MENU=1 keeps the in-window menus.
-                #[cfg(target_os = "macos")]
-                let menu =
-                    (std::env::var_os("LIGHTCRAFT_NO_NATIVE_MENU").is_none()).then(|| native_menu::NativeMenu::install(&mut app, &cc.egui_ctx));
-                Ok(Box::new(App(
-                    app,
-                    writer,
+                    // the recent libraries to choose from (issue #1290), checked on a worker once shown
+                    if launch == Launch::Ask {
+                        problem = Some(LibraryProblem::choose_later(&app.ui.settings));
+                    }
+                    app.alt_asks_for_library = matches!(launch, Launch::Open { alt_asks: true, .. });
+                    lightcraft_ui_egui::i18n::set_language(app.ui.language);
+                    app.integrated_titlebar = cfg!(target_os = "macos");
+                    app.notices.extend(prefs_warning);
+                    app.notices.extend(launch_notices);
+                    app.notices.extend(window_notice);
+                    app.gpu_notice = true;
+                    // an empty library opens where Import is offered (a grid, with the sidebar); before
+                    // the snapshot below, so this alone isn't written to the settings file
+                    if problem.is_none() && files.is_empty() {
+                        lightcraft_ui_egui::panels::empty_library::open_on_empty_library(&mut app);
+                    }
+                    // what's on disk now: only changes are written
+                    let writer = PrefsWriter {
+                        path: if in_memory { None } else { prefs_path() },
+                        written: serde_json::to_vec_pretty(&app.ui).unwrap_or_default(),
+                        library: app.ui.settings.library_path.clone(),
+                        keep_file: keep_prefs_file,
+                        ..Default::default()
+                    };
+                    // the workspaces: <config>/workspaces.json beside ui.json (nothing read or written for --memory or LIGHTCRAFT_NO_PREFS)
+                    lightcraft_ui_egui::workspaces::attach(
+                        &mut app,
+                        if in_memory { None } else { prefs_path().and_then(|p| p.parent().map(|d| d.join(lightcraft_ui_egui::workspaces::FILE))) },
+                    );
+                    // after the snapshot above, so the writer saves the switched-off preference
+                    if let Some(notice) = gpu_crash {
+                        app.ui.settings.gpu = false;
+                        app.notices.push(notice);
+                    }
+                    if let Some(port) = control_port {
+                        let rx = control_server::start(port, ctx.clone());
+                        app = app.with_control(rx);
+                    }
+                    if let Some(mut p) = problem {
+                        // imported once the user has chosen where (into the library, or the temporary session)
+                        p.pending_import = files;
+                        app.library_problem = Some(p);
+                    } else if !files.is_empty() {
+                        // listed and read on the import worker once the window shows (issue #374: never
+                        // here, before the first frame, where a large folder kept the window from
+                        // appearing)
+                        if let Err(e) = lightcraft_ui_egui::import::start_paths(&mut app, files) {
+                            log::warn!("import at launch: {e}");
+                        }
+                        app.ui.view = lightcraft_ui_egui::state::ViewMode::PhotoGrid;
+                    }
+                    // native menu bar generated from the command registry (macOS; elsewhere the menus are
+                    // drawn in the window's top bar). LIGHTCRAFT_NO_NATIVE_MENU=1 keeps the in-window menus.
                     #[cfg(target_os = "macos")]
-                    menu,
-                )))
+                    let menu = (std::env::var_os("LIGHTCRAFT_NO_NATIVE_MENU").is_none()).then(|| native_menu::NativeMenu::install(&mut app, &ctx));
+                    App(
+                        app,
+                        writer,
+                        #[cfg(target_os = "macos")]
+                        menu,
+                    )
+                });
+                Ok(Box::new(Boot { build: Some(build), app: None, frames: 0 }))
             }),
         )
     }));
