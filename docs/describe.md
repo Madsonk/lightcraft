@@ -126,6 +126,67 @@ seen. `semantic.used` says whether the meaning was used, and why not.
 The search bar's `semantic:` token is not wired to it yet (step 3: the Videos interface); `describe.search` is available
 from the control channel, the CLI and MCP.
 
+### Honest scores: centring and the floor (VID-6, 28 Oct 2026)
+
+SigLIP's text vectors all lean the same way, and some pictures are close to every sentence, so a nonsense query used to
+return the 20 "least bad" pictures. `describe.search` has two corrections (`describe/honest.rs`; ideas of the SCM study,
+written here for French and English):
+
+- **`centre`** — `none` (default), `text` (the query vector minus the mean of ~660 neutral captions: 8 generic ones and each of the 326
+  glossary words, in both languages) or `gap` (also plus the mean of the pictures);
+- **`floor`** — a margin (cosine units; `0.04` by default; `false` turns it off): fourteen nonsense queries are asked to
+  the same library, the best cosine any of them reaches *with a given picture* is that picture's noise ceiling, and a
+  meaning match must beat it by the margin. A query that beats nothing finds nothing by meaning
+  (`semantic.nothingByMeaning`); the text side is unaffected. `normalise: true` ranks by the margin instead of the plain
+  cosine.
+
+**Bench** (same `describe_bench`, the first 300 of the 1 312 questions, library of 355 videos, debug-optimized build, 0.03 s
+per query without the floor, 0.06 s with it because the ceilings are recomputed each time). "Nonsense" = 10 queries that
+were not used to calibrate (« tableau périodique des éléments », « facture d'électricité », …), results by meaning only.
+
+| meaning only, both languages | nonsense queries with a result | mean results | real queries (100 actions) with a result | r@10 (short action / sentence) |
+|---|---|---|---|---|
+| no floor (before) | 10/10 | 200 | 100/100 | 30.0 % / 64.7 % |
+| floor 0 | 9/10 | 43 | 100/100 | 30.0 % / 64.7 % |
+| floor 0.02 | 3/10 | 8 | 100/100 | 28.7 % / 64.7 % |
+| **floor 0.04 (default)** | **0/10** | **0** | 94/100 | 26.0 % / 62.7 % |
+| floor 0.06 | 0/10 | 0 | 71/100 | 15.0 % / 56.7 % |
+| centre=text, no floor | 10/10 | 200 | 100/100 | 30.0 % / 66.7 % |
+| centre=text, floor 0.06 | 1/10 | 0.5 | 99/100 | 27.3 % / 53.3 % |
+| centre=gap, no floor | 10/10 | 200 | — | 12.0 % / 42.3 % |
+
+Fusion with the text (the default), r@1 / r@5 / r@10 for a short action, then a sentence: before 24.7 / 47.0 / 60.7 and
+42.3 / 70.3 / 79.7; **with the default floor 26.7 / 47.3 / 58.7 and 43.0 / 69.7 / 79.0**, video r@5 59.0 → 58.0 and
+78.0 → 79.0: the floor costs about a point at rank 10 and removes the answers that were noise.
+
+Read with care. The **floor works** (nonsense finds nothing; 94 real queries in 100 still find something by meaning, the
+other six rest on the text) and does not move the ranks that matter. **Centring on the neutral captions is not proven**:
++2 points at rank 10 for the meaning of a sentence, 66 → 52 median rank for a short action, but nothing for the fusion
+(±1 point, inside the noise of 300 questions), so it stays an option, off. **`gap` hurts** and `normalise` does not help.
+One library, descriptions written by a vision model from the very pictures searched: the numbers are optimistic.
+
+### What is said (VID-6)
+
+`video.transcribe {ids?, language?: auto|fr|en…, model?, force?, background?}` listens to the soundtracks with
+`mlx_whisper` (`pip install mlx-whisper`; large-v3-turbo; one video at a time; FFmpeg extracts a 16 kHz mono WAV first)
+and keeps the sentences in `<library>/video/<key>/speech.json`. Sentences Whisper invents are dropped on the way
+(`video/speech.rs`): stock phrases (« Sous-titres réalisés par la communauté d'Amara.org », « thanks for watching »), a
+sentence repeated more than twice in a row or more than four times in the video, sentences it flags as silence or loops
+(no-speech probability > 0.6 with a low log-probability, compression ratio > 2.4), and fragments of fewer than two
+letters. `describe.search` then also looks in what is said (`speech: false` turns it off), by **words, in three levels
+and with no stemming of English** (the same French word-beginning rule as the annotations): level 1, every word in one
+sentence; level 2, every word within 8 s; level 3, every word somewhere in the video (given to its closest picture).
+Rows carry `speech: {level, ms, text}`; a sentence found at level 1 ranks above one found at level 2.
+
+### Pictures at the shots, and again after a failure (VID-6)
+
+`video.frames {plan: "scenes"}` finds the cuts with FFmpeg (`select='gt(scene,0.3)'` at 360 lines, `sceneThreshold`),
+cuts one picture in the middle of each shot, and adds pictures to a shot longer than `maxGap` (8 s) so no stretch is left
+without one (`video/scenes.rs`; shots shorter than 0.7 s are merged; at most `max` pictures). It reads the whole video
+(343 MB of GoPro in 8.4 s on the NAS) and falls back to the even plan, saying so in `note`, if FFmpeg cannot. 
+`video.frames {retryFailed: true}` cuts again only the moments the last run could not cut, and the ones 0.7 s beside
+them; a failure with a picture within a second is no longer a failure.
+
 ## In the app
 
 **View ▸ Videos** (or the camera button of the bottom bar) opens the **Videos** view:

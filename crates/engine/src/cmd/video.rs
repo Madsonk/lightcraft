@@ -34,7 +34,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Cut Pictures from Videos",
             [],
             None,
-            "{ids? (default: every video of the library), background?: bool (false: wait; true: return at once, follow video.status → job, stop with video.cancel), every?: seconds between pictures (default: 12 per video, one every 2 s for a short one), max?: n per video (120, at most 240), force?: bool (cut again), maxBytes?: disk for all the library's pictures (4 GiB)} — cut pictures (JPEG, 1280 px) out of the videos with FFmpeg into `<library>/video/<key>/` (never next to the video, never in the catalog), listed in its `frames.json`; an interrupted run resumes (pictures already there are kept). Then `people.index` finds the faces in them → {videos, cut, kept, failed, bytes, overBudget, results: [{id, planned, cut, kept, failed, error}]}",
+            "{ids? (default: every video of the library), background?: bool (false: wait; true: return at once, follow video.status → job, stop with video.cancel), every?: seconds between pictures (default: 12 per video, one every 2 s for a short one), max?: n per video (120, at most 240), plan?: even | scenes (scenes: one picture per shot and more in a long shot, found by reading the whole video; shots not found → even), sceneThreshold? (0.3), maxGap?: seconds a shot may go without a picture (8), retryFailed?: bool (only the moments a previous run could not cut, and the ones 0.7 s beside them), force?: bool (cut again), maxBytes?: disk for all the library's pictures (4 GiB)} — cut pictures (JPEG, 1280 px) out of the videos with FFmpeg into `<library>/video/<key>/` (never next to the video, never in the catalog), listed in its `frames.json`; an interrupted run resumes (pictures already there are kept). Then `people.index` finds the faces in them → {videos, cut, kept, failed, bytes, overBudget, results: [{id, planned, cut, kept, failed, error}]}",
             always,
             frames
         ),
@@ -55,6 +55,15 @@ pub fn specs() -> Vec<CommandSpec> {
             "{id} — a video's pictures and described moments in time order (a photo: its one moment), each with its picture, its faces and who they are, and its description (value, status, sources, proposals) → {id, video, name, duration, moments: [{ms, frame, faces, people, annotation}]}",
             always,
             crate::video::views::moments
+        ),
+        cmd!(
+            query "video.person",
+            "Faces of a Person in Videos",
+            [],
+            None,
+            "{name, limit?: n (200)} — the pictures of videos where this person is suggested by the photos' named faces (People ▸ Recognition), by video then time → {name, total, videos, faces: [{video, file, ms, frame, rect}]}",
+            always,
+            crate::video::views::person
         ),
         cmd!(
             query "video.open",
@@ -93,6 +102,15 @@ pub fn specs() -> Vec<CommandSpec> {
             cancel
         ),
         cmd!(
+            query "video.transcribe",
+            "Transcribe Videos",
+            [],
+            None,
+            "{ids? (default: every video of the library), language?: auto | fr | en… (auto), model?: (mlx-community/whisper-large-v3-turbo), force?: bool (listen again), background?: bool (false: wait; true: return at once, follow video.status → speech, stop with video.cancel)} — listen to the videos' soundtracks with `mlx_whisper` (installed by `pip install mlx-whisper`; one video at a time) and keep the sentences, cleaned of Whisper's loops and stock phrases, in `<library>/video/<key>/speech.json`; a video already transcribed is kept. `describe.search` then also finds what is said → {videos, transcribed, kept, failed: [{id, error}]}",
+            always,
+            transcribe
+        ),
+        cmd!(
             query "video.importVideoCatcher",
             "Import from Video Catcher",
             [],
@@ -113,6 +131,10 @@ fn frames(_: &mut Session, _: &Value) -> Result<Value> {
     Err(other("videos are not available in this build"))
 }
 #[cfg(target_arch = "wasm32")]
+fn transcribe(_: &mut Session, _: &Value) -> Result<Value> {
+    Err(other("videos are not available in this build"))
+}
+#[cfg(target_arch = "wasm32")]
 fn cancel(_: &mut Session, _: &Value) -> Result<Value> {
     Ok(json!({"cancelled": false}))
 }
@@ -127,7 +149,7 @@ fn status(s: &mut Session, p: &Value) -> Result<Value> {
     // `jobOnly`: what a window polls every few seconds — no file read at all (the counts below read
     // every video's list of pictures, which froze the window on a slow disk)
     if bool_or(p, "jobOnly", false) {
-        return Ok(json!({"available": true, "job": s.video.job.report(false)}));
+        return Ok(json!({"available": true, "job": s.video.job.report(false), "speech": s.video.speech.report()}));
     }
     // taken before the counts: a job that ends meanwhile is then reported as running, never as finished with
     // counts that predate its pictures
@@ -149,7 +171,7 @@ fn status(s: &mut Session, p: &Value) -> Result<Value> {
         "ffmpeg": ffmpeg::ffmpeg().map(|p| p.display().to_string()), "ffprobe": ffmpeg::ffprobe().map(|p| p.display().to_string()),
         "videos": videos.len(), "withFrames": with, "frames": n,
         "bytes": root.as_deref().map(crate::video::frames_bytes), "folder": root.map(|r| r.display().to_string()),
-        "job": job,
+        "job": job, "speech": s.video.speech.report(),
     }))
 }
 
@@ -170,6 +192,16 @@ fn frames(s: &mut Session, p: &Value) -> Result<Value> {
     let every = p.get("every").and_then(Value::as_f64);
     let max = f64_or(p, "max", 120.0).clamp(1.0, frames::MAX_FRAMES as f64) as usize;
     let force = bool_or(p, "force", false);
+    // `plan`: "even" (the default: about twelve pictures spread over the video) or "scenes" (one
+    // picture per shot, more in a long shot; reads the whole video to find the cuts)
+    let by_scenes = match str_param(p, "plan").unwrap_or("even") {
+        "even" => false,
+        "scenes" => true,
+        _ => return Err(bad(C, "`plan` is even or scenes")),
+    };
+    let threshold = f64_or(p, "sceneThreshold", crate::video::scenes::THRESHOLD);
+    let max_gap = (f64_or(p, "maxGap", crate::video::scenes::MAX_GAP_MS as f64 / 1000.0).clamp(1.0, 600.0) * 1000.0) as u64;
+    let retry_failed = bool_or(p, "retryFailed", false);
     let background = bool_or(p, "background", false);
     let max_bytes = f64_or(p, "maxBytes", DEFAULT_MAX_BYTES as f64).clamp(0.0, 1e15) as u64;
     let ids: Vec<lightcraft_catalog::PhotoId> =
@@ -211,9 +243,35 @@ fn frames(s: &mut Session, p: &Value) -> Result<Value> {
                     // a video catalogued without its duration (or a damaged one): ask the file
                     let duration =
                         crate::video::ffmpeg::sane_duration(*duration).or_else(|| crate::video::ffmpeg::probe(path).ok().and_then(|i| i.duration));
-                    let times = frames::plan(duration, every, max);
                     let ms = duration.map(|d| (d * 1000.0) as u64);
-                    frames::extract(path, ck, ms, &video_dir(&root, ck), &times, force, &budget, &job.cancel)
+                    let mut note = None;
+                    if retry_failed {
+                        // only the moments the last run could not cut, and their neighbours
+                        let dir = video_dir(&root, ck);
+                        let times =
+                            frames::Manifest::load(&dir).filter(|m| m.content_key == *ck).map(|m| frames::retry_times(&m)).unwrap_or_default();
+                        if times.is_empty() {
+                            return frames::Cut::default();
+                        }
+                        let cut = frames::extract(path, ck, ms, &dir, &times, false, &budget, &job.cancel);
+                        frames::resolve_failed(&dir);
+                        return cut;
+                    }
+                    let times = match (by_scenes, ms) {
+                        (true, Some(len)) => match crate::video::scenes::detect(path, threshold) {
+                            Ok(cuts) => crate::video::scenes::plan(len, &cuts, max_gap, max),
+                            Err(e) => {
+                                note = Some(format!("shots not found ({e}): evenly spread pictures instead"));
+                                frames::plan(duration, every, max)
+                            }
+                        },
+                        _ => frames::plan(duration, every, max),
+                    };
+                    let mut cut = frames::extract(path, ck, ms, &video_dir(&root, ck), &times, force, &budget, &job.cancel);
+                    if cut.error.is_none() {
+                        cut.note = note;
+                    }
+                    cut
                 }))
                 .unwrap_or_else(|_| frames::Cut { error: Some("cutting the pictures failed unexpectedly".into()), ..Default::default() });
                 job.record(id.0, cut);
@@ -262,7 +320,78 @@ fn unreadable(_: &mut Session, _: &Value) -> Result<Value> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn cancel(s: &mut Session, _: &Value) -> Result<Value> {
-    Ok(json!({"cancelled": s.video.job.cancel_run()}))
+    let (a, b) = (s.video.job.cancel_run(), s.video.speech.cancel_run());
+    Ok(json!({"cancelled": a || b}))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn transcribe(s: &mut Session, p: &Value) -> Result<Value> {
+    use std::sync::atomic::Ordering;
+
+    use crate::video::{cache_root, source_path, speech, video_dir};
+    const C: &str = "video.transcribe";
+    let root = cache_root(s).ok_or_else(|| bad(C, "the library is not on disk: its videos' sentences need a folder"))?;
+    if crate::video::ffmpeg::ffmpeg().is_none() || speech::whisper().is_none() {
+        return Err(other(format!(
+            "ffmpeg or mlx_whisper was not found (install FFmpeg and `pip install mlx-whisper`, or set {} / {})",
+            crate::video::ffmpeg::FFMPEG_ENV,
+            speech::WHISPER_ENV
+        )));
+    }
+    let language = str_param(p, "language").unwrap_or("auto").trim().to_lowercase();
+    if language.is_empty() || language.len() > 12 || !language.chars().all(|c| c.is_ascii_alphabetic()) {
+        return Err(bad(C, "`language` is auto or a language code (fr, en…)"));
+    }
+    let model = str_param(p, "model").unwrap_or(speech::DEFAULT_MODEL).to_string();
+    let force = bool_or(p, "force", false);
+    let background = bool_or(p, "background", false);
+    let ids: Vec<lightcraft_catalog::PhotoId> = if p.get("ids").is_some() {
+        s.targets(p)?
+    } else {
+        s.catalog.photos().filter(|q| q.in_library() && q.kind == lightcraft_catalog::MediaKind::Video).map(|q| q.id).collect()
+    };
+    let mut seen = std::collections::HashSet::new();
+    let mut jobs = Vec::new();
+    for id in ids {
+        let Some(ph) = s.catalog.photo(id).filter(|q| q.kind == lightcraft_catalog::MediaKind::Video) else { continue };
+        let Some(path) = source_path(ph) else { continue };
+        let ck = crate::media::content_key(ph);
+        if !seen.insert(ck.clone()) {
+            continue;
+        }
+        let dir = video_dir(&root, &ck);
+        if !force && speech::Speech::load(&dir).is_some() {
+            continue;
+        }
+        jobs.push((id, std::path::PathBuf::from(path), ck, dir));
+    }
+    let job = s.video.speech.clone();
+    if !job.begin(jobs.len()) {
+        return Err(other("videos are already being transcribed (see video.status → speech; video.cancel stops it)"));
+    }
+    let work_job = job.clone();
+    let work = move || {
+        let job = work_job;
+        for (id, path, ck, dir) in &jobs {
+            if job.cancel.load(Ordering::SeqCst) {
+                break;
+            }
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| speech::transcribe(path, ck, dir, &model, &language)))
+                .unwrap_or_else(|_| Err("transcription failed unexpectedly".into()));
+            job.record(id.0, r.map(|sp| sp.utterances.len()));
+        }
+        job.finish(None);
+    };
+    let handle = std::thread::Builder::new().name("video-speech".into()).spawn(work).map_err(|e| {
+        job.finish(Some(e.to_string()));
+        other(format!("could not start the transcription: {e}"))
+    })?;
+    if background {
+        return Ok(json!({"background": true, "videos": job.total.load(Ordering::SeqCst)}));
+    }
+    let _ = handle.join();
+    let r = job.report();
+    Ok(json!({"videos": r["total"], "transcribed": r["done"], "kept": r["sentences"], "failed": r["failed"]}))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

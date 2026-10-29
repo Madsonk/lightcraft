@@ -96,8 +96,8 @@ Known problems (honest list):
 | `video.frames / status / cancel / clip / list / moments / open / importVideoCatcher` | Copied (`crates/engine/src/video/`, `cmd/video.rs`). Hooks added to the 0.14.0 import (`ImportOptions.videos`, folders take videos only when asked, `ProbeInfo.duration`, poster and probe in `files.rs`, preview loader never reads a whole video) and `lightroom_catalog::read_sqlite_tables`. |
 | `describe.set / confirm / delete / undo / list / suggest / search` | Copied (`crates/engine/src/describe/`). Text annotations and the who + what search work; `describe.suggest` and by-meaning ranking are unavailable (no SigLIP). `crate::search` is a 15-line module with the message and the key. |
 | Faces of videos | **Rewritten** (`video/faces.rs`): `video.faces`, `video.facesStatus`, `video.facesCancel`. YuNet finds and aligns the faces of each picture, the chosen recognition model embeds them, results are kept in `<library>/video/faces-<model tag>.json`; moments show the people the **photos' named faces** suggest (same threshold and margin as `faces.suggest`). Nothing is ever written into a photo. Replaces the fork's `people.index` for videos. |
-| Videos view | `panels/videos.rs` ported (view mode `Videos`, bottom bar button, View ▸ Videos, Import Videos…, Video Catcher import); the people parts now call `video.faces`. The Recognition panel's video faces are not ported (the fork's Recognition is not in 0.14.0). 117 French messages of ours already in `fr.json`, plus the Videos ones. |
-| Asynchronous loading of the Videos view | The view reads the remembered lists of pictures (as in the fork's last fix) but still builds its list on the window thread: a "Loading…" state off-thread was not done. |
+| Videos view | `panels/videos.rs` ported (view mode `Videos`, bottom bar button, View ▸ Videos, Import Videos…, Video Catcher import); the people parts now call `video.faces`. The fork's Recognition panel is not in 0.14.0: the faces of videos are on the person's page instead (VID-6, below). 117 French messages of ours already in `fr.json`, plus the Videos ones. |
+| Asynchronous loading of the Videos view | Done in VID-6 (below). |
 
 Real run of the bundle on a synthetic 8 s video (FFmpeg test pattern, throw-away library, deleted afterwards): `library.import {videos: true}` → 1 video, 8 s; `video.frames {every: 2}` → 4 pictures; `video.list` / `video.moments` fine; `describe.set` then `describe.search {query: "mire"}` finds it; `video.faces` loaded YuNet and the SFace model and processed 4 pictures (0 faces: a test pattern); screenshot `verification/videos.png`. Seen in the app: the poster of the list shows white (the test pattern's first picture is not necessarily white: unconfirmed), and the "Finding faces" panel stays up after the run until the next poll (3 s).
 
@@ -105,10 +105,35 @@ Evidence: `cargo test -p lightcraft-engine --features faces,autoseg --lib -- vid
 synthetic videos); clippy `-D warnings` clean on engine, ui-egui and cli. Not run: the `tests_videos` UI tests (the UI test binary does not start reliably on this machine), the real
 `~/Movies/VideoCatalog` database (read-only data, never touched), `video.faces` on a real clip with named photos, and naming from the photos' people.
 
+## 3c. VID-6 on 0.14.0 (branch `lc-vid6`, 28 October 2026)
+
+Nothing of the fork was dropped; the fork had none of VID-6 except `examples/describe_bench.rs`, which is ported (and
+extended). Everything below was measured on a **copy** of the test library (`/Volumes/Data/work/lc-vid6-lib`: 355 videos,
+4 260 pictures, 1 400 Video Catcher moments; the real library and the originals were never touched; the originals
+are only read by FFmpeg).
+
+| Piece | What it is | Evidence |
+|---|---|---|
+| 1. Search floor | `describe/honest.rs`; `describe.search {floor, normalise}`: a meaning match must beat, by a margin (0.04 default), the best cosine fourteen nonsense queries reach with that picture | Bench (`docs/describe.md`): nonsense queries with a result 10/10 → **0/10** (200 → 0 results); real queries still answered by meaning 94/100; fusion r@10 60.7 → 58.7 % (short action) and 79.7 → 79.0 % (sentence) |
+| 2. Text-mean centring FR+EN | `describe.search {centre: none\|text\|gap}`; mean of ~660 neutral captions in both languages (`Searcher::calibration`, computed once per model) | **Not proven**: +2 points r@10 on the meaning of a sentence, 66 → 52 median rank on a short action, ±1 point on the fusion. `gap` hurts (r@10 30.0 → 12.0 %). Default stays `none`, the option stays |
+| 3. Shots + dense long shots | `video/scenes.rs`; `video.frames {plan: "scenes", sceneThreshold, maxGap}`; UI button "Cut pictures at shots" | Real test: a 3 s black shot + 12 s pattern → cut found at 3 s, pictures at 1.5 s and ≥ 2 in the long shot (`tests_video6`); FFmpeg cut detection of a 343 MB GoPro file: 8.4 s on the NAS, `pts_time` format checked on a real file; a 60 s single take gets 8 pictures at ≤ 8 s |
+| 4. Transcription | `video/speech.rs`; `video.transcribe`, `speech.json`; UI button "Transcribe speech" and its progress window; `video.cancel` stops it | Real run: macOS `say` voice muxed into an MP4 → `mlx_whisper` large-v3-turbo wrote 1 sentence (« The man driver had went to the beach, then he goes home. » — the model mishears the synthetic voice, which is why the test searches « beach home »), search finds it at level ≤ 2 |
+| 5. Literal search in levels | `speech::find`: one sentence / within 8 s / anywhere in the video, no stemming of English; wired into `describe.search` (`speech: {level, ms, text}`) | Unit test of the three levels + the real run above; a word that is not said finds nothing |
+| 6. Retry of failures | `video.frames {retryFailed: true}` (+ UI "Retry failed pictures") | `tests_video6`: a picture removed and listed as failed comes back, the next retry cuts nothing |
+| Videos view opens without freezing | **lc-port-014 did it first** (`video_frames_job` / `video_frames_apply`, `warmed`, commit 16269215) while this branch was waiting for the build lock; I wrote the same thing independently, compared, and kept theirs (it covers every section of the view and has its own test). What VID-6 adds: `warm()` is public so a person's page asks the same worker | Measured before either: first `video.list` **20.2 s** blocking on the window thread (cold disk, copy of 355 videos); the reading of the lists alone takes 12.1 s cold, now on a worker |
+| `video.list` itself | the faces of videos are read once per command (`faces::reader`), names suggested for a face are remembered | Warm `video.list` **563 ms → 51 ms** (same copy; this copy has no named faces, so the gain on a library with 28 000 photos and 18 000 named faces is larger and was not measured); first call after opening 579 ms (loads the recognition model) |
+| Faces of videos in People | `video.person {name}`; section « Dans les vidéos » (In videos) on a person's page (shows « Chargement… » while the worker reads): cut-out faces marked « vidéo · m:ss », a click opens that moment in the Videos view | `tests_video6::a_person_is_found_in_the_pictures_of_videos` (injected faces, no model). **Not seen on real faces**: the copy has no faces looked for with 0.14.0's models and the real library was off limits |
+
+Not done / limits: the UI was compiled (`cargo check`, all targets) and the engine tested, but **no screenshot of the new
+section or of « Chargement… »** (headless snapshot not run); the `tests_videos` UI tests of the fork are still not
+ported; `video.person` runs on the window's thread once the lists are read (fast: names are remembered); the floor is
+calibrated on one library with fourteen nonsense queries (`honest::NOISE`), so a library full of black screens would
+raise it.
+
 ## 4. Left out on purpose
 - **UX refonte shell** (journey bar, spaces, home, quick sort, classify): replaces the whole window; upstream's
   Lightroom-style modules stay. A thin journey bar mapped onto upstream's modules can come later.
-- **VID-6** (calibrated search floor, text-mean centring, scene cuts, Whisper transcription, search in speech, retry of failures): not started, by order of the maintainer it comes last.
+- **VID-6**: done on branch `lc-vid6` (section 3c).
 - Semantic proposals and by-meaning ranking of `describe.*` (they need the SigLIP model, `crates/search`): `describe.suggest` answers "Semantic search is not available in this build".
 - Semantic search, taste, depth / Lens Blur, MI-GAN inpainting, proposals, `perf_bench`.
 

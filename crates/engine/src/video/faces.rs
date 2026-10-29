@@ -51,6 +51,8 @@ pub struct VideoFaces {
     gallery: Option<((usize, usize), Arc<Vec<(String, Arc<[f32]>)>>)>,
     /// The recognition model's bars (threshold, margin) for the tag in `store`.
     bars: Option<(f32, f32)>,
+    /// Names suggested for faces, remembered while nothing they depend on changes.
+    names: Arc<Mutex<Names>>,
 }
 
 #[derive(Default)]
@@ -141,44 +143,114 @@ fn gallery(s: &mut Session) -> Arc<Vec<(String, Arc<[f32]>)>> {
     g
 }
 
-/// Who is at `key` (nobody is known in the browser: the faces of videos are found by the desktop app).
-#[cfg(target_arch = "wasm32")]
-pub fn faces_at(_: &mut Session, _: u64) -> Vec<Value> {
-    Vec::new()
+/// What the names suggested for faces were computed for: the photos' named faces (index size,
+/// named regions), the bars, and the number of pictures looked at. Any change forgets them all.
+type NamesStamp = ((usize, usize), (u32, u32), usize);
+
+/// The suggested name of each face `(picture key, face number)`, remembered: ranking a face against
+/// every named face of a 28 000-photo library costs milliseconds, and a list asks for thousands.
+#[derive(Default)]
+pub struct Names {
+    stamp: Option<NamesStamp>,
+    by_face: HashMap<(u64, usize), Option<String>>,
 }
 
-/// Who is at `key`: `[{face, rect, person: null, name}]`, `name` a suggestion from the photos' names.
+/// A consistent read of the faces of videos for one command: the store, the named gallery and the
+/// bars are fetched once, not once per picture.
+pub struct Reader {
+    store: Arc<Mutex<Faces>>,
+    gallery: Arc<Vec<(String, Arc<[f32]>)>>,
+    bars: (f32, f32),
+    stamp: NamesStamp,
+    names: Arc<Mutex<Names>>,
+}
+
+/// Prepare the reading of the faces of videos (the browser names nobody: no recognition model there).
+#[cfg(target_arch = "wasm32")]
+pub fn reader(s: &mut Session) -> Reader {
+    let bars = s.video.faces.bars.unwrap_or((DEFAULT_THRESHOLD, DEFAULT_MARGIN));
+    let looked = lock(&s.video.faces.store).by_key.len();
+    let stamp = ((0, 0), (bars.0.to_bits(), bars.1.to_bits()), looked);
+    Reader { store: s.video.faces.store.clone(), gallery: Arc::default(), bars, stamp, names: s.video.faces.names.clone() }
+}
+
+/// Prepare the reading of the faces of videos (nothing is named without a recognition model).
 #[cfg(not(target_arch = "wasm32"))]
-pub fn faces_at(s: &mut Session, key: u64) -> Vec<Value> {
+pub fn reader(s: &mut Session) -> Reader {
     prepare_reading(s);
-    let found: Vec<VideoFace> = lock(&s.video.faces.store).by_key.get(&key).cloned().unwrap_or_default();
-    if found.is_empty() {
-        return Vec::new();
+    let gallery = gallery(s);
+    let bars = s.video.faces.bars.unwrap_or((DEFAULT_THRESHOLD, DEFAULT_MARGIN));
+    let looked = lock(&s.video.faces.store).by_key.len();
+    let stamp = ((s.faces.index.len(), gallery.len()), (bars.0.to_bits(), bars.1.to_bits()), looked);
+    Reader { store: s.video.faces.store.clone(), gallery, bars, stamp, names: s.video.faces.names.clone() }
+}
+
+impl Reader {
+    /// Who is at `key`: `[{face, rect, person: null, name}]`, `name` a suggestion from the photos' names.
+    pub fn faces_at(&self, key: u64) -> Vec<Value> {
+        let found: Vec<VideoFace> = lock(&self.store).by_key.get(&key).cloned().unwrap_or_default();
+        if found.is_empty() {
+            return Vec::new();
+        }
+        let mut names = self.names.lock().unwrap_or_else(PoisonError::into_inner);
+        if names.stamp != Some(self.stamp) {
+            names.by_face.clear();
+            names.stamp = Some(self.stamp);
+        }
+        let refs: Vec<(&str, &[f32])> = self.gallery.iter().map(|(n, e)| (n.as_str(), &e[..])).collect();
+        found
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                let name = names
+                    .by_face
+                    .entry((key, i))
+                    .or_insert_with(|| matching::suggest(&matching::rank(&f.emb, &refs), self.bars.0, self.bars.1).map(|x| x.name))
+                    .clone();
+                json!({"face": i, "rect": f.rect, "person": Value::Null, "name": name})
+            })
+            .collect()
     }
-    let g = gallery(s);
-    let refs: Vec<(&str, &[f32])> = g.iter().map(|(n, e)| (n.as_str(), &e[..])).collect();
-    let (threshold, margin) = s.video.faces.bars.unwrap_or((DEFAULT_THRESHOLD, DEFAULT_MARGIN));
-    found
-        .iter()
-        .enumerate()
-        .map(|(i, f)| {
-            let name = matching::suggest(&matching::rank(&f.emb, &refs), threshold, margin).map(|x| x.name);
-            json!({"face": i, "rect": f.rect, "person": Value::Null, "name": name})
-        })
-        .collect()
+
+    /// Every picture key faces were looked for in.
+    pub fn keys(&self) -> Vec<u64> {
+        lock(&self.store).by_key.keys().copied().collect()
+    }
+
+    /// How many of `keys` have been looked at for faces (with or without a result).
+    pub fn analysed(&self, keys: &[u64]) -> usize {
+        let f = lock(&self.store);
+        keys.iter().filter(|k| f.by_key.contains_key(k)).count()
+    }
+}
+
+/// Put faces at picture keys with a suggested name, as if the models had looked and the photos had
+/// named them (tests of what reads the faces; no model needed).
+#[cfg(test)]
+pub fn inject(s: &mut Session, faces: &[(u64, [f32; 4], &str)]) {
+    for (key, rect, _) in faces {
+        lock(&s.video.faces.store).by_key.entry(*key).or_default().push(VideoFace { rect: *rect, emb: Vec::new() });
+    }
+    let r = reader(s);
+    let mut names = r.names.lock().unwrap_or_else(PoisonError::into_inner);
+    names.by_face.clear();
+    names.stamp = Some(r.stamp);
+    let mut seen: HashMap<u64, usize> = HashMap::new();
+    for (key, _, name) in faces {
+        let i = seen.entry(*key).or_default();
+        names.by_face.insert((*key, *i), Some(name.to_string()));
+        *i += 1;
+    }
+}
+
+/// Who is at `key` (one picture; for many use [`reader`]).
+pub fn faces_at(s: &mut Session, key: u64) -> Vec<Value> {
+    reader(s).faces_at(key)
 }
 
 /// Every picture key faces were looked for in.
 pub fn keys(s: &mut Session) -> Vec<u64> {
-    prepare_reading(s);
-    lock(&s.video.faces.store).by_key.keys().copied().collect()
-}
-
-/// How many of `keys` have been looked at for faces (with or without a result).
-pub fn analysed(s: &mut Session, keys: &[u64]) -> usize {
-    prepare_reading(s);
-    let f = lock(&s.video.faces.store);
-    keys.iter().filter(|k| f.by_key.contains_key(k)).count()
+    reader(s).keys()
 }
 
 /// Make the store of the chosen model ready for reading, when a model is installed (nothing happens

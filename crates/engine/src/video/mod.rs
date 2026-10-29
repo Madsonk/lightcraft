@@ -17,6 +17,8 @@ pub mod faces;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ffmpeg;
 pub mod frames;
+pub mod scenes;
+pub mod speech;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod unreadable;
 #[cfg(not(target_arch = "wasm32"))]
@@ -93,6 +95,8 @@ pub struct Videos {
     pub job: Arc<FramesJob>,
     /// The faces found in the pictures (see [`faces`]).
     pub faces: faces::VideoFaces,
+    /// The `video.transcribe` run in progress (or the last one).
+    pub speech: Arc<speech::Job>,
 }
 
 /// A `video.frames` run: progress, what each video gave, and its stop button.

@@ -12,14 +12,6 @@ use crate::cmd::{bad, bool_or, str_param};
 use crate::describe::{Status, fold};
 use crate::{Result, Session};
 
-fn faces_at(s: &mut Session, key: u64) -> Vec<Value> {
-    super::faces::faces_at(s, key)
-}
-
-fn analysed(s: &mut Session, keys: &[u64]) -> usize {
-    super::faces::analysed(s, keys)
-}
-
 /// The named people among faces (`[{name, …}]`), each once, in order of appearance.
 fn names(faces: &[Value]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -45,6 +37,7 @@ pub fn list(s: &mut Session, p: &Value) -> Result<Value> {
         .map(|q| (q.id, crate::media::content_key(q), q.file_name.clone(), q.duration, q.captured.clone().unwrap_or_default()))
         .collect();
     let mut rows = Vec::new();
+    let reader = super::faces::reader(s);
     let mut all_people: BTreeMap<String, usize> = BTreeMap::new();
     // the pictures of every video from the remembered lists (read once, until they change), not one
     // `frames.json` per video per call: that froze the window on a cold disk
@@ -58,10 +51,10 @@ pub fn list(s: &mut Session, p: &Value) -> Result<Value> {
         let mut frames = keys_of.remove(&id).unwrap_or_default();
         frames.sort_unstable();
         let keys: Vec<u64> = frames.iter().map(|(_, k, _)| *k).collect();
-        let looked = analysed(s, &keys);
+        let looked = reader.analysed(&keys);
         let mut people: Vec<String> = Vec::new();
         for k in &keys {
-            for n in names(&faces_at(s, *k)) {
+            for n in names(&reader.faces_at(*k)) {
                 if !people.contains(&n) {
                     people.push(n);
                 }
@@ -103,6 +96,39 @@ pub fn list(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"videos": rows, "people": all_people.keys().collect::<Vec<_>>(), "total": rows.len()}))
 }
 
+/// `video.person {name, limit?}`: the pictures of videos where `name` is suggested (by the photos'
+/// named faces) → `{name, total, videos, faces: [{video, file, ms, frame, rect}]}`, by video then time.
+pub fn person(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "video.person";
+    let name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(C, "missing `name`"))?;
+    let want = fold(name);
+    let limit = p.get("limit").and_then(Value::as_u64).unwrap_or(200).clamp(1, 5000) as usize;
+    let reader = super::faces::reader(s);
+    let analysed: std::collections::HashSet<u64> = reader.keys().into_iter().collect();
+    let frames = s.video_frames();
+    let mut found: Vec<(u64, u64, String, Value)> = Vec::new();
+    for (k, f) in frames.iter().filter(|(k, _)| analysed.contains(*k)) {
+        let Some(id) = f.ids.first() else { continue };
+        for face in reader.faces_at(*k) {
+            if face["name"].as_str().is_some_and(|n| fold(n) == want) {
+                found.push((id.0, f.ms, f.file.display().to_string(), face["rect"].clone()));
+            }
+        }
+    }
+    found.sort_by_key(|a| (a.0, a.1));
+    let videos = found.iter().map(|x| x.0).collect::<std::collections::BTreeSet<_>>().len();
+    let total = found.len();
+    let faces: Vec<Value> = found
+        .into_iter()
+        .take(limit)
+        .map(|(id, ms, frame, rect)| {
+            let file = s.catalog.photo(PhotoId(id)).map(|q| q.file_name.clone());
+            json!({"video": id, "file": file, "ms": ms, "frame": frame, "rect": rect})
+        })
+        .collect();
+    Ok(json!({"name": name, "total": total, "videos": videos, "faces": faces}))
+}
+
 /// `video.moments {id}`: for a video, each of its pictures and described moments in time order;
 /// for a photo, its one "moment". Each: `{ms, frame, faces: [{face, rect, person, name}], people,
 /// annotation: {scene, action, description, status, from, proposals} | null}`.
@@ -123,8 +149,9 @@ pub fn moments(s: &mut Session, p: &Value) -> Result<Value> {
         by_ms.insert(None, (crate::video::item_key(&item), None));
     }
     let mut rows = Vec::new();
+    let reader = super::faces::reader(s);
     for (ms, (key, frame)) in by_ms {
-        let faces = faces_at(s, key);
+        let faces = reader.faces_at(key);
         rows.push(json!({
             "ms": ms, "frame": frame, "people": names(&faces), "faces": faces,
             "annotation": store.effective(&item, ms),

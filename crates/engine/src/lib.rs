@@ -1501,6 +1501,8 @@ mod tests_sync;
 mod tests_taste;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_video;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_video6;
 #[cfg(test)]
 mod tests_view_follow;
 #[cfg(test)]

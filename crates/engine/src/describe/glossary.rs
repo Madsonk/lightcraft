@@ -333,6 +333,11 @@ const WORDS: &[(&str, &str)] = &[
     ("exposition", "exhibition"),
 ];
 
+/// Every word of the glossary: `(French folded, English)`.
+pub fn pairs() -> impl Iterator<Item = (&'static str, &'static str)> {
+    WORDS.iter().copied()
+}
+
 /// `text` (folded French) in English, word by word; unknown words stay as they are.
 pub fn to_english(folded: &str) -> String {
     folded.split(' ').filter(|w| !w.is_empty()).map(|w| WORDS.iter().find(|(fr, _)| *fr == w).map_or(w, |(_, en)| *en)).collect::<Vec<_>>().join(" ")

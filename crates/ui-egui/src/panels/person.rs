@@ -200,6 +200,11 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, name: &str) {
     let ppp = ui.ctx().pixels_per_point();
     let edge = super::people::tile_edge(app.ui.thumb_size);
     let mut hit: Option<(Hit, Face)> = None;
+    let video_faces = super::videos::person_faces(app, ui.ctx(), &shown_name);
+    if video_faces.is_none() {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
+    }
+    let mut open_video: Option<(u64, u64)> = None;
     egui::ScrollArea::vertical().auto_shrink(false).show_viewport(ui, |ui, viewport| {
         let width = ui.available_width();
         let cols = super::people::columns(width, edge);
@@ -207,7 +212,9 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, name: &str) {
         let confirmed_rows = page.confirmed.len().div_ceil(cols);
         let more_rows = more.len().div_ceil(cols);
         let more_top = PAD + confirmed_rows as f32 * row_h + 12.0;
-        let total_h = more_top + SECTION_H + more_rows as f32 * row_h + PAD;
+        let videos_top = more_top + SECTION_H + more_rows as f32 * row_h + 12.0;
+        let video_rows = video_faces.as_ref().map_or(0, |v| v.len().div_ceil(cols));
+        let total_h = videos_top + SECTION_H + video_rows as f32 * row_h + PAD;
         let (area, _) = ui.allocate_exact_size(vec2(width, total_h), Sense::hover());
         let visible = |top: f32, rows: usize| {
             let first = ((viewport.top() - top) / row_h).floor().max(0.0) as usize;
@@ -261,9 +268,44 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, name: &str) {
                 }
             }
         }
+        // faces seen in videos (cut out of their pictures; a click opens that moment of the video)
+        ui.painter().text(
+            pos2(area.left() + PAD, area.top() + videos_top + 14.0),
+            Align2::LEFT_CENTER,
+            crate::i18n::tr("In videos"),
+            t.semibold(15.0),
+            t.text,
+        );
+        let video_sub = match &video_faces {
+            None => crate::i18n::tr("Loading the videos…").to_string(),
+            Some(v) if v.is_empty() => crate::i18n::tr_format!(
+                "No face of {name} found in videos yet. Videos ▸ Find faces looks for them, and names come from the photos.",
+                name = shown_name
+            ),
+            Some(v) => crate::i18n::tr_format!("{n} pictures in videos look like {name}.", n = v.len(), name = shown_name),
+        };
+        ui.painter().text(pos2(area.left() + PAD, area.top() + videos_top + 36.0), Align2::LEFT_CENTER, video_sub, t.font(12.0), t.text_dim);
+        if let Some(vf) = &video_faces {
+            let vtop = videos_top + SECTION_H;
+            for row in visible(vtop, video_rows) {
+                for col in 0..cols {
+                    let Some(f) = vf.get(row * cols + col) else { break };
+                    let min = area.min + vec2(PAD + col as f32 * (edge + super::people::TILE_GAP), vtop + row as f32 * row_h);
+                    let r = Rect::from_min_size(min, vec2(edge, edge));
+                    super::videos::paint_video_face(app, ui, r, f);
+                    let resp = ui.interact(r, ui.id().with(("videoface", row, col)), Sense::click());
+                    if resp.clicked() {
+                        open_video = Some((f.video, f.ms));
+                    }
+                }
+            }
+        }
         // the picture cache keeps every face on screen
         app.renderer.want_variants(shown);
     });
+    if let Some((video, ms)) = open_video {
+        super::videos::open_moment(app, video, Some(ms));
+    }
     if let Some((what, f)) = hit {
         match what {
             Hit::Open => {

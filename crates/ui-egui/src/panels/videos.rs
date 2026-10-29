@@ -5,6 +5,7 @@
 //! panel only draws them and sends the user's gestures back.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 
 use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use serde_json::{Value, json};
@@ -316,6 +317,48 @@ pub struct VideosUi {
     pub after_import: Option<String>,
     /// The Info panel's description of the selected photo or video: (id, catalog revision, moments).
     info: Option<(u64, u64, Value)>,
+    /// The pictures of videos where a person is suggested (name, catalog revision, faces), for their page.
+    person_faces: Option<(String, u64, Arc<Vec<VideoFace>>)>,
+}
+
+/// A face seen in a picture of a video: which video, when, which picture, and where in it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VideoFace {
+    pub video: u64,
+    pub ms: u64,
+    pub frame: String,
+    pub rect: [f32; 4],
+}
+
+/// The pictures of videos where `name` is suggested by the photos' named faces; `None` while the
+/// lists of pictures are being read (the page draws "Loading…" and asks again).
+pub fn person_faces(app: &mut LightcraftApp, ctx: &egui::Context, name: &str) -> Option<Arc<Vec<VideoFace>>> {
+    let rev = app.session.catalog.revision;
+    if let Some((n, r, v)) = &app.caches.videos.person_faces
+        && n == name
+        && *r == rev
+    {
+        return Some(v.clone());
+    }
+    if !warm(app, ctx) {
+        return None;
+    }
+    let r = app.session.execute("video.person", &json!({"name": name, "limit": 500})).unwrap_or(Value::Null);
+    let rect = |v: &Value| -> Option<[f32; 4]> {
+        let a = v.as_array()?;
+        Some([a.first()?.as_f64()? as f32, a.get(1)?.as_f64()? as f32, a.get(2)?.as_f64()? as f32, a.get(3)?.as_f64()? as f32])
+    };
+    let faces: Vec<VideoFace> = r["faces"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|f| {
+            Some(VideoFace { video: f["video"].as_u64()?, ms: f["ms"].as_u64()?, frame: f["frame"].as_str()?.to_string(), rect: rect(&f["rect"])? })
+        })
+        .collect();
+    let v = Arc::new(faces);
+    app.caches.videos.person_faces = Some((name.to_string(), rev, v.clone()));
+    Some(v)
 }
 
 impl VideosUi {
@@ -334,6 +377,7 @@ impl VideosUi {
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // for the view's UI tests (`tests_videos` of the fork), not ported yet
 impl VideosUi {
     /// Put data in the view as if the engine had answered it (tests of what any data draws).
     pub(crate) fn inject(&mut self, rev: u64, list: Option<Value>, sheet: Option<(u64, Value)>, search: Option<Value>) {
@@ -380,6 +424,7 @@ pub fn timecode(ms: u64) -> String {
 fn act(app: &mut LightcraftApp, id: &str, params: Value) -> Option<Value> {
     let r = app.run(id, params);
     app.caches.videos.dirty = true;
+    app.caches.videos.person_faces = None;
     match r {
         Ok(v) => Some(v),
         Err(e) => {
@@ -440,11 +485,27 @@ pub fn paint_picture(app: &mut LightcraftApp, ui: &egui::Ui, r: Rect, path: &str
     true
 }
 
+/// A face seen in a video, cut out of the picture it was found in and marked "video · m:ss"; the
+/// mark's rectangle is returned (a click on it opens the moment).
+pub fn paint_video_face(app: &mut LightcraftApp, ui: &egui::Ui, r: Rect, v: &VideoFace) -> Rect {
+    let tk = Tokens::get(ui.ctx());
+    paint_picture(app, ui, r, &v.frame, Some(v.rect));
+    let text = crate::i18n::tr_format!("video · {t}", t = timecode(v.ms));
+    let g = ui.painter().layout_no_wrap(text, tk.semibold(9.5), Color32::WHITE);
+    let mark =
+        Rect::from_min_size(pos2(r.left() + 2.0, r.bottom() - g.size().y - 4.0), vec2((g.size().x + 6.0).min(r.width() - 4.0), g.size().y + 2.0));
+    ui.painter().rect_filled(mark, 2.0, Color32::from_black_alpha(170));
+    ui.painter().galley(mark.min + vec2(3.0, 1.0), g, Color32::WHITE);
+    mark
+}
+
 /// Per frame: the background runs of videos and descriptions, with a Cancel button each, above the
 /// app's own task panels.
 pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
     let now = ctx.input(|i| i.time);
-    let any = [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]].iter().any(|j| j["running"] == true);
+    let any = [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.1["speech"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]]
+        .iter()
+        .any(|j| j["running"] == true);
     if now - app.caches.videos.jobs.0 > if any { 0.5 } else { 3.0 } {
         let v = app.session.execute("video.status", &json!({"jobOnly": true})).unwrap_or(Value::Null);
         let d = app.session.execute("describe.status", &json!({})).unwrap_or(Value::Null);
@@ -456,9 +517,12 @@ pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
         let was = any;
         app.caches.videos.jobs = (now, v, d, p);
         let still =
-            [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]].iter().any(|j| j["running"] == true);
+            [&app.caches.videos.jobs.1["job"], &app.caches.videos.jobs.1["speech"], &app.caches.videos.jobs.2, &app.caches.videos.jobs.3["job"]]
+                .iter()
+                .any(|j| j["running"] == true);
         if was && !still {
             app.caches.videos.dirty = true;
+            app.caches.videos.person_faces = None;
         }
     }
     // a Video Catcher import whose files are in: now its pictures and moments
@@ -481,6 +545,7 @@ pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
     let mut slot = app.tasks.labels().len();
     let rows = [
         ("videoFrames", "Cutting pictures from videos", app.caches.videos.jobs.1["job"].clone(), "video.cancel"),
+        ("videoSpeech", "Listening to videos", app.caches.videos.jobs.1["speech"].clone(), "video.cancel"),
         ("describeSuggest", "Proposing descriptions", app.caches.videos.jobs.2.clone(), "describe.cancel"),
         ("videoFaces", "Finding faces", app.caches.videos.jobs.3["job"].clone(), "video.facesCancel"),
     ];
@@ -501,6 +566,24 @@ pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
 /// worker (355 videos on a network or USB volume took 14 s, up to 134 s under load, on the window's thread).
 /// `false` while they load: the view then draws a "Loading…" page.
 fn warmed(app: &mut LightcraftApp, ui: &mut egui::Ui) -> bool {
+    if warm(app, ui.ctx()) {
+        return true;
+    }
+    let t = Tokens::get(ui.ctx());
+    ui.add_space(40.0);
+    ui.vertical_centered(|ui| {
+        ui.spinner();
+        ui.add_space(8.0);
+        let r = ui.label(egui::RichText::new(tr("Loading the videos…")).font(t.font(14.0)).color(t.text_dim));
+        register(ui.ctx(), "videos:loading", r.rect);
+    });
+    false
+}
+
+/// Start the reading of the lists of pictures on a worker (or collect it); `true` once they are remembered. Whatever
+/// shows the faces of videos (the Videos view, a person's page) asks this before asking the engine, and draws
+/// "Loading…" while it is `false`.
+pub fn warm(app: &mut LightcraftApp, ctx: &egui::Context) -> bool {
     #[cfg(not(target_arch = "wasm32"))]
     {
         if app.session.video_frames_warm() {
@@ -520,7 +603,7 @@ fn warmed(app: &mut LightcraftApp, ui: &mut egui::Ui) -> bool {
             }
         } else if let Some(job) = app.session.video_frames_job() {
             let (tx, rx) = std::sync::mpsc::channel();
-            let repaint = ui.ctx().clone();
+            let repaint = ctx.clone();
             let started = std::thread::Builder::new().name("lc-video-lists".into()).spawn(move || {
                 let _ = tx.send(job.run());
                 repaint.request_repaint();
@@ -531,20 +614,12 @@ fn warmed(app: &mut LightcraftApp, ui: &mut egui::Ui) -> bool {
                 return true;
             }
         }
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(120));
-        let t = Tokens::get(ui.ctx());
-        ui.add_space(40.0);
-        ui.vertical_centered(|ui| {
-            ui.spinner();
-            ui.add_space(8.0);
-            let r = ui.label(egui::RichText::new(tr("Loading the videos…")).font(t.font(14.0)).color(t.text_dim));
-            register(ui.ctx(), "videos:loading", r.rect);
-        });
+        ctx.request_repaint_after(std::time::Duration::from_millis(120));
         false
     }
     #[cfg(target_arch = "wasm32")]
     {
-        let _ = (app, ui);
+        let _ = (app, ctx);
         true
     }
 }
@@ -639,6 +714,26 @@ fn list(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                             .clicked()
                         {
                             act(app, "video.faces", json!({"ids": ids, "background": true}));
+                        }
+                        if text_button(ui, "videosScenes", "Cut pictures at shots", false)
+                            .on_hover_text(tr(
+                                "Reads each video to find where the shot changes, then cuts a picture in every shot (more in a long one)",
+                            ))
+                            .clicked()
+                        {
+                            act(app, "video.frames", json!({"ids": ids, "plan": "scenes", "background": true}));
+                        }
+                        if text_button(ui, "videosRetry", "Retry failed pictures", false)
+                            .on_hover_text(tr("Cuts again the pictures that could not be cut, and the ones just beside them"))
+                            .clicked()
+                        {
+                            act(app, "video.frames", json!({"ids": ids, "retryFailed": true, "background": true}));
+                        }
+                        if text_button(ui, "videosSpeech", "Transcribe speech", false)
+                            .on_hover_text(tr("Listens to the videos (Whisper, one at a time) so that what is said can be searched"))
+                            .clicked()
+                        {
+                            act(app, "video.transcribe", json!({"ids": ids, "background": true}));
                         }
                     }
                 });
