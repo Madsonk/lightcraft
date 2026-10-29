@@ -216,7 +216,11 @@ Already inside: `lc-lot-b14` (My Style, autoframe), `lc-speed-sort` (sort view),
   one grouping now. Warm `video.list` 444 ms → ~24 ms; worst frame when opening the view 658 ms → 66–76 ms (warm disk cache).
   Headless screenshots show already-uploaded posters white; the windowed screenshot shows them (not a defect).
   Tool: `lc-port-015-measure.py <binary> <label> <library-copy> <port>` (same method for before and after).
-- CI: `47a08da8` (video.list fix) — full `cargo xtask ci` still running (log `lc-port-015-ci3.log`, at the parity step); not yet proven. 8/8 is proven only for `d3aa4566`.
+- Measured with the script on a copy (355 videos), same method both sides, before = `d3aa4566` build, after = `47a08da8` build:
+  `video.list` cold/warm 133/69 ms → 19/24 ms; first responsive frame after opening the view 23 ms → 16 ms; worst frame during the view
+  155 ms (before) vs 1242 ms (after) — but the after figure was already reached before the view was opened (`maxBeforeView` 1242), i.e. startup
+  noise on a busy USB disk, not the view. The worst-frame figures are therefore not a reliable before/after; `listsReadyMs` was not captured.
+- CI: `cargo xtask ci` — all 8 steps passed on `47a08da8` (`lc-port-015-ci3.log`, "CI summary: all 8 steps passed", EXIT 0).
 - Still open: the beginner walk (40 CR2); Retouch step; Retouch left column and module filmstrip under both sidebars; step 5 modules
   (depth / Lens Blur / Depth Range, MI-GAN, proposed retouch, skin harmonization, dodge & burn, SCUNet/SPAN, library-lock retry);
   ~97 missing French messages; the 5.3 s library open at startup on a cold disk (main thread, not Videos-specific).
