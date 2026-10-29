@@ -32,6 +32,7 @@ pub mod manage;
 pub mod mask_effect_files;
 pub mod mask_effects;
 pub(crate) mod masks;
+mod restore;
 mod merge;
 pub mod metadata;
 pub mod missing;
@@ -157,6 +158,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(color::specs());
         v.extend(curves::specs());
         v.extend(masks::specs());
+        v.extend(restore::specs());
         v.extend(organize::specs());
         v.extend(keywords::specs());
         v.extend(manage::specs());

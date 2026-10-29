@@ -3,7 +3,7 @@
 //! ```text
 //! lightcraft-cli run [--demo | --library DIR | --connect [ADDR]] [--import PATH]… CMD [key=value…]…
 //! lightcraft-cli mcp [--connect [ADDR]] [--demo] [--compact] [FILES/FOLDERS…]
-//! lightcraft-cli render <in> -o <out> [--set control=value]… [--settings FILE.json|FILE.lcpreset] [--preset ID] [--size N] [--quality Q]
+//! lightcraft-cli render <in> -o <out> [--set control=value]… [--settings FILE.json|FILE.lcpreset] [--preset ID] [--size N] [--quality Q] [--denoise N] [--upscale 2]
 //! lightcraft-cli snapshot [--library DIR | --demo] [--script FILE.jsonl] [-o OUT.png] [--size WxH] [--scale S] [FILES…]
 //! lightcraft-cli merge hdr|panorama|hdr-panorama|hdr-batch [OPTIONS] FILES…
 //! lightcraft-cli synth-merge hdr|panorama -o DIR
@@ -675,6 +675,7 @@ fn render(args: &[String]) -> Result<(), String> {
     let mut preset = None;
     let mut size: Option<u64> = None;
     let mut quality = 92u8;
+    let mut upscale = false;
     let mut opts = serde_json::Map::new();
     let mut i = 0;
     while i < args.len() {
@@ -688,6 +689,16 @@ fn render(args: &[String]) -> Result<(), String> {
             }
             "--settings" => settings = Some(read_settings(take_value(args, &mut i, "--settings")?)?),
             "--preset" => preset = Some(take_value(args, &mut i, "--preset")?.to_string()),
+            "--denoise" => {
+                let n: f64 = take_value(args, &mut i, "--denoise")?.parse().map_err(|_| "--denoise expects a number 0..100")?;
+                values.insert("enhance.restoreDenoise".into(), json!(n.clamp(0.0, 100.0)));
+            }
+            "--upscale" => {
+                if take_value(args, &mut i, "--upscale")? != "2" {
+                    return Err("--upscale supports only 2".into());
+                }
+                upscale = true;
+            }
             "--size" => size = Some(take_value(args, &mut i, "--size")?.parse().map_err(|_| "--size expects a number")?),
             "--quality" => quality = take_value(args, &mut i, "--quality")?.parse().map_err(|_| "--quality expects 1..100")?,
             "--opt" => {
@@ -723,6 +734,9 @@ fn render(args: &[String]) -> Result<(), String> {
     }
     if !values.is_empty() {
         run(&mut s, "develop.set", json!({"values": values}))?;
+    }
+    if upscale {
+        run(&mut s, "develop.merge", json!({"settings": {"enhance": {"super_resolution": true}}}))?;
     }
     use lightcraft_engine::export::{ExportFormat, ExportOptions, export_photo};
     let mut p = json!({"quality": quality});

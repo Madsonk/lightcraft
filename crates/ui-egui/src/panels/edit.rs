@@ -322,6 +322,19 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
         {
             control(app, ui, d, c, true);
         }
+        if lightcraft_engine::restore::AVAILABLE {
+            // applied by exports only (minutes on a full-size photo): see docs/ai-restore.md
+            control(app, ui, d, "enhance.restoreDenoise", true);
+            let t = Tokens::get(ui.ctx());
+            let hint = if lightcraft_engine::restore::denoise_installed() {
+                "Export Denoise is applied when exporting and takes minutes on a full-size photo."
+            } else {
+                "Export Denoise needs its model (restore.model.download, see docs/ai-restore.md). It is applied when exporting."
+            };
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 0, bottom: 2 }).show(ui, |ui| {
+                ui.label(egui::RichText::new(crate::i18n::tr(hint)).size(11.0).color(t.text_dim));
+            });
+        }
         ui.add_space(8.0);
     });
     section(app, ui, &d, "optics", "Optics", |app, ui, d| {

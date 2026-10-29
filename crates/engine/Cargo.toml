@@ -43,6 +43,7 @@ ab_glyph = { workspace = true }
 harfrust = { version = "0.13", default-features = false, features = ["std"] }
 unicode-segmentation = "1.13"
 lightcraft-segment = { workspace = true, optional = true }
+lightcraft-restore = { workspace = true, optional = true }
 lightcraft-retouch = { workspace = true }
 lightcraft-culler = { workspace = true }
 lightcraft-style = { workspace = true }
@@ -74,6 +75,8 @@ depth = ["dep:lightcraft-depth", "dep:png"]
 migan = ["dep:lightcraft-migan"]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
 sam = ["dep:lightcraft-segment"]
+# AI denoise (SCUNet) and 2x super-resolution (SPAN) of exports. Off for the web build.
+restore = ["dep:lightcraft-restore"]
 denoise = ["dep:lightcraft-denoise", "lightcraft-denoise/runtime", "lightcraft-gpu/denoise"]
 rawnind-model = ["denoise", "lightcraft-denoise/rawnind-model", "lightcraft-denoise-core/rawnind-model"]
 
