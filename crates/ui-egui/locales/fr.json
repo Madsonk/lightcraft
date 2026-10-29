@@ -3048,5 +3048,8 @@
   "Accept the crop": "Accepter le recadrage",
   "Accept the straighten": "Accepter le redressement",
   "photos reframed — Undo reverts all of them": "photos recadrées — Annuler les rétablit toutes",
-  "No proposal": "Aucune proposition"
+  "No proposal": "Aucune proposition",
+  "Keyword suggestions need the semantic search model.": "Les suggestions de mots-clés demandent le modèle de recherche sémantique.",
+  "Name the faces once: the same person is then found in every photo.": "Nomme les visages une fois : la même personne est ensuite retrouvée dans toutes les photos.",
+  "No unnamed face. Run View → People to look for faces in new photos.": "Aucun visage sans nom. Lance Affichage → Personnes pour chercher les visages des nouvelles photos."
 }
