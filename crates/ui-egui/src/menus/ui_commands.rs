@@ -149,6 +149,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("panel.crop", "Crop & Rotate", Some("C"), "Window"),
     ("panel.remove", "Remove", Some("H"), "Window"),
     ("panel.portrait", "Portrait Retouch Panel", Some("Shift+T"), "Window"),
+    ("panel.proposals", "Proposals", Some("Shift+N"), "Window"),
     ("panel.style", "My Style", None, "Window"),
     ("panel.aiPicks", "AI Picks", Some("Shift+K"), "Window"),
     ("workspace.library", "Library", Some("Ctrl+1"), ""),

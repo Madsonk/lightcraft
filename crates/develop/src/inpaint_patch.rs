@@ -1,14 +1,16 @@
 //! Data the render needs that the settings only *refer to*, never hold: the pixels a portrait
 //! retouch baked ([`InpaintPatch`]). They live in files next to the library (not in the catalog's
 //! journal) and the engine attaches them to the settings it renders ([`Aux`]), so rendering never
-//! needs a model. (The fork's depth map for Lens Blur is not part of this port.)
+//! needs a model. (The depth map of Lens Blur is in [`crate::depth_map`], attached the same way.)
 
 use std::sync::Arc;
+
+use crate::depth_map::DepthMap;
 
 /// Largest side a stored patch may claim (hostile input caps the allocation).
 pub const MAX_SIDE: usize = 8192;
 
-fn hash_of(parts: impl std::hash::Hash) -> u64 {
+pub(crate) fn hash_of(parts: impl std::hash::Hash) -> u64 {
     use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
     BuildHasherDefault::<DefaultHasher>::default().hash_one(parts)
 }
@@ -93,12 +95,14 @@ impl InpaintPatch {
 /// of the edit), and two values are equal when they hold the same objects.
 #[derive(Clone, Default)]
 pub struct Aux {
+    /// The photo's depth map, for Lens Blur and the Depth Range mask.
+    pub depth: Option<Arc<DepthMap>>,
     pub patches: Vec<Arc<InpaintPatch>>,
 }
 
 impl Aux {
     pub fn is_empty(&self) -> bool {
-        self.patches.is_empty()
+        self.depth.is_none() && self.patches.is_empty()
     }
 
     /// A hash of what is attached (cache keys).
@@ -106,7 +110,7 @@ impl Aux {
         if self.is_empty() {
             return 0;
         }
-        hash_of(self.patches.iter().map(|p| p.id).collect::<Vec<_>>())
+        hash_of((self.depth.as_ref().map(|d| d.id), self.patches.iter().map(|p| p.id).collect::<Vec<_>>()))
     }
 
     /// The attached patch whose id is `hex` (as [`Spot::patch`](crate::Spot) names it).
@@ -118,13 +122,18 @@ impl Aux {
 
 impl PartialEq for Aux {
     fn eq(&self, o: &Aux) -> bool {
-        self.patches.len() == o.patches.len() && self.patches.iter().zip(&o.patches).all(|(a, b)| Arc::ptr_eq(a, b))
+        let same_depth = match (&self.depth, &o.depth) {
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        };
+        same_depth && self.patches.len() == o.patches.len() && self.patches.iter().zip(&o.patches).all(|(a, b)| Arc::ptr_eq(a, b))
     }
 }
 
 impl std::fmt::Debug for Aux {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Aux {{ patches: {} }}", self.patches.len())
+        write!(f, "Aux {{ depth: {:?}, patches: {} }}", self.depth.as_ref().map(|d| (d.width, d.height)), self.patches.len())
     }
 }
 

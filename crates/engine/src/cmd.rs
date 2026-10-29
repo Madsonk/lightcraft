@@ -163,6 +163,8 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(previews::specs());
         v.extend(lut_profiles::specs());
         v.extend(mask_effects::specs());
+        v.extend(crate::ai::specs());
+        v.extend(crate::retouch::specs());
         v.extend(cull::specs());
         v.extend(people_migrate::specs());
         v.extend(video::specs());

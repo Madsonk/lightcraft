@@ -15,8 +15,9 @@
 //! commands return at once and [`Session::segment_poll`] applies the results; without it (CLI,
 //! MCP, tests) they wait for the worker.
 
-#[cfg(feature = "sam")]
-mod download;
+// (also the downloader of the depth and inpainting models, see `ai.rs`)
+#[cfg(any(feature = "sam", feature = "depth", feature = "migan"))]
+pub(crate) mod download;
 #[cfg(feature = "sam")]
 mod worker;
 

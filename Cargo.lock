@@ -3701,6 +3701,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-depth"
+version = "0.15.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "lightcraft-raster",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-develop"
 version = "0.15.0"
 dependencies = [
@@ -3730,6 +3742,7 @@ dependencies = [
  "lightcraft-culler",
  "lightcraft-denoise",
  "lightcraft-denoise-core",
+ "lightcraft-depth",
  "lightcraft-develop",
  "lightcraft-facemesh",
  "lightcraft-faces",
@@ -3741,6 +3754,7 @@ dependencies = [
  "lightcraft-lensdb",
  "lightcraft-merge",
  "lightcraft-meta",
+ "lightcraft-migan",
  "lightcraft-pipeline",
  "lightcraft-preview",
  "lightcraft-raster",
@@ -3756,6 +3770,7 @@ dependencies = [
  "lightcraft-tiff",
  "log",
  "miniz_oxide 0.9.1",
+ "png",
  "rayon",
  "serde",
  "serde_json",
@@ -3900,6 +3915,18 @@ dependencies = [
  "quick-xml 0.41.0",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lightcraft-migan"
+version = "0.15.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "lightcraft-raster",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

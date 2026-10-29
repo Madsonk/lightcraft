@@ -69,6 +69,7 @@ mod pdf;
 pub mod portrait;
 pub mod portrait_job;
 pub mod portrait_stack;
+pub mod retouch;
 pub mod preset_import;
 pub mod preset_luminar;
 pub mod presets;
@@ -1395,6 +1396,8 @@ pub fn json_delta(old: &Value, new: &Value) -> Option<Value> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_ai;
 #[cfg(test)]
 mod tests_autoseg;
 #[cfg(test)]

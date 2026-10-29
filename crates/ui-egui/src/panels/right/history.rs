@@ -5,6 +5,10 @@ pub(super) fn versions(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) 
     header(ui, "Versions");
     let t = Tokens::get(ui.ctx());
     padded(ui, |ui| {
+        // the classic window keeps the proposed retouch here; with workspaces on it has its own panel
+        if !crate::workspaces::enabled(app) {
+            crate::panels::proposals::section(app, ui);
+        }
         if text_button(ui, "versionCreate", crate::i18n::tr("Create Version"), false).clicked() {
             let _ = app.run("version.create", json!({}));
         }

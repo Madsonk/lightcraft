@@ -45,6 +45,12 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                         RightPanel::Portrait,
                         "Portrait retouch: sliders by group, Before / After, auto retouch, open eyes (Shift+T)",
                     ),
+                    (
+                        "proposals",
+                        Icon::Brush,
+                        RightPanel::Proposals,
+                        "Proposals: plan a natural skin retouch, preview it, keep it as a retouched copy (Shift+N)",
+                    ),
                     ("style", Icon::Sliders, RightPanel::Style, "My style: learn how you edit, preview it on a shoot, auto straighten and crop"),
                     ("redeye", Icon::Eye, RightPanel::RedEye, "Red Eye"),
                 ] {

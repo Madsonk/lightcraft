@@ -1003,6 +1003,10 @@ fn ui_commands_7(app: &mut LightcraftApp, ctx: &egui::Context, id: &str, p: &Val
             panel(app, ctx, RightPanel::Portrait, "Portrait Retouch");
             Ok(Value::Null)
         }
+        "panel.proposals" => {
+            panel(app, ctx, RightPanel::Proposals, "Proposals");
+            Ok(Value::Null)
+        }
         "panel.style" => {
             panel(app, ctx, RightPanel::Style, "My Style");
             Ok(Value::Null)

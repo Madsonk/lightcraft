@@ -198,8 +198,9 @@ fn dropping_the_lock_frees_the_library_while_another_thread_spawns_processes() {
         refused.len(),
         &refused[..refused.len().min(3)]
     );
+}
 
-/// Another thread of this process starting programs (FFmpeg, sqlite3…) must not make a library
+/// The fork's heavier variant of the same stress (4 spawner threads, 300 cycles): another thread of this process starting programs (FFmpeg, sqlite3…) must not make a library
 /// that was just closed look "already open": a child briefly holds a copy of every descriptor
 /// between its creation and its program's start, the lock's among them.
 #[cfg(unix)]

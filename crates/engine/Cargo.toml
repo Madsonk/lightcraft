@@ -49,6 +49,9 @@ lightcraft-style = { workspace = true }
 lightcraft-autoframe = { workspace = true }
 lightcraft-facemesh = { workspace = true, optional = true }
 lightcraft-autoseg = { workspace = true, optional = true }
+lightcraft-depth = { workspace = true, optional = true }
+lightcraft-migan = { workspace = true, optional = true }
+png = { workspace = true, optional = true }
 lightcraft-search = { workspace = true, optional = true }
 lightcraft-taste = { workspace = true, optional = true }
 
@@ -65,6 +68,10 @@ faces = ["dep:lightcraft-facemesh"]
 search = ["dep:lightcraft-search", "dep:lightcraft-taste"]
 # Automatic masks: SegFormer (sky, people, landscape) and an ISNet matting network (subject). Off for the web build.
 autoseg = ["dep:lightcraft-autoseg"]
+# Depth Anything V2 Small: depth maps, Lens Blur and the Depth Range mask (`depth.*`). Off for the web build.
+depth = ["dep:lightcraft-depth", "dep:png"]
+# Object removal by inpainting with MI-GAN (`spot.inpaint`). Off for the web build.
+migan = ["dep:lightcraft-migan"]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
 sam = ["dep:lightcraft-segment"]
 denoise = ["dep:lightcraft-denoise", "lightcraft-denoise/runtime", "lightcraft-gpu/denoise"]

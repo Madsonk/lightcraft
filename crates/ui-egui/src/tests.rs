@@ -58,6 +58,7 @@ mod preset_favorites;
 mod preset_import;
 mod preview_limit;
 mod print;
+mod proposals;
 mod profile_menu;
 mod profiles_layout;
 mod progress;

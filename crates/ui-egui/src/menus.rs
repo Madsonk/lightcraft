@@ -39,6 +39,7 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         }
         "workspace.delete" => crate::workspaces::enabled(app) && !crate::workspaces::Workspaces::is_builtin(&app.workspaces.current),
         s if s.starts_with("workspace.") => crate::workspaces::enabled(app),
+        "panel.proposals" => crate::workspaces::enabled(app) && app.session.active().is_some(),
         s if s.starts_with("panel.") || s.starts_with("tool.") || s.starts_with("section.") => app.session.active().is_some() || s == "panel.close",
         "app.export" | "dialog.export" | "dialog.createPreset" | "dialog.rename" | "dialog.captureTime" | "dialog.copySettings" => {
             app.session.active().is_some()
