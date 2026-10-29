@@ -184,6 +184,57 @@ fn run(dir: &Path, visible: usize) {
     let (_, all) = drain(&mut pool2, t0, left);
     out("grid_visible_warm_restart", all, "ms");
 
+    // 4b. sort view (culling): the camera's preview kept in the cache — first view, second view, and stepping with the
+    // next six read ahead in the background (the app's directional prefetch)
+    {
+        let walk: Vec<PhotoId> = ids.iter().copied().skip(visible).take(8).collect();
+        let (mut first, mut again) = (Vec::new(), Vec::new());
+        for id in &walk {
+            if let Some(q) = s.sort_view_job(*id) {
+                let t = Instant::now();
+                let _ = q.run();
+                first.push(t.elapsed().as_secs_f64() * 1e3);
+            }
+        }
+        for id in &walk {
+            if let Some(q) = s.sort_view_job(*id) {
+                let t = Instant::now();
+                let _ = q.run();
+                again.push(t.elapsed().as_secs_f64() * 1e3);
+            }
+        }
+        // stepping forward on photos nobody has seen: ahead jobs run on the pool while the current one is "judged"
+        let fresh: Vec<PhotoId> = ids.iter().copied().skip(visible + 8).take(10).collect();
+        let mut pool3: Pool = JobPool::new(threads);
+        let mut step = Vec::new();
+        for (i, id) in fresh.iter().enumerate() {
+            for nid in fresh.iter().skip(i + 1).take(6) {
+                if let Some(q) = s.sort_view_job(*nid) {
+                    pool3.submit(nid.0, q.key, 4, Box::new(move || lightcraft_engine::memory::in_background(|| q.run())));
+                }
+            }
+            // (the judge looks at the photo for ~150 ms before the next arrow)
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            if let Some(q) = s.sort_view_job(*id) {
+                let t = Instant::now();
+                let r = q.run();
+                let quick = r.quick;
+                step.push((t.elapsed().as_secs_f64() * 1e3, quick));
+            }
+        }
+        let mut times: Vec<f64> = step.iter().map(|x| x.0).collect();
+        let hits = step.iter().filter(|x| x.1 == Some(lightcraft_engine::media::QuickSource::Cached)).count();
+        let med = |v: &mut Vec<f64>| {
+            v.sort_by(|a, b| a.total_cmp(b));
+            v.get(v.len() / 2).copied().unwrap_or(0.0)
+        };
+        out("sort_view_first_median", med(&mut first), "ms");
+        out("sort_view_second_median", med(&mut again), "ms");
+        out("sort_view_step_ahead_median", med(&mut times), "ms");
+        out("sort_view_step_ahead_cached", hits as f64, "of_steps");
+        drop(pool3);
+    }
+
     // 5. next photo in the loupe: stand-in (embedded preview / cached) then the sharp 2560 px render
     let loupe = 2560usize;
     let mut stand = Vec::new();
