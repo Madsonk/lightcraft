@@ -32,7 +32,6 @@ pub mod dust;
 pub mod finish;
 pub mod geometry;
 pub mod inpaint;
-pub mod lensblur;
 pub mod local;
 pub mod local_tone;
 pub mod lut;
@@ -450,9 +449,6 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
         // baked portrait pixels are composited in this stage too
         s.aux.key(),
         format!("{eyes:?}"),
-        // Lens Blur and inpainted pixels run in this stage too
-        lens_active(s).then(|| format!("{:?}", s.lens_blur)),
-        s.aux.key(),
         // defringe runs in this stage
         format!("{:?}", s.optics),
         // and the local tone mapping
@@ -471,13 +467,7 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
 pub fn lin_needs_cpu(s: &DevelopSettings, info: &SourceInfo) -> bool {
     let o = &s.optics;
     let defringe = s.section_enabled("optics") && (o.defringe_purple_amount > 0.0 || o.defringe_green_amount > 0.0);
-    defringe || !s.spots.is_empty() || lens_active(s) || local_tone::enabled(info, s)
-}
-
-/// Whether Lens Blur has everything it needs to run: it is on, has an amount, and the photo's
-/// depth map is attached.
-pub fn lens_active(s: &DevelopSettings) -> bool {
-    s.lens_blur.enabled && s.lens_blur.amount > 0.0 && s.aux.depth.is_some() && s.section_enabled("lensBlur")
+    defringe || !s.spots.is_empty() || local_tone::enabled(info, s)
 }
 
 /// The white-balanced, defringed, retouched image (before noise reduction): the CPU part of the
@@ -491,24 +481,6 @@ pub fn lin_cpu(img: &mut Rgb32f, info: &SourceInfo, p: &Plan<'_>) {
     spots::apply(img, &s.spots, &p.frame, p.px_per_long);
     inpaint::apply(img, &s.spots, &s.aux, &p.frame);
     redeye::apply(img, &p.eyes);
-    if let (true, Some(depth)) = (lens_active(s), &s.aux.depth) {
-        let plane = lensblur::depth_plane(depth, &p.frame, img.width, img.height, img);
-        lensblur::apply(img, &plane, &s.lens_blur, p.px_per_long);
-    }
-}
-
-/// The whole (uncropped) photo at the scene-linear stage (white balanced, retouched, defringed,
-/// before tone and colour) fitting `max_edge`, with Lens Blur and masks left out: what an
-/// inpainting works on and what its result is composited into (`inpaint::apply`).
-pub fn linear_stage(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, max_edge: usize) -> Rgb32f {
-    let mut s = s.clone();
-    s.lens_blur.enabled = false;
-    s.masks.clear();
-    let req = RenderRequest { apply_crop: false, ..RenderRequest::fit(max_edge, max_edge) };
-    let plan = plan(src, info, &s, &req);
-    let mut img = plan.frame.sample(src, plan.w, plan.h);
-    lin_cpu(&mut img, info, &plan);
-    img
 }
 
 /// The whole (uncropped) photo at the scene-linear stage (white balanced, retouched, defringed,
@@ -718,7 +690,7 @@ fn overlay_alpha(o: Overlay, plan: &Plan<'_>, prep: &Prepared) -> Option<Plane> 
         return Some(e.alpha.clone());
     }
     let ev = plan.settings.light.exposure as f32;
-    Some(masks::evaluate_one_aux(m, &plan.frame, plan.w, plan.h, &prep.img, &prep.log_l, ev, plan.mattes.as_deref(), &plan.settings.aux))
+    Some(masks::evaluate_one(m, &plan.frame, plan.w, plan.h, &prep.img, &prep.log_l, ev, plan.mattes.as_deref()))
 }
 
 /// The alpha planes an `Overlay::AllMasks` shows: one per visible mask that has components,
@@ -733,7 +705,7 @@ fn overlay_alphas_all(o: Overlay, plan: &Plan<'_>, prep: &Prepared) -> Option<Ve
         if let Some(e) = prep.masks.iter().find(|e| e.id == m.id) {
             out.push(e.alpha.clone());
         } else {
-            out.push(masks::evaluate_one_aux(m, &plan.frame, plan.w, plan.h, &prep.img, &prep.log_l, ev, plan.mattes.as_deref(), &plan.settings.aux));
+            out.push(masks::evaluate_one(m, &plan.frame, plan.w, plan.h, &prep.img, &prep.log_l, ev, plan.mattes.as_deref()));
         }
     }
     Some(out)

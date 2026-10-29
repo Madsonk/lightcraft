@@ -44,9 +44,6 @@ harfrust = { version = "0.13", default-features = false, features = ["std"] }
 unicode-segmentation = "1.13"
 lightcraft-segment = { workspace = true, optional = true }
 lightcraft-restore = { workspace = true, optional = true }
-lightcraft-depth = { workspace = true, optional = true }
-lightcraft-migan = { workspace = true, optional = true }
-png = { workspace = true, optional = true }
 lightcraft-retouch = { workspace = true }
 lightcraft-culler = { workspace = true }
 lightcraft-style = { workspace = true }
@@ -73,10 +70,6 @@ autoseg = ["dep:lightcraft-autoseg"]
 sam = ["dep:lightcraft-segment"]
 # AI denoise (SCUNet) and 2x super-resolution (SPAN) of exports. Off for the web build.
 restore = ["dep:lightcraft-restore"]
-# Depth Anything V2 Small: depth maps, Lens Blur and the Depth Range mask (`depth.*`). Off for the web build.
-depth = ["dep:lightcraft-depth", "dep:png"]
-# Object removal by inpainting with MI-GAN (`spot.inpaint`). Off for the web build.
-inpaint = ["dep:lightcraft-migan"]
 denoise = ["dep:lightcraft-denoise", "lightcraft-denoise/runtime", "lightcraft-gpu/denoise"]
 rawnind-model = ["denoise", "lightcraft-denoise/rawnind-model", "lightcraft-denoise-core/rawnind-model"]
 

@@ -7,14 +7,14 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod controls;
-pub mod depth;
+pub mod inpaint_patch;
 pub mod portrait;
 pub mod presets;
 pub mod segmask;
 pub mod settings;
 
 pub use controls::{CONTROLS, ControlSpec, Section, Track};
-pub use depth::{Aux, DepthMap, InpaintPatch};
+pub use inpaint_patch::{Aux, InpaintPatch};
 pub use portrait::{PortraitStack, PortraitStep};
 pub use presets::{Preset, SettingsGroup, apply_partial, extract_groups};
 pub use segmask::SegMask;

@@ -36,7 +36,7 @@ lightcraft-codecs = { path = "crates/codecs" }
 lightcraft-meta = { path = "crates/meta" }
 lightcraft-develop = { path = "crates/develop" }
 lightcraft-lensdb = { path = "crates/lensdb" }
-lightcraft-migan = { path = "crates/migan" }
+lightcraft-inpaint = { path = "crates/inpaint" }
 lightcraft-scenes = { path = "crates/scenes" }
 lightcraft-pipeline = { path = "crates/pipeline" }
 lightcraft-gpu = { path = "crates/gpu" }
@@ -53,8 +53,6 @@ lightcraft-restore = { path = "crates/restore" }
 lightcraft-geocode = { path = "crates/geocode" }
 lightcraft-slideshow = { path = "crates/slideshow" }
 lightcraft-testkit = { path = "crates/testkit" }
-lightcraft-depth = { path = "crates/depth" }
-lightcraft-migan = { path = "crates/migan" }
 
 # foundation
 thiserror = "2"

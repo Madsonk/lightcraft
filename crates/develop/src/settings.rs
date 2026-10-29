@@ -144,9 +144,9 @@ pub struct DevelopSettings {
     /// Portrait retouch steps (the pixels they made are an inpaint patch placed by a spot).
     #[serde(skip_serializing_if = "crate::portrait::PortraitStack::is_empty")]
     pub portrait: crate::portrait::PortraitStack,
-    /// Render-time data the engine attaches (depth map, inpainted pixels): not part of the edit, never saved.
+    /// Render-time data the engine attaches (baked portrait pixels): not part of the edit, never saved.
     #[serde(skip)]
-    pub aux: crate::depth::Aux,
+    pub aux: crate::inpaint_patch::Aux,
 }
 
 impl Default for DevelopSettings {
@@ -181,7 +181,7 @@ impl Default for DevelopSettings {
             calibration: Calibration::default(),
             disabled_sections: Vec::new(),
             portrait: crate::portrait::PortraitStack::default(),
-            aux: crate::depth::Aux::default(),
+            aux: crate::inpaint_patch::Aux::default(),
         }
     }
 }
@@ -1055,7 +1055,7 @@ pub enum SpotMode {
     Clone,
     /// Content-aware: the spot is rebuilt from patches of its surroundings (no single source).
     Fill,
-    /// Filled with baked pixels (a portrait retouch) or by the inpainting model: they live in the patch named by [`Spot::patch`].
+    /// Filled with baked pixels (a portrait retouch): they live in the patch named by [`Spot::patch`].
     Inpaint,
 }
 
@@ -1071,7 +1071,7 @@ pub struct Spot {
     pub opacity: f64,
     /// Source offset (normalized) from the target; None = auto (content-aware remove).
     pub source_offset: Option<Point>,
-    /// For [`SpotMode::Inpaint`]: the id (hex) of the inpainted or baked pixels, kept in a file next to the
+    /// For [`SpotMode::Inpaint`]: the id (hex) of the baked pixels, kept in a file next to the
     /// library ([`crate::InpaintPatch`]); the spot's `points` and `size` only place its pin.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub patch: Option<String>,
