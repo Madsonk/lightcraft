@@ -78,6 +78,9 @@ pub mod print_pdf;
 pub mod profile_refs;
 pub mod proof;
 pub mod rename;
+pub mod restore;
+#[cfg(feature = "restore")]
+mod restore_torch;
 pub mod search;
 pub mod segment;
 pub mod sidecar;

@@ -1123,6 +1123,14 @@ pub struct Enhance {
     pub denoise_on: Option<bool>,
     pub raw_details: bool,
     pub super_resolution: bool,
+    /// Strength (percent) of the optional export-time SCUNet denoise of `lightcraft-restore` (any photo, not only
+    /// Bayer raws). Separate from `denoise`, the in-pipeline AI RAW denoise, so the two never stack by accident.
+    #[serde(skip_serializing_if = "restore_denoise_off")]
+    pub restore_denoise: f64,
+}
+
+fn restore_denoise_off(v: &f64) -> bool {
+    *v == 0.0
 }
 
 impl Enhance {

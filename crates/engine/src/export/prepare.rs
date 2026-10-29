@@ -204,8 +204,11 @@ impl PreparedExport {
         match self.work {
             Work::Render(w) => {
                 let RenderWork { job, hdr_job, meta, opts } = *w;
+                // AI denoise (SCUNet) / super-resolution (SPAN) are settings of the photo: they run on the
+                // finished render, here and only here (never in a preview)
+                let restore = crate::restore::Request::from_settings(&job.settings);
                 let result = job.run();
-                let r = result.rendered?;
+                let r = crate::restore::apply(result.rendered?, restore)?;
                 let gpu_fallback = result.gpu_fallback;
                 let bytes = match hdr_job {
                     Some(hj) => {
