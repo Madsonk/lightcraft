@@ -356,6 +356,8 @@ pub struct Session {
     pub active_mask: Option<u32>,
     /// AI masks (SAM 3): the model and the last photo prepared for it.
     pub segmenter: segment::Segmenter,
+    /// Depth maps, inpainted pixels and their models (Lens Blur, Depth Range, object removal).
+    pub ai: ai::Ai,
     /// Selected spot (Remove panel), by index into the active photo's spots.
     pub active_spot: Option<usize>,
     /// The persistent library this session writes to (`None` = in-memory only).
@@ -537,6 +539,7 @@ impl Session {
             depth: 0,
             active_mask: None,
             segmenter: segment::Segmenter::default(),
+            ai: ai::Ai::default(),
             active_spot: None,
             library: None,
             library_identity: Arc::new(()),
@@ -1398,6 +1401,8 @@ pub fn json_delta(old: &Value, new: &Value) -> Option<Value> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_ai;
 #[cfg(test)]
 mod tests_autoseg;
 #[cfg(test)]

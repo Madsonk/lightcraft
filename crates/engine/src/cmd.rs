@@ -159,6 +159,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(curves::specs());
         v.extend(masks::specs());
         v.extend(restore::specs());
+        v.extend(crate::ai::specs());
         v.extend(organize::specs());
         v.extend(keywords::specs());
         v.extend(manage::specs());
