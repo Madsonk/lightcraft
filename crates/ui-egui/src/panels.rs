@@ -24,6 +24,7 @@ pub mod notices;
 pub mod people;
 pub mod person;
 pub mod portrait;
+pub mod proposals;
 pub mod presets;
 pub mod profiles;
 pub mod right;

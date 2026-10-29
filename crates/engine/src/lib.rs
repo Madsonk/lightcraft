@@ -79,6 +79,7 @@ pub mod profile_refs;
 pub mod proof;
 pub mod rename;
 pub mod restore;
+pub mod retouch;
 #[cfg(feature = "restore")]
 mod restore_torch;
 pub mod search;

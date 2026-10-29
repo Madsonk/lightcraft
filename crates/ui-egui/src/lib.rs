@@ -52,6 +52,8 @@ pub mod workspaces;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_v10;
+#[cfg(test)]
 mod tests_videos;
 #[cfg(test)]
 use tests::panels as tests_panels;

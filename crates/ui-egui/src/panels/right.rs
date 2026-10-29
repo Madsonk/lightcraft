@@ -91,6 +91,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 RightPanel::Masking => super::masking::show(app, ui, id),
                 RightPanel::RedEye => red_eye(app, ui, id),
                 RightPanel::Portrait => super::portrait::show(app, ui),
+                RightPanel::Proposals => super::proposals::show(app, ui),
                 RightPanel::Style => super::style::show(app, ui),
                 RightPanel::AiPicks => super::cull::show(app, ui),
                 RightPanel::Info => info(app, ui, id),
