@@ -730,11 +730,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     };
     // once this photo is on screen: prepare its neighbours in filmstrip order (source decoded and
     // kept, view render cached) so stepping to them is instant
-    if !sort_view
-        && !interacting
-        && !app.renderer.is_pending(Slot::Main)
-        && app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.photo == id)
-    {
+    if !sort_view && !interacting && !app.renderer.is_pending(Slot::Main) && app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.photo == id) {
         let ids = app.session.visible_cloned();
         if let Some(i) = ids.iter().position(|p| *p == id) {
             let next = ids.get(i + 1).copied();
