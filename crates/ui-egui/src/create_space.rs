@@ -378,7 +378,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         .resizable(false)
         .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::same(14)))
         .show(ui, |ui| {
-            register(ui.ctx(), "panel:create", ui.max_rect());
+            register(ui, "panel:create", ui.max_rect());
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 for (tab, id, label) in [(Tab::Gallery, "createTabGallery", "Web gallery"), (Tab::Kit, "createTabKit", "Kit"), (Tab::Slideshow, "createTabSlideshow", "Slideshow")] {
@@ -402,17 +402,17 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     ui.add_space(6.0);
                     ui.label(egui::RichText::new(crate::i18n::tr("Title")).color(t.text_label).size(12.0));
                     let r = ui.add(egui::TextEdit::singleline(&mut st.title).desired_width(f32::INFINITY));
-                    register(ui.ctx(), "field:createTitle", r.rect);
+                    register(ui, "field:createTitle", r.rect);
                     ui.add_space(6.0);
                     ui.label(egui::RichText::new(crate::i18n::tr("Widths")).color(t.text_label).size(12.0));
                     ui.horizontal(|ui| {
                         for (i, w) in WIDTHS.iter().enumerate() {
                             let r = ui.checkbox(&mut st.widths[i], w.to_string());
-                            register(ui.ctx(), format!("check:createWidth-{w}"), r.rect);
+                            register(ui, format!("check:createWidth-{w}"), r.rect);
                         }
                     });
                     let r = ui.checkbox(&mut st.avif, crate::i18n::tr("AVIF as well as JPEG (smaller files)"));
-                    register(ui.ctx(), "check:createAvif", r.rect);
+                    register(ui, "check:createAvif", r.rect);
                     heading(ui, "Captions (alternative text)");
                     let [caption, title, keywords, file] = ready;
                     dim(
@@ -456,7 +456,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     ui.add_space(6.0);
                     ui.label(egui::RichText::new(crate::i18n::tr("Folder name")).color(t.text_label).size(12.0));
                     let r = ui.add(egui::TextEdit::singleline(&mut st.kit_name).hint_text(crate::i18n::tr("kit name (the title if empty)")).desired_width(f32::INFINITY));
-                    register(ui.ctx(), "field:createKitName", r.rect);
+                    register(ui, "field:createKitName", r.rect);
                     ui.add_space(6.0);
                     ui.label(egui::RichText::new(crate::i18n::tr("Image size (long edge)")).color(t.text_label).size(12.0));
                     ui.horizontal(|ui| {
@@ -487,7 +487,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(crate::i18n::tr("Seconds per photo")).color(t.text_label).size(12.0));
                         let r = ui.add(egui::DragValue::new(&mut st.interval).range(0.5..=120.0).speed(0.1));
-                        register(ui.ctx(), "field:createInterval", r.rect);
+                        register(ui, "field:createInterval", r.rect);
                     });
                     ui.add_space(10.0);
                     let label = crate::i18n::tr_format!("Start the slideshow ({n} photos)", n = n);

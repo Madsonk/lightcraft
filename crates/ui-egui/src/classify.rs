@@ -376,7 +376,7 @@ fn centre_column(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let full = ui.max_rect();
-    register(ui.ctx(), "region:classify", full);
+    register(ui, "region:classify", full);
     let left = egui::Rect::from_min_max(full.min, pos2(full.min.x + LEFT_W, full.max.y));
     let centre = egui::Rect::from_min_max(pos2(left.max.x, full.min.y), full.max);
     ui.painter().rect_filled(left, 0.0, t.chrome);

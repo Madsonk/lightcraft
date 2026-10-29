@@ -77,7 +77,7 @@ pub fn selector(app: &mut LightcraftApp, ui: &mut egui::Ui, left: f32, cy: f32) 
         let w = (galley.size().x + 26.0).max(70.0);
         let r = Rect::from_min_size(pos2(x, cy - 13.0), vec2(w, 26.0));
         let resp = ui.interact(r, egui::Id::new(("space", &id)), Sense::click()).on_hover_text(tip);
-        register(ui.ctx(), format!("button:{id}"), r);
+        register(ui, format!("button:{id}"), r);
         let active = name == app.workspaces.current;
         let fill = if active {
             t.accent
@@ -141,7 +141,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         }))
         .show(ui, |ui| {
             let full = ui.max_rect();
-            register(ui.ctx(), "region:contextBar", full);
+            register(ui, "region:contextBar", full);
             // from the right: the next action (the one primary button of the screen), then the quiet ones
             let mut right = ui.new_child(UiBuilder::new().max_rect(full).layout(Layout::right_to_left(Align::Center)));
             right.spacing_mut().item_spacing.x = design::SPACE[1];
@@ -223,7 +223,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 part(&mut job, format!("  ·  {}", crate::i18n::tr("Photo ")), a.clone(), false);
             }
             let r = left.add(egui::Label::new(job).truncate().selectable(false));
-            register(ui.ctx(), "context:summary", r.rect);
+            register(ui, "context:summary", r.rect);
         });
     if let Some(stage) = pressed_stage {
         let (cmd, p) = stage.open();

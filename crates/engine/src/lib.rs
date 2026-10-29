@@ -1396,107 +1396,23 @@ pub fn json_delta(old: &Value, new: &Value) -> Option<Value> {
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
-mod tests_album_order;
-#[cfg(test)]
-mod tests_album_remove;
-#[cfg(test)]
-mod tests_albums_local;
-#[cfg(test)]
 mod tests_autoseg;
 #[cfg(test)]
-mod tests_color;
-#[cfg(test)]
-mod tests_constrain_crop;
-#[cfg(test)]
-mod tests_crop_angle;
-#[cfg(test)]
-mod tests_crop_aspect;
-#[cfg(test)]
 mod tests_cull;
-#[cfg(test)]
-mod tests_denoise;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_describe;
 #[cfg(test)]
-mod tests_export;
-#[cfg(test)]
-mod tests_face_models;
-#[cfg(test)]
-#[cfg(not(target_arch = "wasm32"))]
-mod tests_face_recognize;
-#[cfg(test)]
-#[cfg(not(target_arch = "wasm32"))]
-mod tests_face_tiles;
-#[cfg(test)]
 mod tests_facemesh;
-#[cfg(test)]
-mod tests_filesystem_history;
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests_focus_scan;
-#[cfg(test)]
-mod tests_folders;
-#[cfg(test)]
-mod tests_forget_local;
-#[cfg(test)]
-mod tests_history_cursor;
-#[cfg(test)]
-mod tests_hold_view;
-#[cfg(test)]
-mod tests_ids_params;
-#[cfg(test)]
-mod tests_import;
-#[cfg(test)]
-mod tests_import_move;
-#[cfg(test)]
-mod tests_keyword_list;
-#[cfg(test)]
-mod tests_libops;
-#[cfg(test)]
-mod tests_library;
-#[cfg(test)]
-mod tests_lightroom_folder;
-#[cfg(test)]
-mod tests_mask_effects;
-#[cfg(test)]
-mod tests_merge;
-#[cfg(test)]
-mod tests_move_to_share;
-#[cfg(test)]
-mod tests_organize;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_people_migrate;
-#[cfg(test)]
-mod tests_persist;
 #[cfg(test)]
 mod tests_portrait_job;
 #[cfg(test)]
 mod tests_portrait_stack;
-#[cfg(test)]
-mod tests_prefs;
-#[cfg(test)]
-mod tests_presets_scale;
-#[cfg(test)]
-mod tests_print;
-#[cfg(test)]
-mod tests_process;
-#[cfg(test)]
-mod tests_recheck;
 #[cfg(all(test, feature = "search"))]
 mod tests_search;
 #[cfg(test)]
-mod tests_segment;
-#[cfg(test)]
-mod tests_settings_files;
-#[cfg(test)]
-mod tests_slide;
-#[cfg(test)]
-mod tests_slideshow_export;
-#[cfg(test)]
-mod tests_spots;
-#[cfg(test)]
 mod tests_style;
-#[cfg(test)]
-mod tests_sync;
 #[cfg(all(test, feature = "search"))]
 mod tests_taste;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -1504,9 +1420,10 @@ mod tests_video;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_video6;
 #[cfg(test)]
-mod tests_view_follow;
+#[cfg(not(target_arch = "wasm32"))]
+use tests::face_recognize as tests_face_recognize;
 #[cfg(test)]
-mod tests_xmp;
+use tests::xmp as tests_xmp;
 
 /// Most face patches one retouch mask holds (the limit of a mask component's detail passes).
 pub(crate) fn portrait_max_detail() -> usize {

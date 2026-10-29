@@ -155,7 +155,7 @@ pub fn steps(app: &LightcraftApp, ui: &mut egui::Ui, f: &Facts) -> Option<Stage>
         let gf = fig.as_ref().map(|s| ui.painter().layout_no_wrap(s.clone(), t.font(design::TEXT[0]), t.text_dim));
         let w = 8.0 + 17.0 + 6.0 + g.size().x + gf.as_ref().map_or(0.0, |g| 6.0 + g.size().x) + 10.0;
         let (r, resp) = ui.allocate_exact_size(egui::vec2(w, design::BUTTON_H), egui::Sense::click());
-        register(ui.ctx(), format!("button:{}", stage.id()), r);
+        register(ui, format!("button:{}", stage.id()), r);
         resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, is_now, label));
         let resp = resp.on_hover_text(format!("{} · {}", label, tr(stage.tip())));
         if resp.hovered() && !is_now {

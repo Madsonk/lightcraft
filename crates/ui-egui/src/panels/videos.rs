@@ -575,7 +575,7 @@ fn warmed(app: &mut LightcraftApp, ui: &mut egui::Ui) -> bool {
         ui.spinner();
         ui.add_space(8.0);
         let r = ui.label(egui::RichText::new(tr("Loading the videos…")).font(t.font(14.0)).color(t.text_dim));
-        register(ui.ctx(), "videos:loading", r.rect);
+        register(ui, "videos:loading", r.rect);
     });
     false
 }
@@ -864,7 +864,7 @@ fn chip(ui: &mut egui::Ui, id: &str, text: &str, on: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let g = ui.painter().layout_no_wrap(text.to_string(), t.font(11.0), if on { t.text } else { t.text_label });
     let (r, resp) = ui.allocate_exact_size(vec2(g.size().x + 12.0, 20.0), Sense::click());
-    register(ui.ctx(), format!("chip:{id}"), r);
+    register(ui, format!("chip:{id}"), r);
     let fill = if resp.hovered() {
         t.hover
     } else if on {
@@ -905,7 +905,7 @@ fn video_card(app: &mut LightcraftApp, ui: &mut egui::Ui, r: &Value) {
     ui.vertical(|ui| {
         ui.set_width(VCARD);
         let (pr, resp) = ui.allocate_exact_size(vec2(VCARD, VCARD * 9.0 / 16.0), Sense::click());
-        register(ui.ctx(), format!("videoCard:{id}"), pr);
+        register(ui, format!("videoCard:{id}"), pr);
         let shown = match r["poster"].as_str() {
             Some(p) => paint_picture(app, ui, pr, p, None),
             None => false,
@@ -1039,7 +1039,7 @@ fn preview(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64) {
     let now = ui.input(|i| i.time);
     let (w, h) = (480.0_f32, 270.0_f32);
     let (r, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click());
-    register(ui.ctx(), "videoPreview", r);
+    register(ui, "videoPreview", r);
     ui.painter().rect_filled(r, 4.0, Color32::BLACK);
     let pos = p.position(now);
     if let Some(e) = &p.error {
@@ -1070,7 +1070,7 @@ fn preview(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64) {
     }
     // the position bar: drag to move inside the clip
     let (bar, bresp) = ui.allocate_exact_size(vec2(w, 10.0), Sense::click_and_drag());
-    register(ui.ctx(), "videoPreviewBar", bar);
+    register(ui, "videoPreviewBar", bar);
     ui.painter().rect_filled(bar, 3.0, t.track);
     let frac = (pos / p.len_ms.max(1) as f64) as f32;
     ui.painter().rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * frac.clamp(0.0, 1.0), bar.height())), 3.0, t.accent);
@@ -1129,7 +1129,7 @@ pub fn moment_card(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64, m: &Valu
     let focused = video && ms.is_some() && app.caches.videos.focus_ms == ms;
     if let Some(frame) = m["frame"].as_str() {
         let (r, resp) = ui.allocate_exact_size(vec2(width, width * 9.0 / 16.0), Sense::click());
-        register(ui.ctx(), format!("moment:{key}"), r);
+        register(ui, format!("moment:{key}"), r);
         paint_picture(app, ui, r, frame, None);
         // the faces, outlined thinly
         for f in m["faces"].as_array().into_iter().flatten() {
@@ -1206,7 +1206,7 @@ pub fn moment_card(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64, m: &Valu
             egui::TextEdit::singleline(&mut text).desired_width(width - 12.0).id(egui::Id::new(("moment-field", &ek)))
         };
         let resp = ui.add(edit).labelled_by(name.id);
-        register(ui.ctx(), format!("field:{ek}"), resp.rect);
+        register(ui, format!("field:{ek}"), resp.rect);
         if resp.changed() {
             app.caches.videos.edits.insert(ek.clone(), text.clone());
         }
@@ -1444,7 +1444,7 @@ fn result_grid(app: &mut LightcraftApp, ui: &mut egui::Ui, rows: &[Value], salt:
                 ui.vertical(|ui| {
                     ui.set_width(w);
                     let (r, resp) = ui.allocate_exact_size(vec2(w, w * 9.0 / 16.0), Sense::click());
-                    register(ui.ctx(), format!("result:{salt}:{id}:{}", ms.unwrap_or(0)), r);
+                    register(ui, format!("result:{salt}:{id}:{}", ms.unwrap_or(0)), r);
                     let shown = x["frame"].as_str().is_some_and(|f| paint_picture(app, ui, r, f, None));
                     if !shown {
                         let pid = lightcraft_catalog::PhotoId(id);

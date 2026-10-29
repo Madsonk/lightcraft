@@ -113,7 +113,7 @@ pub const KEYWORDS_WARNING: &str = "Measured on 144 random photos by one labelle
 fn heading(ui: &mut egui::Ui, t: &Tokens, id: &str, text: &str, goto: &mut Option<Section>, which: Section) {
     ui.add_space(6.0);
     let r = ui.label(RichText::new(crate::i18n::tr(text)).font(t.semibold(14.0)).color(t.text));
-    register(ui.ctx(), format!("sorting:{id}"), r.rect);
+    register(ui, format!("sorting:{id}"), r.rect);
     if *goto == Some(which) {
         ui.scroll_to_rect(r.rect.expand2(egui::vec2(0.0, 6.0)), Some(egui::Align::TOP));
         *goto = None;
@@ -124,7 +124,7 @@ fn warning(ui: &mut egui::Ui, t: &Tokens, id: &str, text: &str) {
     let r = egui::Frame::new().fill(t.inset).stroke(egui::Stroke::new(1.0, t.caution)).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
         ui.add(egui::Label::new(RichText::new(crate::i18n::tr(text)).size(12.0).color(t.text_label)).wrap());
     });
-    register(ui.ctx(), format!("sorting:{id}"), r.response.rect);
+    register(ui, format!("sorting:{id}"), r.response.rect);
 }
 
 fn note(ui: &mut egui::Ui, t: &Tokens, text: &str) {
@@ -179,14 +179,14 @@ fn culling(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, reject_below:
         .wrap(),
     );
     let r = ui.add(egui::Slider::new(reject_below, 0.0..=80.0).text(crate::i18n::tr("Reject below focus")).step_by(1.0));
-    register(ui.ctx(), "field:cullReject", r.rect);
+    register(ui, "field:cullReject", r.rect);
     note(
         ui,
         t,
         crate::i18n::tr(if *reject_below > 0.0 { "Blurry photos below the score are flagged as rejects." } else { "0: nothing is rejected." }),
     );
     let r = ui.checkbox(pick_best, crate::i18n::tr("Pick the sharpest photo of each burst"));
-    register(ui.ctx(), "check:cullPick", r.rect);
+    register(ui, "check:cullPick", r.rect);
     note(ui, t, crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots."));
     note(
         ui,
@@ -197,7 +197,7 @@ fn culling(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, reject_below:
     let running = app.workspaces.quick.job.is_some();
     ui.horizontal_wrapped(|ui| {
         let preview = ui.add_enabled(!running, egui::Button::new(crate::i18n::tr("Preview Without Applying")));
-        register(ui.ctx(), "button:sortingCullPreview", preview.rect);
+        register(ui, "button:sortingCullPreview", preview.rect);
         if preview.clicked() {
             let mut p = json!({"pickBest": *pick_best, "dryRun": true});
             if *reject_below > 0.0 {
@@ -214,7 +214,7 @@ fn culling(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, reject_below:
             };
         }
         let b = ui.add_enabled(!running, egui::Button::new(crate::i18n::tr("Analyze Photos")));
-        register(ui.ctx(), "button:sortingCull", b.rect);
+        register(ui, "button:sortingCull", b.rect);
         if b.clicked() {
             let mut p = json!({"pickBest": *pick_best});
             if *reject_below > 0.0 {
@@ -389,7 +389,7 @@ fn keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, goto: &mut O
             n => format!("for the {n} selected photos"),
         };
         let go = ui.add_enabled(n > 0 && !running, egui::Button::new(RichText::new(crate::i18n::tr("Suggest")).font(t.semibold(11.5))));
-        register(ui.ctx(), "button:sortingKwSuggest", go.rect);
+        register(ui, "button:sortingKwSuggest", go.rect);
         if go.clicked() {
             let r = crate::heavy::suggest(app, &json!({"includeExisting": false, "background": true}));
             if let Err(e) = r {
@@ -443,7 +443,7 @@ fn keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, goto: &mut O
                 format!("+ {}  ·  {count}  ·  {:.0}%", k.replace('|', " › "), score * 100.0)
             };
             let r = ui.add(egui::Button::new(RichText::new(label).color(t.text_label)).corner_radius(10.0));
-            register(ui.ctx(), format!("kwSuggested:{k}"), r.rect);
+            register(ui, format!("kwSuggested:{k}"), r.rect);
             let r = if single { r } else { r.on_hover_text(format!("{count} photos: the best score shown")) };
             if r.clicked() {
                 accept.push((*k).to_string());

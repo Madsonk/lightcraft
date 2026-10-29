@@ -753,7 +753,7 @@ pub fn overlays(app: &mut LightcraftApp, ctx: &egui::Context) {
                     cancel = text_button(ui, "oneClickCancel", "Cancel", false).clicked();
                 });
             });
-        register(ctx, "region:oneClickConfirm", ctx.content_rect());
+        crate::widgets::register_geometry(ctx, "region:oneClickConfirm", ctx.content_rect());
         if cancel {
             app.flow.confirm = None;
         }

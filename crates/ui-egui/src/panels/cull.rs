@@ -49,7 +49,7 @@ pub fn bucket_label(b: Bucket) -> &'static str {
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
-    register(&ctx, "region:aiPicks", ui.max_rect());
+    register(ui, "region:aiPicks", ui.max_rect());
     super::right::header(ui, "AI picks");
     if app.flow.cull.genre.is_empty() {
         app.flow.cull.genre = "general".into();
@@ -115,7 +115,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 for (i, (key, label)) in BUCKETS.iter().enumerate() {
                     let on = active.as_deref() == Some(*key);
                     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click());
-                    register(&ctx, format!("button:cullBucket-{key}"), r);
+                    register(ui, format!("button:cullBucket-{key}"), r);
                     let fill = if on {
                         t.accent.gamma_multiply(0.45)
                     } else if resp.hovered() {
@@ -182,7 +182,7 @@ fn why(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         ui.label(RichText::new(tr(bucket_label(v.bucket))).font(t.semibold(12.5)).color(t.text));
         ui.label(RichText::new(tr_format!("{stars}★ proposed · score {score:.0}", stars = v.stars, score = v.score)).size(11.5).color(t.text_dim));
     });
-    register(ui.ctx(), "region:aiVerdict", ui.min_rect());
+    register(ui, "region:aiVerdict", ui.min_rect());
     let reasons = reasons_text(&v);
     if reasons.is_empty() {
         ui.label(RichText::new(tr("Nothing wrong found")).color(t.text_dim));

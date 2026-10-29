@@ -547,7 +547,7 @@ fn card(ui: &mut egui::Ui, id: &str, title: &str, detail: &str, action: &str) ->
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     let (r, resp) = ui.allocate_exact_size(vec2(w, 58.0), Sense::click());
-    register(ui.ctx(), format!("home:{id}"), r);
+    register(ui, format!("home:{id}"), r);
     let fill = if resp.hovered() { t.hover } else { t.inset };
     ui.painter().rect(r, 6.0, fill, Stroke::new(1.0, t.divider), StrokeKind::Inside);
     ui.painter().text(r.min + vec2(12.0, 14.0), Align2::LEFT_CENTER, title, t.semibold(13.0), t.text);
@@ -561,7 +561,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     ensure_loaded(app);
     let t = Tokens::get(ui.ctx());
     let full = ui.max_rect();
-    register(ui.ctx(), "region:home", full);
+    register(ui, "region:home", full);
     let left = Rect::from_min_max(full.min, pos2(full.min.x + LEFT_W, full.max.y));
     let right_w = if full.width() > 1100.0 { RIGHT_W } else { 300.0 };
     let right = Rect::from_min_max(pos2(full.max.x - right_w, full.min.y), full.max);
@@ -614,7 +614,7 @@ fn centre_column(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     // the drop zone
     let w = ui.available_width();
     let (zone, _) = ui.allocate_exact_size(vec2(w, 150.0), Sense::hover());
-    register(ui.ctx(), "home:dropzone", zone);
+    register(ui, "home:dropzone", zone);
     let hovering = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
     let colour = if hovering { t.accent } else { t.field_border };
     let c = [zone.left_top(), zone.right_top(), zone.right_bottom(), zone.left_bottom(), zone.left_top()];
@@ -778,7 +778,7 @@ fn right_column(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     crate::import::preset_field(app, ui, &mut d);
     crate::import::field(ui, "Keywords", |ui| {
         let r = ui.add(egui::TextEdit::singleline(&mut d.keywords).hint_text(crate::i18n::tr("comma, separated")).desired_width(f32::INFINITY));
-        register(ui.ctx(), "field:homeKeywords", r.rect);
+        register(ui, "field:homeKeywords", r.rect);
     });
     app.workspaces.home.d = d;
     ui.add_space(10.0);
@@ -788,7 +788,7 @@ fn right_column(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let enabled = *key != "faces" || faces_ready;
         let mut on = app.workspaces.home.after[i] && enabled;
         let r = ui.add_enabled(enabled, egui::Checkbox::new(&mut on, crate::i18n::tr(label)));
-        register(ui.ctx(), format!("check:homeAfter-{key}"), r.rect);
+        register(ui, format!("check:homeAfter-{key}"), r.rect);
         if enabled {
             app.workspaces.home.after[i] = on;
         } else {

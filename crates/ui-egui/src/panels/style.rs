@@ -39,7 +39,7 @@ fn bar(ui: &mut egui::Ui, percent: f64) {
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     super::right::header(ui, "My style");
-    register(ui.ctx(), "region:stylePanel", ui.max_rect());
+    register(ui, "region:stylePanel", ui.max_rect());
     let status = app.run("style.status", json!({})).unwrap_or(Value::Null);
     let listing = app.run("style.list", json!({})).unwrap_or(Value::Null);
     let busy = ["train", "apply", "framing"].iter().any(|k| status[k]["state"] == "running");
@@ -376,7 +376,7 @@ fn pair(app: &mut LightcraftApp, ui: &mut egui::Ui, active: u64, after: Option<l
         [("Before", Some(before), "styleBefore"), ("After", after, "styleAfter")];
     for (i, (label, settings, wid)) in looks.into_iter().enumerate() {
         let rect = Rect::from_min_size(r.min + vec2(i as f32 * (tile.x + gap), 0.0), tile);
-        crate::widgets::register(ui.ctx(), format!("image:{wid}"), rect);
+        crate::widgets::register(ui, format!("image:{wid}"), rect);
         ui.painter().rect_filled(rect, 3.0, t.canvas);
         match settings {
             Some(s) => {

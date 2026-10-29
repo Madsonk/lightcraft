@@ -493,7 +493,7 @@ pub fn badges(app: &LightcraftApp, ui: &egui::Ui, id: PhotoId, img: Rect, offset
         p.rect_filled(r, 8.0, egui::Color32::from_black_alpha(175));
         p.rect_stroke(r, 8.0, Stroke::new(1.0, if key == "soft" { t.caution } else { t.accent }), egui::StrokeKind::Inside);
         p.galley(pos2(r.left() + 7.0, r.center().y - g.size().y / 2.0), g, egui::Color32::WHITE);
-        register(ui.ctx(), format!("badge:{key}:{}", id.0), r);
+        register(ui, format!("badge:{key}:{}", id.0), r);
         if let Some(tip) = tip {
             ui.interact(r, egui::Id::new(("quick-badge", key, id.0)), egui::Sense::hover()).on_hover_text(tip);
         }
@@ -525,7 +525,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let faces_installed = app.session.execute("facemesh.status", &json!({})).ok().is_some_and(|v| v["installed"].as_bool() == Some(true));
     let mut run: Option<(&'static str, Value)> = None;
     let mut other: Option<(&'static str, Value)> = None;
-    register(ui.ctx(), "region:quickSort", ui.max_rect());
+    register(ui, "region:quickSort", ui.max_rect());
     crate::home::heading(ui, &t, "Quick sort");
     // how far along the sorting is
     let frac = if s.total > 0 { s.sorted as f32 / s.total as f32 } else { 0.0 };
@@ -552,7 +552,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     if s.scored < s.total || running {
         let label = if running { "Analyzing…" } else { "Analyze this view" };
         let b = ui.add_enabled(!running && s.total > 0, egui::Button::new(crate::i18n::tr(label)));
-        register(ui.ctx(), "button:quickAnalyze", b.rect);
+        register(ui, "button:quickAnalyze", b.rect);
         if b.clicked() {
             run = Some(("workspace.sort.analyze", json!({})));
         }

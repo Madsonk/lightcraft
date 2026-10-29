@@ -78,7 +78,7 @@ pub fn button(ui: &mut Ui, id: &str, label: &str, kind: Kind, enabled: bool) -> 
     let size = vec2((galley.size().x + 2.0 * SPACE[2]).max(40.0), BUTTON_H);
     let (r, resp) = ui.allocate_exact_size(size, if enabled { Sense::click() } else { Sense::hover() });
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
-    register(ui.ctx(), format!("button:{id}"), r);
+    register(ui, format!("button:{id}"), r);
     let hovered = enabled && resp.hovered();
     let (fill, border, text) = match (kind, enabled) {
         (Kind::Primary, true) => (if hovered { t.accent.gamma_multiply(1.25) } else { t.accent }, t.accent, Color32::WHITE),
@@ -131,7 +131,7 @@ pub fn empty_state(ui: &mut Ui, id: &str, title: &str, hint: &str, action: Optio
     });
     ui.add_space(SPACE[3]);
     let bottom = ui.cursor().min;
-    register(ui.ctx(), format!("empty:{id}"), Rect::from_min_max(top, pos2(top.x + ui.available_width(), bottom.y)));
+    register(ui, format!("empty:{id}"), Rect::from_min_max(top, pos2(top.x + ui.available_width(), bottom.y)));
     pressed
 }
 

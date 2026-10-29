@@ -20,7 +20,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
     super::right::header(ui, "Portrait retouch");
-    register(&ctx, "region:portraitPanel", ui.max_rect());
+    register(ui, "region:portraitPanel", ui.max_rect());
     flow::load_portrait(app);
     if app.flow.portrait.want_eyes {
         if app.flow.portrait.busy_frames == 0 {
@@ -100,7 +100,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     for s in members {
                         let mut v = app.flow.portrait.amounts.get(&s.id).copied().unwrap_or(0.0);
                         let resp = ui.add(egui::Slider::new(&mut v, 0.0..=100.0).text(tr(&s.label)).integer());
-                        register(&ctx, format!("slider:portrait.{}", s.id), resp.rect);
+                        register(ui, format!("slider:portrait.{}", s.id), resp.rect);
                         if resp.changed() {
                             app.flow.portrait.amounts.insert(s.id.clone(), v);
                         }
@@ -200,7 +200,7 @@ fn before_after(ui: &mut egui::Ui, pair: &Pair, id: &str) {
             ui.vertical(|ui| {
                 let (r, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
                 ui.painter().image(tex.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
-                register(ui.ctx(), format!("image:{id}-{key}"), r);
+                register(ui, format!("image:{id}-{key}"), r);
                 ui.label(RichText::new(tr(label)).size(11.0).color(t.text_label));
             });
         }
