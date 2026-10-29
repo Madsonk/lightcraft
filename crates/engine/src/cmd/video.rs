@@ -129,6 +129,9 @@ fn status(s: &mut Session, p: &Value) -> Result<Value> {
     if bool_or(p, "jobOnly", false) {
         return Ok(json!({"available": true, "job": s.video.job.report(false)}));
     }
+    // taken before the counts: a job that ends meanwhile is then reported as running, never as finished with
+    // counts that predate its pictures
+    let job = s.video.job.report(false);
     let root = cache_root(s);
     let videos: Vec<lightcraft_catalog::PhotoId> =
         s.catalog.photos().filter(|p| p.in_library() && p.kind == lightcraft_catalog::MediaKind::Video).map(|p| p.id).collect();
@@ -146,7 +149,7 @@ fn status(s: &mut Session, p: &Value) -> Result<Value> {
         "ffmpeg": ffmpeg::ffmpeg().map(|p| p.display().to_string()), "ffprobe": ffmpeg::ffprobe().map(|p| p.display().to_string()),
         "videos": videos.len(), "withFrames": with, "frames": n,
         "bytes": root.as_deref().map(crate::video::frames_bytes), "folder": root.map(|r| r.display().to_string()),
-        "job": s.video.job.report(false),
+        "job": job,
     }))
 }
 
