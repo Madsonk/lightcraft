@@ -209,6 +209,14 @@ Already inside: `lc-lot-b14` (My Style, autoframe), `lc-speed-sort` (sort view),
 - Bundle: `lc-port-bundle.sh` (now 0.15.0): launcher `Info.plist`, `LightCraftLocalBuild = 0.15.0-madson1`, ad hoc signed, `codesign -v` valid.
 - Checked on a copy of the test library (355 videos, 355 photos): thumbnails load, journey bar, Quick sort, suggested picks, keywords and
   People suggestions, Videos view lists the 355 videos, menus carry cull / portrait / Videos / People / Sorting Help / Style / tour.
-- Not verified / still open: first Videos view blocks the UI for ~9 s on that copy (`maxUpdateMs` 9000) with many posters still white at
-  the screenshot; the beginner walk (40 CR2); Retouch left column and module filmstrip under both sidebars; step 5 modules (depth / Lens
-  Blur / Depth Range, MI-GAN, proposed retouch, skin harmonization, dodge & burn, SCUNet/SPAN, library-lock retry); ~97 missing French messages.
+- Videos "freeze" (looked at, 2026-10-29): the ~9 s `maxUpdateMs` seen on the copy was the **startup** worst frame (library open 5.3 s on a
+  cold USB disk, before the window), not the Videos view. The view already reads its lists on a worker (`warm` / `ListsJob`, 32 threads,
+  "Loading the videos…") and decodes posters off-thread; `sample` of the UI thread showed only egui text layout. One real cost was found and
+  fixed at the cause (`47a08da8`): `video.list` re-read the described moments of the whole library for every video (quadratic) —
+  one grouping now. Warm `video.list` 444 ms → ~24 ms; worst frame when opening the view 658 ms → 66–76 ms (warm disk cache).
+  Headless screenshots show already-uploaded posters white; the windowed screenshot shows them (not a defect).
+  Tool: `lc-port-015-measure.py <binary> <label> <library-copy> <port>` (same method for before and after).
+- CI: `cargo xtask ci` — all 8 steps passed again on `47a08da8`.
+- Still open: the beginner walk (40 CR2); Retouch step; Retouch left column and module filmstrip under both sidebars; step 5 modules
+  (depth / Lens Blur / Depth Range, MI-GAN, proposed retouch, skin harmonization, dodge & burn, SCUNet/SPAN, library-lock retry);
+  ~97 missing French messages; the 5.3 s library open at startup on a cold disk (main thread, not Videos-specific).
