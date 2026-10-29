@@ -216,7 +216,7 @@ Already inside: `lc-lot-b14` (My Style, autoframe), `lc-speed-sort` (sort view),
   one grouping now. Warm `video.list` 444 ms → ~24 ms; worst frame when opening the view 658 ms → 66–76 ms (warm disk cache).
   Headless screenshots show already-uploaded posters white; the windowed screenshot shows them (not a defect).
   Tool: `lc-port-015-measure.py <binary> <label> <library-copy> <port>` (same method for before and after).
-- CI: `cargo xtask ci` — all 8 steps passed again on `47a08da8`.
+- CI: `47a08da8` (video.list fix) — full `cargo xtask ci` still running (log `lc-port-015-ci3.log`, at the parity step); not yet proven. 8/8 is proven only for `d3aa4566`.
 - Still open: the beginner walk (40 CR2); Retouch step; Retouch left column and module filmstrip under both sidebars; step 5 modules
   (depth / Lens Blur / Depth Range, MI-GAN, proposed retouch, skin harmonization, dodge & burn, SCUNet/SPAN, library-lock retry);
   ~97 missing French messages; the 5.3 s library open at startup on a cold disk (main thread, not Videos-specific).
