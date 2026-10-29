@@ -424,7 +424,7 @@ fn keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, goto: &mut O
     }
     if agg.is_empty() {
         let msg = if kw.unindexed > 0 {
-            crate::i18n::tr("This photo is not indexed yet: run Search ▸ Index Photos.")
+            crate::i18n::tr("This photo is not indexed yet: run Search → Index Photos.")
         } else {
             crate::i18n::tr("No keyword reached the threshold.")
         };

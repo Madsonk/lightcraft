@@ -295,7 +295,7 @@ fn people_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     if h.unnamed_faces > 0 {
         ui.label(crate::i18n::tr_format!("{} faces nobody has named", h.unnamed_faces));
     } else {
-        ui.label(tr("No unnamed face. Run View ▸ People to look for faces in new photos."));
+        ui.label(tr("No unnamed face. Run View → People to look for faces in new photos."));
     }
     ui.add_space(8.0);
     if text_button(ui, "classifyOpenPeople", "Name faces in People", false).clicked() {

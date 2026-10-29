@@ -65,7 +65,7 @@ pub fn selector(app: &mut LightcraftApp, ui: &mut egui::Ui, left: f32, cy: f32) 
         items.push((
             app.workspaces.current.clone(),
             "space-custom".into(),
-            crate::i18n::tr("A workspace of your own (Window ▸ Workspaces)").to_string(),
+            crate::i18n::tr("A workspace of your own (Window → Workspaces)").to_string(),
             false,
         ));
     }

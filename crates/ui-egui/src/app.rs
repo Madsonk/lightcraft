@@ -581,7 +581,7 @@ impl LightcraftApp {
             self.ui.facemesh_downloading = false;
             match (&download.error, download.finished) {
                 (Some(e), _) => self.toast_error(ctx, format!("The face model download failed: {e}")),
-                (None, true) => self.toast(ctx, crate::i18n::tr("The face model is installed: run Photo ▸ Analyze Faces.")),
+                (None, true) => self.toast(ctx, crate::i18n::tr("The face model is installed: run Photo → Analyze Faces.")),
                 (None, false) => {}
             }
         }

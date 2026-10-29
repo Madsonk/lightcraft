@@ -88,7 +88,7 @@ fn my_style(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, status: &Val
         if edited < MIN_PHOTOS {
             design::status_line(ui, State::Info, &format!("{edited} {} {}", tr("edited photos found, at least"), MIN_PHOTOS));
             ui.label(
-                RichText::new(tr("Import your Lightroom catalogue (File ▸ Import Lightroom Catalog) or edit more photos, then come back."))
+                RichText::new(tr("Import your Lightroom catalogue (File → Import Lightroom Catalog) or edit more photos, then come back."))
                     .size(11.0)
                     .color(t.text_dim),
             );

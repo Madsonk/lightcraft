@@ -398,7 +398,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Find Faces in Videos",
             [],
             None,
-            "{ids?, force?: bool, background?: bool} — finds, aligns and embeds the faces of the pictures cut from these videos (all videos when no ids) with the installed YuNet and recognition model (Settings ▸ Faces), and keeps them beside the library. Moments then show the people the photos name (a suggestion, never a confirmation) → {pictures, background, model}",
+            "{ids?, force?: bool, background?: bool} — finds, aligns and embeds the faces of the pictures cut from these videos (all videos when no ids) with the installed YuNet and recognition model (Settings → Faces), and keeps them beside the library. Moments then show the people the photos name (a suggestion, never a confirmation) → {pictures, background, model}",
             always,
             run
         ),

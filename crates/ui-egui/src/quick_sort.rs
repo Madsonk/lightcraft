@@ -611,7 +611,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             ));
         }
     } else {
-        ui.label(egui::RichText::new(crate::i18n::tr("Closed eyes need the face model (Photo ▸ Analyze Faces).")).color(t.text_dim).size(11.5));
+        ui.label(egui::RichText::new(crate::i18n::tr("Closed eyes need the face model (Photo → Analyze Faces).")).color(t.text_dim).size(11.5));
     }
     if line(ui, &t, "quickDup", "Same file", s.duplicates.len(), "Select the photos whose file is identical to another's", "Select") {
         other = Some(("workspace.sort.select", json!({"what": "duplicates"})));

@@ -282,7 +282,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, name: &str) {
         let video_sub = match &video_faces {
             None => crate::i18n::tr("Loading the videos…").to_string(),
             Some(v) if v.is_empty() => crate::i18n::tr_format!(
-                "No face of {name} found in videos yet. Videos ▸ Find faces looks for them, and names come from the photos.",
+                "No face of {name} found in videos yet. Videos → Find faces looks for them, and names come from the photos.",
                 name = shown_name
             ),
             Some(v) => crate::i18n::tr_format!("{n} pictures in videos look like {name}.", n = v.len(), name = shown_name),

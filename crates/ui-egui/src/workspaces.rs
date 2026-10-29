@@ -507,7 +507,7 @@ pub fn set_step(app: &mut LightcraftApp, step: Step) -> Result<Value, String> {
 pub fn command(app: &mut LightcraftApp, id: &str, p: &Value) -> Result<Value, String> {
     let arg = |k: &str| p.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
     if !enabled(app) {
-        return Err("Workspaces are off (Settings ▸ General ▸ Workspaces)".into());
+        return Err("Workspaces are off (Settings → General → Workspaces)".into());
     }
     match id {
         "workspace.library" => switch(app, "Library"),

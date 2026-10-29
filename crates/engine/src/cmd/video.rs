@@ -61,7 +61,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Faces of a Person in Videos",
             [],
             None,
-            "{name, limit?: n (200)} — the pictures of videos where this person is suggested by the photos' named faces (People ▸ Recognition), by video then time → {name, total, videos, faces: [{video, file, ms, frame, rect}]}",
+            "{name, limit?: n (200)} — the pictures of videos where this person is suggested by the photos' named faces (People → Recognition), by video then time → {name, total, videos, faces: [{video, file, ms, frame, rect}]}",
             always,
             crate::video::views::person
         ),

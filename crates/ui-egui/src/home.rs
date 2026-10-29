@@ -552,7 +552,7 @@ fn card(ui: &mut egui::Ui, id: &str, title: &str, detail: &str, action: &str) ->
     ui.painter().rect(r, 6.0, fill, Stroke::new(1.0, t.divider), StrokeKind::Inside);
     ui.painter().text(r.min + vec2(12.0, 14.0), Align2::LEFT_CENTER, title, t.semibold(13.0), t.text);
     ui.painter().text(r.min + vec2(12.0, 32.0), Align2::LEFT_CENTER, detail, t.font(11.5), t.text_dim);
-    ui.painter().text(r.min + vec2(12.0, 47.0), Align2::LEFT_CENTER, format!("{action} ▸"), t.font(11.5), t.accent);
+    ui.painter().text(r.min + vec2(12.0, 47.0), Align2::LEFT_CENTER, format!("{action} →"), t.font(11.5), t.accent);
     resp.clicked()
 }
 
@@ -792,7 +792,7 @@ fn right_column(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         if enabled {
             app.workspaces.home.after[i] = on;
         } else {
-            r.on_disabled_hover_text(crate::i18n::tr("The People model is not installed (Photo ▸ Sorting Help or People ▸ Recognition set it up)."));
+            r.on_disabled_hover_text(crate::i18n::tr("The People model is not installed (Photo → Sorting Help or People → Recognition set it up)."));
         }
     }
     ui.add_space(12.0);

@@ -833,7 +833,7 @@ fn paint_eyes_closed(ui: &egui::Ui, p: &egui::Painter, t: &Tokens, id: PhotoId, 
     p.galley(pos2(br.left() + 17.0, br.center().y - g.size().y / 2.0), g, Color32::WHITE);
     register(ui, format!("badge:eyesClosed:{}", id.0), br);
     ui.interact(br, egui::Id::unique(("eyes-closed-badge", id.0)), Sense::hover())
-        .on_hover_text(crate::i18n::tr("A closed eye was found on a face in this photo (Photo ▸ Analyze Faces)"));
+        .on_hover_text(crate::i18n::tr("A closed eye was found on a face in this photo (Photo → Analyze Faces)"));
 }
 
 fn cell_description(app: &LightcraftApp, photo: &lightcraft_catalog::Photo) -> String {
