@@ -465,16 +465,8 @@ pub fn learn(s: &mut Session, p: &Value) -> Result<Value> {
 
 // ---------- suggestions
 
-fn candidates(
-    entries: &[Entry],
-    cent: &[Vec<f32>],
-    stats: &[(f32, f32)],
-    probes: &[Probe],
-    scale_prob: &dyn Fn(f32) -> Option<f32>,
-    v: &[f32],
-    lang: &str,
-    p_min: f32,
-) -> Vec<Cand> {
+fn candidates(prep: &Prepared, scale_prob: &dyn Fn(f32) -> Option<f32>, v: &[f32]) -> Vec<Cand> {
+    let (entries, cent, stats, probes, lang, p_min) = (&prep.entries, &prep.cent, &prep.stats, &prep.probes, prep.lang.as_str(), prep.p_min);
     let mut out = Vec::new();
     for ((e, c), (m, sd)) in entries.iter().zip(cent).zip(stats) {
         let cos = lightcraft_search::index::dot(v, c);
@@ -567,7 +559,7 @@ fn suggest_keyed(
     let probe = move |c: f32| Some(1.0 / (1.0 + (-(c * sc + bi)).exp()));
     let mut out = Vec::new();
     for (id, v, have) in vs {
-        let mut c = candidates(&prep.entries, &prep.cent, &prep.stats, &prep.probes, &probe, &v, &prep.lang, prep.p_min);
+        let mut c = candidates(prep, &probe, &v);
         c.retain(|x| {
             x.score >= threshold
                 && cats.as_ref().is_none_or(|cs| cs.iter().any(|k| k.eq_ignore_ascii_case(&x.category)))

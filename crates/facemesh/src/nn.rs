@@ -336,7 +336,17 @@ pub fn softmax_rows(x: &mut [f32], n: usize) {
 
 /// Multi-head scaled dot-product attention of `nq` queries over `nk` keys/values, each `heads ×
 /// hd` wide (token-major, heads side by side), plus an optional per-head bias `[heads × nq × nk]`.
-pub fn attention(q: &[f32], k: &[f32], v: &[f32], nq: usize, nk: usize, heads: usize, hd: usize, bias: Option<&[f32]>) -> Vec<f32> {
+/// The sizes of one [`attention`] call: `nq` queries over `nk` keys/values, `heads` heads of `hd` each.
+#[derive(Clone, Copy, Debug)]
+pub struct AttnShape {
+    pub nq: usize,
+    pub nk: usize,
+    pub heads: usize,
+    pub hd: usize,
+}
+
+pub fn attention(q: &[f32], k: &[f32], v: &[f32], shape: AttnShape, bias: Option<&[f32]>) -> Vec<f32> {
+    let AttnShape { nq, nk, heads, hd } = shape;
     let dim = heads * hd;
     let mut out = vec![0.0f32; nq * dim];
     if q.len() < nq * dim || k.len() < nk * dim || v.len() < nk * dim {

@@ -495,7 +495,7 @@ pub fn badges(app: &LightcraftApp, ui: &egui::Ui, id: PhotoId, img: Rect, offset
         p.galley(pos2(r.left() + 7.0, r.center().y - g.size().y / 2.0), g, egui::Color32::WHITE);
         register(ui, format!("badge:{key}:{}", id.0), r);
         if let Some(tip) = tip {
-            ui.interact(r, egui::Id::new(("quick-badge", key, id.0)), egui::Sense::hover()).on_hover_text(tip);
+            ui.interact(r, egui::Id::unique(("quick-badge", key, id.0)), egui::Sense::hover()).on_hover_text(tip);
         }
         y -= 18.0;
     }

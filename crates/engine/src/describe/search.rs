@@ -256,53 +256,9 @@ fn row(m: &Moment, e: Option<&Effective>, present: &[(u32, String)], words: &[&s
     })
 }
 
-/// `describe.search {query, people?, limit?, kind?: photo|video|all, window?, semantic?, minProbability?}`.
-pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
-    const C: &str = "describe.search";
-    let query = str_param(p, "query").unwrap_or("").trim().to_string();
-    let limit = f64_or(p, "limit", 50.0).clamp(1.0, 2000.0) as usize;
-    let window_ms = (f64_or(p, "window", DEFAULT_WINDOW).clamp(0.0, 600.0) * 1000.0) as u64;
-    let min_prob = f64_or(p, "minProbability", DEFAULT_MIN_PROBABILITY).clamp(0.0, 1.0) as f32;
-    let kind = str_param(p, "kind").unwrap_or("all");
-    if !matches!(kind, "all" | "photo" | "video") {
-        return Err(bad(C, "`kind` is photo, video or all"));
-    }
-    let fields: Vec<String> = match p.get("fields").and_then(Value::as_array) {
-        Some(a) => a.iter().filter_map(Value::as_str).filter(|f| matches!(*f, "scene" | "action" | "description")).map(str::to_string).collect(),
-        None => vec!["scene".into(), "action".into(), "description".into()],
-    };
-    let lang = str_param(p, "lang").unwrap_or(DEFAULT_LANG);
-    if !matches!(lang, "fr" | "en" | "both") {
-        return Err(bad(C, "`lang` is fr, en or both"));
-    }
-    let semantic_top = f64_or(p, "semanticTop", DEFAULT_SEMANTIC_TOP as f64).clamp(0.0, 1e9) as usize;
-    let use_min_prob = p.get("minProbability").is_some();
-    let use_text = bool_or(p, "text", true);
-    // every word of the query must be found (the default) or any of them (`textAll: false`)
-    let text_all = bool_or(p, "textAll", true);
-    let (people, by_key) = named(s);
-    let (mut required, rest) = people_in(&query, &people);
-    let mut unknown_people = Vec::new();
-    for n in p.get("people").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
-        match people.iter().find(|(_, x)| fold(x) == fold(n)) {
-            Some(x) if !required.iter().any(|(r, _)| *r == x.0) => required.push(x.clone()),
-            Some(_) => {}
-            None => unknown_people.push(n.to_string()),
-        }
-    }
-    let terms: Vec<String> = rest.split(' ').filter(|w| w.chars().count() >= 2 && !STOP.contains(w)).map(str::to_string).collect();
-    if required.is_empty() && terms.is_empty() {
-        return Err(bad(
-            C,
-            if unknown_people.is_empty() {
-                "say who or what to look for (`query`, `people`)".to_string()
-            } else {
-                format!("nobody named {} in People: name them first (people.name)", unknown_people.join(", "))
-            },
-        ));
-    }
-    // every photo, and every moment of every video (its pictures and its annotated moments)
-    let store = super::ops::open(s);
+/// Every photo, and every moment of every video (its pictures and its annotated moments), for `kind`
+/// (`all`, `photo` or `video`), with the pictures' times of each video.
+fn collect_moments(s: &mut Session, store: &super::Store, kind: &str) -> (Vec<Moment>, HashMap<PhotoId, Vec<(u64, u64)>>) {
     let mut moments: Vec<Moment> = Vec::new();
     let mut video_frames: HashMap<PhotoId, Vec<(u64, u64)>> = HashMap::new();
     let catalog: Vec<(PhotoId, String, bool)> =
@@ -361,6 +317,57 @@ pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
             });
         }
     }
+    (moments, video_frames)
+}
+
+/// `describe.search {query, people?, limit?, kind?: photo|video|all, window?, semantic?, minProbability?}`.
+pub fn search(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "describe.search";
+    let query = str_param(p, "query").unwrap_or("").trim().to_string();
+    let limit = f64_or(p, "limit", 50.0).clamp(1.0, 2000.0) as usize;
+    let window_ms = (f64_or(p, "window", DEFAULT_WINDOW).clamp(0.0, 600.0) * 1000.0) as u64;
+    let min_prob = f64_or(p, "minProbability", DEFAULT_MIN_PROBABILITY).clamp(0.0, 1.0) as f32;
+    let kind = str_param(p, "kind").unwrap_or("all");
+    if !matches!(kind, "all" | "photo" | "video") {
+        return Err(bad(C, "`kind` is photo, video or all"));
+    }
+    let fields: Vec<String> = match p.get("fields").and_then(Value::as_array) {
+        Some(a) => a.iter().filter_map(Value::as_str).filter(|f| matches!(*f, "scene" | "action" | "description")).map(str::to_string).collect(),
+        None => vec!["scene".into(), "action".into(), "description".into()],
+    };
+    let lang = str_param(p, "lang").unwrap_or(DEFAULT_LANG);
+    if !matches!(lang, "fr" | "en" | "both") {
+        return Err(bad(C, "`lang` is fr, en or both"));
+    }
+    let semantic_top = f64_or(p, "semanticTop", DEFAULT_SEMANTIC_TOP as f64).clamp(0.0, 1e9) as usize;
+    let use_min_prob = p.get("minProbability").is_some();
+    let use_text = bool_or(p, "text", true);
+    // every word of the query must be found (the default) or any of them (`textAll: false`)
+    let text_all = bool_or(p, "textAll", true);
+    let (people, by_key) = named(s);
+    let (mut required, rest) = people_in(&query, &people);
+    let mut unknown_people = Vec::new();
+    for n in p.get("people").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+        match people.iter().find(|(_, x)| fold(x) == fold(n)) {
+            Some(x) if !required.iter().any(|(r, _)| *r == x.0) => required.push(x.clone()),
+            Some(_) => {}
+            None => unknown_people.push(n.to_string()),
+        }
+    }
+    let terms: Vec<String> = rest.split(' ').filter(|w| w.chars().count() >= 2 && !STOP.contains(w)).map(str::to_string).collect();
+    if required.is_empty() && terms.is_empty() {
+        return Err(bad(
+            C,
+            if unknown_people.is_empty() {
+                "say who or what to look for (`query`, `people`)".to_string()
+            } else {
+                format!("nobody named {} in People: name them first (people.name)", unknown_people.join(", "))
+            },
+        ));
+    }
+    // every photo, and every moment of every video (its pictures and its annotated moments)
+    let store = super::ops::open(s);
+    let (moments, video_frames) = collect_moments(s, &store, kind);
     // what, by meaning
     let use_meaning = bool_or(p, "semantic", true) && !terms.is_empty();
     let centre = match str_param(p, "centre") {

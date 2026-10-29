@@ -191,7 +191,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
     for task in app.tasks.running.iter().filter(|t| t.progress.is_some()) {
         let Some(p) = &task.progress else { continue };
         let (done, total, note) = p.snapshot();
-        if progress_window(ctx, &task.label, slot, &task.label, done, total, &note, p.cancelled()) {
+        if progress_window(ctx, &task.label, slot, &task.label, (done, total), &note, p.cancelled()) {
             p.cancel();
         }
         slot += 1;
@@ -274,7 +274,7 @@ pub fn wait_for(app: &mut LightcraftApp, ctx: &egui::Context, label: &str, timeo
 /// A progress panel at the bottom left, `slot` panels above the first (the export's own panel is
 /// below them): the label, a bar (a busy bar while `total` is 0), what is in hand and Cancel.
 /// Returns `true` when Cancel was pressed this frame.
-pub fn progress_window(ctx: &egui::Context, key: &str, slot: usize, label: &str, done: usize, total: usize, note: &str, stopping: bool) -> bool {
+pub fn progress_window(ctx: &egui::Context, key: &str, slot: usize, label: &str, (done, total): (usize, usize), note: &str, stopping: bool) -> bool {
     let t = crate::theme::Tokens::get(ctx);
     let mut cancel = false;
     egui::Window::new(format!("task-{key}"))

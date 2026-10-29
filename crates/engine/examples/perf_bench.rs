@@ -93,6 +93,29 @@ fn drain(pool: &mut Pool, t0: Instant, mut left: std::collections::HashSet<u64>)
     (first.unwrap_or(0.0), t0.elapsed().as_secs_f64() * 1e3)
 }
 
+/// Step 2: the first grid paint — quick (embedded preview) thumbnails of the visible cells.
+fn first_paint(s: &mut lightcraft_engine::Session, pool: &mut Pool, ids: &[PhotoId], visible: usize) {
+    let t0 = Instant::now();
+    let vis: Vec<PhotoId> = ids.iter().copied().take(visible).collect();
+    let mut left = std::collections::HashSet::new();
+    for id in &vis {
+        let Some(job) = s.thumb_job(*id, 256) else { continue };
+        let slot = id.0;
+        left.insert(slot);
+        match s.quick_thumb_job(&job) {
+            Some(mut q) => {
+                q.key = job.key;
+                pool.submit(slot, job.key, 10, Box::new(move || lightcraft_engine::memory::in_background(|| q.run())));
+            }
+            None => pool.submit(slot, job.key, 10, Box::new(move || lightcraft_engine::memory::in_background(|| job.run()))),
+        }
+    }
+    let (first, all) = drain(pool, t0, left);
+    out("grid_first_thumb", first, "ms");
+    out("grid_visible_first_paint", all, "ms");
+    out("grid_preview_mb_read", lightcraft_engine::files::PREVIEW_BYTES_READ.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e6, "MB");
+}
+
 fn run(dir: &Path, visible: usize) {
     let tmp = std::env::temp_dir().join(format!("lc-perf-{}", std::process::id()));
     let cache = tmp.join("thumbs");
@@ -111,27 +134,9 @@ fn run(dir: &Path, visible: usize) {
     out("rss_after_import", rss_mb(), "MB");
     let ids: Vec<PhotoId> = rep.imported.iter().map(|i| PhotoId(*i)).collect();
 
-    // 2. first grid paint: quick (embedded preview) thumbnails of the visible cells
+    // 2. first grid paint
     let mut pool: Pool = JobPool::new(threads);
-    let t0 = Instant::now();
-    let vis: Vec<PhotoId> = ids.iter().copied().take(visible).collect();
-    let mut left = std::collections::HashSet::new();
-    for id in &vis {
-        let Some(job) = s.thumb_job(*id, 256) else { continue };
-        let slot = id.0;
-        left.insert(slot);
-        match s.quick_thumb_job(&job) {
-            Some(mut q) => {
-                q.key = job.key;
-                pool.submit(slot, job.key, 10, Box::new(move || lightcraft_engine::memory::in_background(|| q.run())));
-            }
-            None => pool.submit(slot, job.key, 10, Box::new(move || lightcraft_engine::memory::in_background(|| job.run()))),
-        }
-    }
-    let (first, all) = drain(&mut pool, t0, left);
-    out("grid_first_thumb", first, "ms");
-    out("grid_visible_first_paint", all, "ms");
-    out("grid_preview_mb_read", lightcraft_engine::files::PREVIEW_BYTES_READ.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e6, "MB");
+    first_paint(&mut s, &mut pool, &ids, visible);
 
     // 3. final thumbnails: visible first (priority 10), then the rest (priority 1) — cold disk cache
     let t0 = Instant::now();

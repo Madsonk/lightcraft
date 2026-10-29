@@ -76,7 +76,7 @@ pub fn selector(app: &mut LightcraftApp, ui: &mut egui::Ui, left: f32, cy: f32) 
         let galley = ui.painter().layout_no_wrap(label, t.semibold(12.5), t.text);
         let w = (galley.size().x + 26.0).max(70.0);
         let r = Rect::from_min_size(pos2(x, cy - 13.0), vec2(w, 26.0));
-        let resp = ui.interact(r, egui::Id::new(("space", &id)), Sense::click()).on_hover_text(tip);
+        let resp = ui.interact(r, egui::Id::unique(("space", &id)), Sense::click()).on_hover_text(tip);
         register(ui, format!("button:{id}"), r);
         let active = name == app.workspaces.current;
         let fill = if active {
@@ -89,7 +89,7 @@ pub fn selector(app: &mut LightcraftApp, ui: &mut egui::Ui, left: f32, cy: f32) 
         let colour = if active { egui::Color32::WHITE } else { t.text_label };
         ui.painter().rect(r, 5.0, fill, Stroke::new(1.0, if active { t.accent } else { t.button_border }), StrokeKind::Inside);
         ui.painter().galley(r.center() - galley.size() / 2.0, galley.clone(), colour);
-        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, active, name.as_str()));
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, active, name.as_str()));
         if resp.clicked() {
             clicked = Some(name);
         }

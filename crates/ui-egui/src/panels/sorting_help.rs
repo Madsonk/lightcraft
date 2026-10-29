@@ -364,7 +364,7 @@ fn keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, goto: &mut O
         ),
     );
     warning(ui, t, "keywordsWarning", KEYWORDS_WARNING);
-    let auto_id = egui::Id::new("kw-auto-accept");
+    let auto_id = egui::Id::unique("kw-auto-accept");
     let mut auto: bool = match ui.data(|d| d.get_temp::<bool>(auto_id)) {
         Some(b) => b,
         None => {

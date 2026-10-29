@@ -142,7 +142,6 @@ pub(super) fn adopting_full_hashes(s: &Session, probe: Option<crate::media::File
     }
 }
 
-
 /// Find and probe what importing `paths` would add, marking duplicates (by path, or by content
 /// against the library and earlier candidates). Nothing is added; the probes are kept for the
 /// import that follows.

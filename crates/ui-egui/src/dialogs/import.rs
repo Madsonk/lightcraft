@@ -28,11 +28,11 @@ mod task;
 
 #[cfg(test)]
 pub(crate) use body::grid_height;
-pub(crate) use body::{album_field, candidate_cell, field, preset_field};
 #[cfg(test)]
 use body::{DEFAULT_BELOW_GRID, badge_rect, dup_counts};
 pub use body::{DEFAULT_FOLDER_TEMPLATE, body, example_destination, source_summary};
 pub(crate) use body::{DIALOG_SIZE, note_dialog_bottom};
+pub(crate) use body::{album_field, candidate_cell, field, preset_field};
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use scan::cards_seen;
 pub use scan::{ScanTask, browse, open, poll_scan, running};

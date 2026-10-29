@@ -8,23 +8,32 @@
 
 pub mod brush_live;
 pub mod canvas_keys;
+pub mod classify;
 mod command_error;
+pub mod context_bar;
 pub mod control;
+pub mod create_space;
+pub mod design;
 pub mod dialogs;
 pub mod docking;
 mod drop_overlay;
 pub mod export_task;
+pub mod flow;
 mod focus_scan;
 mod frame_rate;
 pub mod headless;
+pub mod heavy;
+pub mod home;
 pub mod i18n;
 pub mod icons;
+pub mod journey;
 pub mod lightroom_import;
 pub mod links;
 pub mod menus;
 mod model_setup;
 pub mod panels;
 pub mod pick;
+pub mod quick_sort;
 pub mod recheck;
 pub mod region;
 pub mod reload;
@@ -39,15 +48,6 @@ pub mod theme;
 pub mod widgets;
 pub mod window_place;
 pub mod workspaces;
-pub mod classify;
-pub mod context_bar;
-pub mod create_space;
-pub mod design;
-pub mod flow;
-pub mod heavy;
-pub mod home;
-pub mod journey;
-pub mod quick_sort;
 
 #[cfg(test)]
 mod tests;

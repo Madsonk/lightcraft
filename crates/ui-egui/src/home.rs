@@ -765,7 +765,7 @@ fn right_column(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             let opts = [("date", "By day"), ("month", "By month"), ("flat", "One folder")];
             let key = if d.organize.is_empty() || d.organize == "custom" { "date".to_string() } else { d.organize.clone() };
             let cur = opts.iter().find(|o| o.0 == key).map_or(opts[0].1, |o| o.1);
-            egui::ComboBox::from_id_salt("home-organize").selected_text(crate::i18n::tr(cur)).show_ui(ui, |ui| {
+            crate::widgets::combo_box("home-organize").selected_text(crate::i18n::tr(cur)).show_ui(ui, |ui| {
                 for (k, label) in opts {
                     if ui.selectable_label(key == k, crate::i18n::tr(label)).clicked() {
                         d.organize = k.to_string();

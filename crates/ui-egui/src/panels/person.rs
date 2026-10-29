@@ -296,7 +296,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, name: &str) {
                     let min = area.min + vec2(PAD + col as f32 * (edge + super::people::TILE_GAP), vtop + row as f32 * row_h);
                     let r = Rect::from_min_size(min, vec2(edge, edge));
                     super::videos::paint_video_face(app, ui, r, f);
-                    let resp = ui.interact(r, ui.id().with(("videoface", row, col)), Sense::click());
+                    let resp = ui.interact(r, ui.scope_id().with(("videoface", row, col)), Sense::click());
                     if resp.clicked() {
                         open_video = Some((f.video, f.ms));
                     }

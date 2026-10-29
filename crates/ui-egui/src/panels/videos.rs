@@ -554,7 +554,7 @@ pub fn jobs(app: &mut LightcraftApp, ctx: &egui::Context) {
             continue;
         }
         let (done, total) = (j["done"].as_u64().unwrap_or(0) as usize, j["total"].as_u64().unwrap_or(0) as usize);
-        if crate::tasks::progress_window(ctx, key, slot, label, done, total, "", j["cancelled"] == true) {
+        if crate::tasks::progress_window(ctx, key, slot, label, (done, total), "", j["cancelled"] == true) {
             let _ = app.run(cancel, json!({}));
         }
         slot += 1;
@@ -772,7 +772,7 @@ fn unreadable(app: &mut LightcraftApp, ui: &mut egui::Ui, list: &Value) {
         return;
     }
     let t = Tokens::get(ui.ctx());
-    let id = egui::Id::new("videos-unreadable-open");
+    let id = egui::Id::unique("videos-unreadable-open");
     let open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     let label = crate::i18n::tr_format!("Unreadable ({n})", n = rows.len());
     if text_button(ui, "videosUnreadable", &label, open).on_hover_text(tr("Videos an import could not read")).clicked() {
@@ -814,7 +814,7 @@ fn filters(app: &mut LightcraftApp, ui: &mut egui::Ui, v: &Value) {
     ui.horizontal_wrapped(|ui| {
         ui.label(egui::RichText::new(tr("Person")).color(t.text_label));
         let current = app.caches.videos.person.clone().unwrap_or_else(|| tr("Everyone").to_string());
-        egui::ComboBox::from_id_salt("videosPerson").selected_text(current).show_ui(ui, |ui| {
+        crate::widgets::combo_box("videosPerson").selected_text(current).show_ui(ui, |ui| {
             if ui.selectable_label(app.caches.videos.person.is_none(), tr("Everyone")).clicked() {
                 app.caches.videos.person = None;
                 app.caches.videos.dirty = true;
@@ -1201,9 +1201,9 @@ pub fn moment_card(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64, m: &Valu
         let name = ui.label(egui::RichText::new(tr(label)).font(t.font(10.5)).color(t.text_dim));
         let mut text = app.caches.videos.edits.get(&ek).cloned().unwrap_or_else(|| value.clone());
         let edit = if lines > 1 {
-            egui::TextEdit::multiline(&mut text).desired_rows(lines).desired_width(width - 12.0).id(egui::Id::new(("moment-field", &ek)))
+            egui::TextEdit::multiline(&mut text).desired_rows(lines).desired_width(width - 12.0).id(egui::Id::unique(("moment-field", &ek)))
         } else {
-            egui::TextEdit::singleline(&mut text).desired_width(width - 12.0).id(egui::Id::new(("moment-field", &ek)))
+            egui::TextEdit::singleline(&mut text).desired_width(width - 12.0).id(egui::Id::unique(("moment-field", &ek)))
         };
         let resp = ui.add(edit).labelled_by(name.id);
         register(ui, format!("field:{ek}"), resp.rect);

@@ -98,7 +98,7 @@ pub struct Facts {
 }
 
 pub fn facts(app: &mut LightcraftApp, ctx: &egui::Context) -> Facts {
-    let key = egui::Id::new("journey-facts");
+    let key = egui::Id::unique("journey-facts");
     let now = ctx.input(|i| i.time);
     let mut f: Facts = ctx.data(|d| d.get_temp(key)).unwrap_or_default();
     let total = app.session.catalog.len();
@@ -156,7 +156,7 @@ pub fn steps(app: &LightcraftApp, ui: &mut egui::Ui, f: &Facts) -> Option<Stage>
         let w = 8.0 + 17.0 + 6.0 + g.size().x + gf.as_ref().map_or(0.0, |g| 6.0 + g.size().x) + 10.0;
         let (r, resp) = ui.allocate_exact_size(egui::vec2(w, design::BUTTON_H), egui::Sense::click());
         register(ui, format!("button:{}", stage.id()), r);
-        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, is_now, label));
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, is_now, label));
         let resp = resp.on_hover_text(format!("{} · {}", label, tr(stage.tip())));
         if resp.hovered() && !is_now {
             ui.painter().rect_filled(r, egui::CornerRadius::same(design::RADIUS[1]), t.hover);

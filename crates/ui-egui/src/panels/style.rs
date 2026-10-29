@@ -19,11 +19,11 @@ const MIN_PHOTOS: u64 = 30;
 const ASPECTS: [(&str, &str); 5] = [("original", "Original"), ("1x1", "1 × 1"), ("4x5", "4 × 5"), ("3x2", "3 × 2"), ("16x9", "16 × 9")];
 
 fn temp<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: &str, default: T) -> T {
-    ui.data(|d| d.get_temp::<T>(egui::Id::new(key))).unwrap_or(default)
+    ui.data(|d| d.get_temp::<T>(egui::Id::unique(key))).unwrap_or(default)
 }
 
 fn put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: &str, v: T) {
-    ui.data_mut(|d| d.insert_temp(egui::Id::new(key), v));
+    ui.data_mut(|d| d.insert_temp(egui::Id::unique(key), v));
 }
 
 /// The photos the commands act on: the selection, else the photo in front.

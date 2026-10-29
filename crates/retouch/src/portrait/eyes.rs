@@ -134,19 +134,28 @@ fn dist(a: [f32; 2], b: [f32; 2]) -> f32 {
     (a[0] - b[0]).hypot(a[1] - b[1])
 }
 
+/// The photo whose eyes are rewritten: pixels (RGB8), size, and its face mesh in those pixels.
+pub struct Target<'a> {
+    pub pix: &'a mut [u8],
+    pub w: usize,
+    pub h: usize,
+    pub pts: &'a [[f32; 3]],
+}
+
+/// The reference photo the eyes come from.
+pub struct Reference<'a> {
+    pub pix: &'a [u8],
+    pub w: usize,
+    pub h: usize,
+    pub pts: &'a [[f32; 3]],
+}
+
 /// Put the eyes of the reference (`src`, mesh `spts`) into the photo (`dst`, mesh `dpts`, both in the
 /// pixel coordinates of their own buffers). Pixels that move are rewritten.
-pub fn transfer(
-    dst: &mut [u8],
-    dw: usize,
-    dh: usize,
-    dpts: &[[f32; 3]],
-    src: &[u8],
-    sw: usize,
-    sh: usize,
-    spts: &[[f32; 3]],
-    sides: Sides,
-) -> Option<Outcome> {
+pub fn transfer(dst: Target, src: Reference, sides: Sides) -> Option<Outcome> {
+    let Target { pix: dst, w: dw, h: dh, pts: dpts } = dst;
+    let Reference { pix: src, w: sw, h: sh, pts: spts } = src;
+
     if dst.len() < dw * dh * 3 || src.len() < sw * sh * 3 || dw < 8 || dh < 8 || sw < 8 || sh < 8 {
         return None;
     }

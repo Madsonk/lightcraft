@@ -44,7 +44,7 @@ pub mod class {
 
 /// A named group of ADE20K classes, for the Landscape mask.
 pub fn landscape_classes(name: &str) -> Option<&'static [usize]> {
-    use class::*;
+    use class::{BUILDING, FIELD, GRASS, HILL, LAKE, MOUNTAIN, PERSON, PLANT, RIVER, ROCK, SAND, SEA, SKY, TREE, WATER};
     Some(match name {
         "sky" => &[SKY],
         "people" | "person" => &[PERSON],

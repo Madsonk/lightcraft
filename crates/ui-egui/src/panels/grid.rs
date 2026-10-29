@@ -812,7 +812,7 @@ fn paint_verdict_dot(ui: &egui::Ui, id: PhotoId, photo: &lightcraft_catalog::Pho
     let dot_rect = Rect::from_center_size(dot, vec2(12.0, 12.0));
     register(ui, format!("verdict:{}", id.0), dot_rect);
     let v = v.clone();
-    ui.interact(dot_rect, egui::Id::new(("verdict-dot", id.0)), Sense::hover()).on_hover_ui(|ui| {
+    ui.interact(dot_rect, egui::Id::unique(("verdict-dot", id.0)), Sense::hover()).on_hover_ui(|ui| {
         ui.label(egui::RichText::new(crate::i18n::tr(super::cull::bucket_label(v.bucket))).strong());
         for r in super::cull::reasons_text(&v) {
             ui.label(format!("• {r}"));
@@ -832,7 +832,7 @@ fn paint_eyes_closed(ui: &egui::Ui, p: &egui::Painter, t: &Tokens, id: PhotoId, 
     paint(p, Rect::from_center_size(pos2(br.left() + 9.0, br.center().y), vec2(12.0, 12.0)), Icon::Info, t.caution);
     p.galley(pos2(br.left() + 17.0, br.center().y - g.size().y / 2.0), g, Color32::WHITE);
     register(ui, format!("badge:eyesClosed:{}", id.0), br);
-    ui.interact(br, egui::Id::new(("eyes-closed-badge", id.0)), Sense::hover())
+    ui.interact(br, egui::Id::unique(("eyes-closed-badge", id.0)), Sense::hover())
         .on_hover_text(crate::i18n::tr("A closed eye was found on a face in this photo (Photo ▸ Analyze Faces)"));
 }
 

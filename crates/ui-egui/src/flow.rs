@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use crate::LightcraftApp;
 use crate::i18n::{tr, tr_format};
 use crate::theme::Tokens;
-use crate::widgets::{register, text_button};
+use crate::widgets::text_button;
 
 /// Everything the flow remembers between frames (not saved: the verdicts live in the catalog).
 #[derive(Default)]
@@ -706,7 +706,7 @@ pub fn overlays(app: &mut LightcraftApp, ctx: &egui::Context) {
         let st = &app.flow.cull.status;
         let (done, total) = (st["done"].as_u64().unwrap_or(0) as usize, st["total"].as_u64().unwrap_or(0) as usize);
         let note = if app.flow.job.is_some() { tr("Step 1 of 3: judging the photos").to_string() } else { String::new() };
-        if crate::tasks::progress_window(ctx, "aiCulling", 1, "AI Culling", done, total, &note, false) {
+        if crate::tasks::progress_window(ctx, "aiCulling", 1, "AI Culling", (done, total), &note, false) {
             if app.flow.job.is_some() {
                 app.flow.job = None;
             }
@@ -716,7 +716,7 @@ pub fn overlays(app: &mut LightcraftApp, ctx: &egui::Context) {
         let note = if job.one_click { tr("Step 3 of 3: retouching the selected photos").to_string() } else { String::new() };
         let (done, total) = (job.done, job.total);
         let label = if job.one_click { "Cull and retouch in one click" } else { "Portrait retouch" };
-        if crate::tasks::progress_window(ctx, "portraitJob", 1, label, done, total, &note, false)
+        if crate::tasks::progress_window(ctx, "portraitJob", 1, label, (done, total), &note, false)
             && let Some(job) = &mut app.flow.job
         {
             job.stop = true;

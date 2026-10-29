@@ -235,23 +235,15 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let ask = LoupeAsk { id, with_crop: !crop_tool, interacting, fit_px, overlay };
     // Sort view: for culling and rating, an unedited raw shows the camera's own JPEG (kept on the internal disk), not a
     // render of the sensor; zooming, editing, comparing or turning the setting off renders the raw as ever.
-    let sort_view = sort_view_wanted(app, ui, &ask);
-    app.sort_view_shown = sort_view;
-    if sort_view {
-        request_sort_view(app, id);
-    } else {
-        request_main(app, ui, &ask, [rw, rh], plan.window_edge.is_none());
-    }
+    let sort_view = request_main_or_sort_view(app, ui, &ask, [rw, rh], plan.window_edge.is_none());
     // hovering a preset or profile: the photo with that look, shown instead of the loupe render
     // once it is ready (nothing is committed)
     let hover_key = request_hover(app, &ask, [sw, sh]);
-    if !sort_view && !interacting {
+    if !interacting {
         prefetch_neighbours(app, id, main_area, ppp, texture_side, !crop_tool);
     }
     // until the loupe has this photo: show its cached render / embedded preview / a thumbnail
-    if !sort_view {
-        request_stand_in(app, id, want, !crop_tool);
-    }
+    request_stand_in(app, id, want, !crop_tool);
     let show_before = app.ui.before_after == BeforeAfter::Original || ui.input(|i| i.key_down(egui::Key::Backslash));
     if split || show_before || split_view {
         request_before(app, &ask, [sw, sh]);
@@ -318,12 +310,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     }
     app.loupe_shown = Some((id, shown));
     // never mistaken for the final render: the sort view says what it is
-    if sort_view && shown != "render" {
-        let g = p.layout_no_wrap(crate::i18n::tr("Preview").to_string(), t.font(12.0), Color32::WHITE);
-        let bg = label_badge_rect(img_rect, canvas, g.size(), badge_top_inset);
-        p.rect_filled(bg, 4.0, Color32::from_black_alpha(160));
-        p.galley(bg.min + vec2(8.0, 4.0), g, Color32::WHITE);
-    }
+    paint_sort_view_badge(&p, &t, sort_view && shown != "render", img_rect, canvas, badge_top_inset);
     let line = crate::region::wipe_line(img_rect, canvas);
     draw_wipe_before(app, &p, id, img_rect, line);
     // …and the window renders go over the whole-frame ones, all of them, where they belong in the
@@ -466,8 +453,8 @@ fn draw_wipe_before(app: &LightcraftApp, p: &egui::Painter, id: PhotoId, img_rec
 /// Once a photo is on screen, prepare its neighbours in filmstrip order (source decoded and kept,
 /// view render cached) so stepping to them is instant.
 fn prefetch_neighbours(app: &mut LightcraftApp, id: PhotoId, main_area: Rect, ppp: f32, texture_side: usize, with_crop: bool) {
-    // only once this photo is on screen
-    if app.renderer.is_pending(Slot::Main) || !app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.photo == id) {
+    // only once this photo is on screen (the sort view reads its own neighbours)
+    if app.sort_view_shown || app.renderer.is_pending(Slot::Main) || !app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.photo == id) {
         return;
     }
     let ids = app.session.visible_cloned();
@@ -758,6 +745,29 @@ fn sort_view_wanted(app: &mut LightcraftApp, ui: &egui::Ui, a: &LoupeAsk) -> boo
         && app.session.sort_view_job(a.id).is_some()
 }
 
+/// The loupe's request: the sort view when [`sort_view_wanted`], else the real render. Returns whether it is the sort view.
+fn request_main_or_sort_view(app: &mut LightcraftApp, ui: &egui::Ui, a: &LoupeAsk, sizes: [usize; 2], whole_draft: bool) -> bool {
+    let sort_view = sort_view_wanted(app, ui, a);
+    app.sort_view_shown = sort_view;
+    if sort_view {
+        request_sort_view(app, a.id);
+    } else {
+        request_main(app, ui, a, sizes, whole_draft);
+    }
+    sort_view
+}
+
+/// The "Preview" pill on the sort view: it is never mistaken for the final render.
+fn paint_sort_view_badge(p: &egui::Painter, t: &Tokens, shown: bool, img_rect: Rect, canvas: Rect, badge_top_inset: f32) {
+    if !shown {
+        return;
+    }
+    let g = p.layout_no_wrap(crate::i18n::tr("Preview").to_string(), t.font(12.0), Color32::WHITE);
+    let bg = label_badge_rect(img_rect, canvas, g.size(), badge_top_inset);
+    p.rect_filled(bg, 4.0, Color32::from_black_alpha(160));
+    p.galley(bg.min + vec2(8.0, 4.0), g, Color32::WHITE);
+}
+
 /// Ask for the sort view of `id`, and read the neighbours ahead (the way the user is going) and one behind while this
 /// one is judged.
 fn request_sort_view(app: &mut LightcraftApp, id: PhotoId) {
@@ -933,6 +943,10 @@ fn photo_overlays(app: &mut LightcraftApp, ui: &mut egui::Ui, p: &egui::Painter,
 }
 
 fn request_stand_in(app: &mut LightcraftApp, id: PhotoId, edge: usize, with_crop: bool) {
+    // (the sort view is its own stand-in)
+    if app.sort_view_shown {
+        return;
+    }
     if app.renderer.textures.get(&Slot::Main).is_none_or(|t| t.photo != id)
         && let Some(q) = app.session.quick_view_job(id, edge.max(8), with_crop)
     {

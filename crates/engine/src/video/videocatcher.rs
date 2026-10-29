@@ -83,6 +83,40 @@ impl Report {
     }
 }
 
+/// The database's videos the catalog lacks, imported by file (or only counted when `dry`).
+fn create_missing_videos(s: &mut crate::Session, videos: &[Row], dry: bool, r: &mut Report) {
+    let known: std::collections::HashSet<String> =
+        s.catalog.photos().filter(|p| p.in_library()).filter_map(|p| super::source_path(p).map(str::to_string)).collect();
+    let mut todo = Vec::new();
+    for v in videos {
+        let path = text(v, "path");
+        if path.is_empty() || known.contains(path) {
+            continue;
+        }
+        if std::fs::metadata(path).is_ok_and(|m| m.is_file()) {
+            todo.push(path.to_string());
+        } else {
+            r.offline += 1;
+        }
+    }
+    if dry {
+        r.created = todo.len();
+        r.missing_paths = todo.clone();
+    } else {
+        for batch in todo.chunks(25) {
+            match s.execute("library.import", &json!({"paths": batch})) {
+                Ok(v) => {
+                    r.created += v["imported"].as_array().map_or(0, Vec::len);
+                    for f in v["failed"].as_array().into_iter().flatten() {
+                        r.import_failed.push(f.to_string());
+                    }
+                }
+                Err(e) => r.import_failed.push(e.to_string()),
+            }
+        }
+    }
+}
+
 /// Import from the Video Catcher database `db` into the session's library.
 pub fn import(s: &mut crate::Session, db: &Path, dry: bool, max_bytes: u64, create_missing: bool) -> Result<Report, String> {
     let root = super::cache_root(s).ok_or("the library is not on disk")?;
@@ -99,36 +133,7 @@ pub fn import(s: &mut crate::Session, db: &Path, dry: bool, max_bytes: u64, crea
     // samples of each file), a batch at a time; files already catalogued are skipped, so an
     // interrupted run simply resumes
     if create_missing {
-        let known: std::collections::HashSet<String> =
-            s.catalog.photos().filter(|p| p.in_library()).filter_map(|p| super::source_path(p).map(str::to_string)).collect();
-        let mut todo = Vec::new();
-        for v in &videos {
-            let path = text(v, "path");
-            if path.is_empty() || known.contains(path) {
-                continue;
-            }
-            if std::fs::metadata(path).is_ok_and(|m| m.is_file()) {
-                todo.push(path.to_string());
-            } else {
-                r.offline += 1;
-            }
-        }
-        if dry {
-            r.created = todo.len();
-            r.missing_paths = todo.clone();
-        } else {
-            for batch in todo.chunks(25) {
-                match s.execute("library.import", &json!({"paths": batch})) {
-                    Ok(v) => {
-                        r.created += v["imported"].as_array().map_or(0, Vec::len);
-                        for f in v["failed"].as_array().into_iter().flatten() {
-                            r.import_failed.push(f.to_string());
-                        }
-                    }
-                    Err(e) => r.import_failed.push(e.to_string()),
-                }
-            }
-        }
+        create_missing_videos(s, &videos, dry, &mut r);
     }
     // catalog videos by path
     let mut by_path: HashMap<String, (PhotoId, String)> = HashMap::new();

@@ -401,7 +401,11 @@ fn ui_commands_2(app: &mut LightcraftApp, ctx: &egui::Context, id: &str, p: &Val
             };
             let missing: Vec<String> = dry["missingPaths"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect();
             app.caches.videos.after_import = Some(db);
-            if missing.is_empty() { Ok(json!({"importing": 0})) } else { crate::dialogs::import::start_paths_with(app, missing, json!({"mode": "add"})) }
+            if missing.is_empty() {
+                Ok(json!({"importing": 0}))
+            } else {
+                crate::dialogs::import::start_paths_with(app, missing, json!({"mode": "add"}))
+            }
         }
         "view.people" => {
             // Everyone; the page just left stays one click away (the chip next to the title)
@@ -992,18 +996,18 @@ fn ui_commands_7(app: &mut LightcraftApp, ctx: &egui::Context, id: &str, p: &Val
             Ok(Value::Null)
         }
         "panel.aiPicks" => {
-            panel(app, &ctx, RightPanel::AiPicks, "AI Picks");
+            panel(app, ctx, RightPanel::AiPicks, "AI Picks");
             Ok(Value::Null)
         }
         "panel.portrait" => {
-            panel(app, &ctx, RightPanel::Portrait, "Portrait Retouch");
+            panel(app, ctx, RightPanel::Portrait, "Portrait Retouch");
             Ok(Value::Null)
         }
         "panel.style" => {
-            panel(app, &ctx, RightPanel::Style, "My Style");
+            panel(app, ctx, RightPanel::Style, "My Style");
             Ok(Value::Null)
         }
-        "flow.cullRun" => crate::flow::start_cull(app, &ctx).map(|()| Value::Null),
+        "flow.cullRun" => crate::flow::start_cull(app, ctx).map(|()| Value::Null),
         "flow.cullCancel" => {
             crate::flow::cancel_cull(app);
             Ok(Value::Null)

@@ -77,7 +77,7 @@ pub fn button(ui: &mut Ui, id: &str, label: &str, kind: Kind, enabled: bool) -> 
     let galley = ui.painter().layout_no_wrap(label.to_string(), t.semibold(TEXT[1] - 0.5), t.text);
     let size = vec2((galley.size().x + 2.0 * SPACE[2]).max(40.0), BUTTON_H);
     let (r, resp) = ui.allocate_exact_size(size, if enabled { Sense::click() } else { Sense::hover() });
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, label));
     register(ui, format!("button:{id}"), r);
     let hovered = enabled && resp.hovered();
     let (fill, border, text) = match (kind, enabled) {

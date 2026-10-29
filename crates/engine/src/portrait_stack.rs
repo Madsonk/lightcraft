@@ -564,7 +564,11 @@ fn open_eyes(
     let px =
         |m: &[[f32; 3]], w: usize, h: usize| -> Vec<[f32; 3]> { m.iter().map(|p| [p[0] * w as f32, p[1] * h as f32, p[2] * w as f32]).collect() };
     let (dpts, spts) = (px(target, w, h), px(&smeshes[si], sw, sh));
-    let Some(res) = portrait::eyes::transfer(out, w, h, &dpts, &srgb, sw, sh, &spts, sides) else {
+    let Some(res) = portrait::eyes::transfer(
+        portrait::eyes::Target { pix: out, w, h, pts: &dpts },
+        portrait::eyes::Reference { pix: &srgb, w: sw, h: sh, pts: &spts },
+        sides,
+    ) else {
         return Ok((Vec::new(), Some("the faces could not be aligned".into())));
     };
     let why =

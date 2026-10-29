@@ -84,7 +84,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label(RichText::new(tr("Kind of shoot")).color(t.text_label));
             let current = app.flow.cull.genre.clone();
-            egui::ComboBox::from_id_salt("cullGenre").selected_text(tr(genre_label(&current))).show_ui(ui, |ui| {
+            crate::widgets::combo_box("cullGenre").selected_text(tr(genre_label(&current))).show_ui(ui, |ui| {
                 for g in ["general", "wedding", "portrait", "school", "sport"] {
                     if ui.selectable_label(current == g, tr(genre_label(g))).clicked() {
                         app.flow.cull.genre = g.into();
