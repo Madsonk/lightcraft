@@ -193,3 +193,22 @@ Privacy & Security ▸ Developer Tools, is the way out; building on the internal
 | 3. Semantic search + taste | Engine ported (crates `search`, `taste`, `search.*`, `taste.*`, `keywords.*`, near-duplicates, `describe.suggest` by meaning); real SigLIP model end-to-end test passes with the files already installed. UI (Sorting Help window with suggested picks / keywords, filter-bar entries) **not yet ported**. |
 | 4. Lot E speed | `perf_bench` + `tools/perf.sh` ported (measure upstream's window read); import of big raws from their head with sampled keys (`ps1-`) merged onto upstream's scan (adoption of full hashes kept, find-missing knows both schemes). Not carried because upstream has the same: the 3 MB prefix read, grid thumbnails from the embedded preview, the GPU denoise race fix. |
 | 5. Left out so far | Depth map / Lens Blur / Depth Range, MI-GAN, proposed retouch, skin harmonization, dodge & burn, SCUNet / SPAN restore, library lock retry, 589 French messages: **still to port**. |
+
+## 0.15.0 port (branch `lc-port-015`, 2026-10-29)
+
+The launcher installs LightCraft **0.15.0**, so the whole fork was re-merged onto upstream `v0.15.0` (new branch, `lc-port-014` is frozen).
+Already inside: `lc-lot-b14` (My Style, autoframe), `lc-speed-sort` (sort view), `lc-vid6` (Videos, VID-6, video faces), lot E keys.
+
+- Method: merge `v0.15.0`, `git checkout --theirs` on each of the 15 conflicting files, then re-apply the fork's diff by hand into the
+  new submodule layout (engine `files/ import/ media/ cmd/library/`; ui-egui `dialogs/ state/ menus/ panels/right/ panels/detail/ app/`).
+- New upstream rules met and followed, not weakened: 7 arguments max, no wildcard imports, cognitive complexity ≤ 30,
+  `craft_ui` combo box instead of `egui::ComboBox`, `register(&Ui, …)`, renamed egui APIs.
+- Painted text must not contain `▸` (no glyph in the bundled fonts, egui panics): the fork's strings and their French keys now use `→`
+  (found by backtrace: `compare.rs:609`, `home.rs` action tiles, 10 `tr()` strings, 2 command descriptions).
+- CI: `cargo xtask ci` — all 8 steps passed (fmt, clippy, heif, test, parity, layers, assets, wasm) on `d3aa4566`.
+- Bundle: `lc-port-bundle.sh` (now 0.15.0): launcher `Info.plist`, `LightCraftLocalBuild = 0.15.0-madson1`, ad hoc signed, `codesign -v` valid.
+- Checked on a copy of the test library (355 videos, 355 photos): thumbnails load, journey bar, Quick sort, suggested picks, keywords and
+  People suggestions, Videos view lists the 355 videos, menus carry cull / portrait / Videos / People / Sorting Help / Style / tour.
+- Not verified / still open: first Videos view blocks the UI for ~9 s on that copy (`maxUpdateMs` 9000) with many posters still white at
+  the screenshot; the beginner walk (40 CR2); Retouch left column and module filmstrip under both sidebars; step 5 modules (depth / Lens
+  Blur / Depth Range, MI-GAN, proposed retouch, skin harmonization, dodge & burn, SCUNet/SPAN, library-lock retry); ~97 missing French messages.
