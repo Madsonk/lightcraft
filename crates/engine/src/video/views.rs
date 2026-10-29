@@ -47,6 +47,11 @@ pub fn list(s: &mut Session, p: &Value) -> Result<Value> {
             keys_of.entry(*id).or_default().push((f.ms, *k, f.file.clone()));
         }
     }
+    // the described moments of the whole library, grouped by video once (not re-read for every video)
+    let mut moments_of: std::collections::HashMap<String, Vec<Option<u64>>> = std::collections::HashMap::new();
+    for (item, ms) in store.moments() {
+        moments_of.entry(item).or_default().push(ms);
+    }
     for (id, ck, name, duration, captured) in videos {
         let mut frames = keys_of.remove(&id).unwrap_or_default();
         frames.sort_unstable();
@@ -60,7 +65,7 @@ pub fn list(s: &mut Session, p: &Value) -> Result<Value> {
                 }
             }
         }
-        let moments: Vec<_> = store.moments().into_iter().filter(|(i, _)| *i == ck).filter_map(|(i, ms)| store.effective(&i, ms)).collect();
+        let moments: Vec<_> = moments_of.get(&ck).into_iter().flatten().filter_map(|ms| store.effective(&ck, *ms)).collect();
         let confirmed = moments.iter().filter(|e| e.status == Status::Confirmed).count();
         for n in &people {
             *all_people.entry(n.clone()).or_default() += 1;
