@@ -42,6 +42,11 @@ const EMBEDDED: &[(&str, &[&str])] = &[
     ("docs/raw/coverage-sweep.tsv", &["lightcraft-raw"]),
     ("docs/raf-corpus.sha256", &["lightcraft-raw"]),
     ("xtask/src/raw_samples.rs", &["lightcraft-raw"]),
+    ("crates/retouch/src/lab.rs", &["lightcraft-engine"]),
+    ("crates/retouch/src/skin.rs", &["lightcraft-engine"]),
+    ("crates/retouch/src/dnb.rs", &["lightcraft-engine"]),
+    ("crates/retouch/src/palette.rs", &["lightcraft-engine"]),
+    ("tools/scunet_torch.py", &["lightcraft-engine"]),
     ("crates/ui-egui/src/menus.rs", &["xtask"]),
     ("crates/ui-egui/src/menus/", &["xtask"]),
 ];
