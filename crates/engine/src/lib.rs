@@ -69,7 +69,6 @@ mod pdf;
 pub mod portrait;
 pub mod portrait_job;
 pub mod portrait_stack;
-pub mod retouch;
 pub mod preset_import;
 pub mod preset_luminar;
 pub mod presets;
@@ -82,6 +81,7 @@ pub mod rename;
 pub mod restore;
 #[cfg(feature = "restore")]
 mod restore_torch;
+pub mod retouch;
 pub mod search;
 pub mod segment;
 pub mod sidecar;

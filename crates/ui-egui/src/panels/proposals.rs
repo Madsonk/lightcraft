@@ -16,9 +16,9 @@ use egui::{Align2, Rect, RichText, pos2, vec2};
 use serde_json::{Value, json};
 
 use crate::LightcraftApp;
+use crate::design::{self, Kind};
 use crate::i18n::{tr, tr_format};
 use crate::theme::Tokens;
-use crate::design::{self, Kind};
 use crate::widgets::{register, text_button};
 
 /// A proposal being planned: one photo per frame, so the window shows progress instead of freezing.

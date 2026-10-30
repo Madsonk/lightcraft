@@ -636,7 +636,9 @@ fn start_depth_download(s: &mut Session) -> Result<Value> {
         }
         let m = mirrors_for("LIGHTCRAFT_DEPTH_MIRRORS", "depth");
         let started =
-            s.ai.depth_dl.start(lightcraft_depth::fetch::FILES, m, dir, lightcraft_fetch::Options::default(), &s.activity, "Depth Anything V2 Small").map_err(EngineError::Other)?;
+            s.ai.depth_dl
+                .start(lightcraft_depth::fetch::FILES, m, dir, lightcraft_fetch::Options::default(), &s.activity, "Depth Anything V2 Small")
+                .map_err(EngineError::Other)?;
         Ok(json!({"started": started, "installed": false, "downloading": s.ai.depth_dl.running()}))
     }
     #[cfg(not(feature = "depth"))]
@@ -655,7 +657,9 @@ fn start_inpaint_download(s: &mut Session) -> Result<Value> {
         }
         let m = mirrors_for("LIGHTCRAFT_INPAINT_MIRRORS", "inpaint");
         let started =
-            s.ai.inpaint_dl.start(lightcraft_migan::fetch::FILES, m, dir, lightcraft_fetch::Options::default(), &s.activity, "MI-GAN").map_err(EngineError::Other)?;
+            s.ai.inpaint_dl
+                .start(lightcraft_migan::fetch::FILES, m, dir, lightcraft_fetch::Options::default(), &s.activity, "MI-GAN")
+                .map_err(EngineError::Other)?;
         Ok(json!({"started": started, "installed": false, "downloading": s.ai.inpaint_dl.running()}))
     }
     #[cfg(not(feature = "migan"))]
