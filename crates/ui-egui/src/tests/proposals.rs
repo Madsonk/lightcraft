@@ -83,7 +83,11 @@ fn the_proposals_section_proposes_without_writing_then_creates_a_copy_and_leaves
     assert_eq!(copy.copy_name.as_deref(), Some("Natural skin – Light"));
     assert!(copy.develop.masks.iter().any(|m| m.name.starts_with("Retouch: ")), "the copy has the named masks");
     assert!(h.app.session.catalog.stack_of(id).is_some_and(|st| st.photos.contains(&copy.id)), "stacked with the original");
-    // "Remove the retouch copies" removes only the copy
+    // "Remove the retouch copies" removes only the copy (fold the details first: the panel scrolls, and a
+    // button below the fold is refused by the click, never scrolled to)
+    if has(&h, "check:proposals:camera") {
+        click(&mut h, "button:proposalsDetails");
+    }
     click(&mut h, "button:proposalsClear");
     h.settle(SETTLE);
     assert!(h.app.session.catalog.photo(copy.id).unwrap().deleted, "the copy went");
