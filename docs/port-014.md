@@ -224,3 +224,20 @@ Already inside: `lc-lot-b14` (My Style, autoframe), `lc-speed-sort` (sort view),
 - Still open: the beginner walk (40 CR2); Retouch step; Retouch left column and module filmstrip under both sidebars; step 5 modules
   (depth / Lens Blur / Depth Range, MI-GAN, proposed retouch, skin harmonization, dodge & burn, SCUNet/SPAN, library-lock retry);
   ~97 missing French messages; the 5.3 s library open at startup on a cold disk (main thread, not Videos-specific).
+
+## Step 5 — retouch modules (branch `lc-retouch-015`, from `lc-port-015`)
+
+Ported from the fork (`lc-ux-refonte`); nothing dropped, compared function by function.
+
+| Fork feature | Port location | Evidence |
+|---|---|---|
+| Depth (Depth Anything V2 Small) | `crates/depth`, `develop/src/depth_map.rs`, `engine/src/ai.rs` (`depth.*`) | crate verbatim; `tests_ai` |
+| Lens Blur | `pipeline/src/lensblur.rs` (verbatim), `lens_active` + `lin_cpu` stage, `lensblur.set` | `examples/lensblur_eval.rs`, pipeline tests |
+| Depth Range mask | `MaskShape::DepthRange`, `masks.rs` (`evaluate_aux`), `mask.add depthRange` | `tests_ai::depth_range_mask_selects_by_depth` (caught a missing parameter parse, fixed) |
+| MI-GAN inpaint | `crates/migan` (fork `inpaint`, renamed `lightcraft-migan`), `spot.inpaint`, `inpaint.model.*` | crate tests; `examples/migan_check.rs` |
+| Proposed retouch ("Natural skin"), skin harmonization, dodge & burn, palette | `engine/src/retouch/*` (fork verbatim, `targets(p)?`; faces read from `photo.meta.regions`), panel `ui-egui/src/panels/proposals.rs` | pure retouch crate diff 0 vs fork; `tests/proposals.rs` |
+| SCUNet / SPAN restore | `crates/restore` (cherry-pick `05a0ee38`) | crate + engine tests |
+| Library-lock retry | `catalog/src/lock.rs` (1.5 s retry on WouldBlock/Interrupted) | upstream's explicit unlock alone: 231/300 refusals on this macOS; with the retry, 7/7 lock tests pass |
+
+Not ported: the Retouch left column (`retouch_left.rs`). The `lc-port-015-s5` worktree copy is superseded by this branch.
+Not yet proven here: real-model runs of depth / MI-GAN / restore (only compile, crate and engine tests).
