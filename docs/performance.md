@@ -148,3 +148,24 @@ macOS page cache warm (no `purge`):
 Limits: warm page cache (earlier cold USB runs: raw 905 ms), so the real first view of an unseen photo is bounded by the
 3 MiB prefix read (~100 ms at 22 MB/s); the ~20 requests per arrow were not traced; no background build of the cache at
 import yet (it fills as photos are seen or read ahead); CR3/NEF/ORF/DNG/JPEG preview loaders unchanged.
+
+### Sort view, cold disk (29-30 Oct 2026)
+
+Cold = first run after a reboot (boot 29 Oct 22:44, the 40 CR2 of `usb40` were last read before it), USB disk, same
+`perf_bench` and photos as above. An unmount/remount was refused (another app holds the volume) and `purge` needs sudo,
+so the reboot is the only cold source. 3 MiB read from a CR2 never read since boot: 106-128 ms (≈ 26 MB/s).
+
+| per photo (USB, cold) | raw render (loupe) | sort view |
+|---|---|---|
+| first view | 1 083 ms | 49 ms* |
+| second view | 40 ms (neighbour prefetched) | 1.4 ms |
+| step, 6 ahead read | — | 2.3 ms, 7 of 10 steps cached |
+
+\* the benchmark imports and draws the grid before this step, so the first 3 MiB of each file is already in the page
+cache, as in the app (the grid reads the same bytes); an unseen photo whose prefix is cold costs ≈ 110-130 ms (above).
+Same-run warm figures: 47 / 1.6 / 2.0 ms against 286 ms for the raw render.
+
+Requests per arrow (from the code, not traced in the running app): the sort view submits one stand-in for the photo
+shown plus read-ahead jobs that run once per key, so after the first step each arrow starts about two new jobs (the
+shown photo if not cached, one new photo at the far end of the 6 ahead). The old loupe path also queued Main, Before,
+Hover and two neighbour renders per step.
