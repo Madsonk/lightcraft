@@ -108,13 +108,27 @@ impl LibraryLock {
             Ok(f) => f,
             Err(e) => return Ok(unlocked(e)),
         };
-        match file.try_lock() {
-            Ok(()) => {}
-            Err(TryLockError::WouldBlock) => {
-                let owner = std::fs::read(dir.join(OWNER)).ok().and_then(|b| serde_json::from_slice::<LockOwner>(&b).ok());
-                return Err(LockError::InUse(owner));
+        // Dropping a lock releases it explicitly (#680), yet on macOS a library closed a moment ago can
+        // still look locked for a few milliseconds while another thread is starting programs (measured
+        // here: 231 of 300 re-acquires refused with four threads spawning), and the call can be
+        // interrupted by the signals those children raise. So a refused or interrupted lock is asked
+        // again for a short while before it counts as held elsewhere (or as unsupported).
+        let deadline = web_time::Instant::now() + std::time::Duration::from_millis(1500);
+        let mut pause = std::time::Duration::from_millis(2);
+        loop {
+            match file.try_lock() {
+                Ok(()) => break,
+                Err(TryLockError::WouldBlock) if web_time::Instant::now() < deadline => {
+                    std::thread::sleep(pause);
+                    pause = (pause * 2).min(std::time::Duration::from_millis(100));
+                }
+                Err(TryLockError::WouldBlock) => {
+                    let owner = std::fs::read(dir.join(OWNER)).ok().and_then(|b| serde_json::from_slice::<LockOwner>(&b).ok());
+                    return Err(LockError::InUse(owner));
+                }
+                Err(TryLockError::Error(e)) if e.kind() == io::ErrorKind::Interrupted && web_time::Instant::now() < deadline => {}
+                Err(TryLockError::Error(e)) => return Ok(unlocked(e)),
             }
-            Err(TryLockError::Error(e)) => return Ok(unlocked(e)),
         }
         // A new file in place of whatever is at the name: a link planted there in a library folder
         // someone else prepared is removed, never written through (as for the staging files, #1502).

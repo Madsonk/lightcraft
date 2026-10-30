@@ -166,7 +166,7 @@ impl MeshStub {
 /// `(box as fractions, name)` of the faces the photo's People regions name (empty without any).
 fn people_of(s: &mut Session, id: PhotoId) -> Vec<([f32; 4], Option<String>)> {
     let Some(p) = s.catalog.photo(id) else { return Vec::new() };
-    p.regions
+    p.meta.regions
         .iter()
         .filter(|r| r.kind == lightcraft_meta::RegionKind::Face)
         .map(|r| ([r.rect.x0 as f32, r.rect.y0 as f32, r.rect.x1 as f32, r.rect.y1 as f32], r.name.clone()))
