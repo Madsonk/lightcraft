@@ -101,7 +101,6 @@ impl LibraryLock {
     /// Lock `dir` (which must exist) for this process. Fails only when another process holds it.
     pub fn acquire(dir: &Path, program: &str) -> Result<LibraryLock, LockError> {
         let unlocked = |why: io::Error| {
-            eprintln!("LOCKDEBUG {why:?} kind={:?} errno={:?}", why.kind(), why.raw_os_error());
             log::warn!("library {}: can't lock {LOCK} ({why}); opening it without protection against a second program", dir.display());
             LibraryLock { dir: dir.to_path_buf(), file: None, held: false }
         };

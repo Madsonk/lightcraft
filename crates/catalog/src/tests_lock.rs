@@ -206,7 +206,7 @@ fn dropping_the_lock_frees_the_library_while_another_thread_spawns_processes() {
 #[cfg(unix)]
 #[test]
 fn programs_started_by_other_threads_never_keep_a_closed_library_locked() {
-    let dir = std::env::temp_dir().join(format!("lc-lock-spawn-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lc-lock-stress-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
