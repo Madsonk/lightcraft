@@ -241,3 +241,6 @@ Ported from the fork (`lc-ux-refonte`); nothing dropped, compared function by fu
 
 Not ported: the Retouch left column (`retouch_left.rs`). The `lc-port-015-s5` worktree copy is superseded by this branch.
 Not yet proven here: real-model runs of depth / MI-GAN / restore (only compile, crate and engine tests).
+
+## Étape 5 portée (30/10)
+lc-port-015 = 508cec44 (CI 8/8 prouvée sur cet arbre via lc-retouch-015, ci6). Restore SCUNet/SPAN, retouche proposée (Shift+N), depth/Lens Blur/MI-GAN présents ; modèles depth/face à télécharger par l’utilisateur (erreurs actionnables, pas de panic). Bundle signé ad hoc, codesign vérifié.
