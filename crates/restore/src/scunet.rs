@@ -72,6 +72,7 @@ struct Conv {
 }
 
 impl Conv {
+    #[allow(clippy::too_many_arguments)]
     fn load(w: &pt::Weights, name: &str, inp: usize, out: usize, k: usize, stride: usize, pad: usize, bias: bool, dev: &Device) -> Result<Self> {
         Ok(Self {
             w: t(w, &format!("{name}.weight"), &[out, inp, k, k], dev)?,
