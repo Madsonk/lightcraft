@@ -8,7 +8,6 @@ use lightcraft_develop::DevelopSettings;
 use lightcraft_retouch::facegeo::Face;
 use lightcraft_retouch::plane::Plane;
 use lightcraft_retouch::skin::LabImage;
-use serde_json::Value;
 
 use super::PREFIX;
 use crate::cmd::bad;
@@ -164,21 +163,12 @@ impl MeshStub {
     }
 }
 
-/// `(box as fractions, name)` of the faces the People index has found in the photo.
-#[cfg(feature = "people")]
+/// `(box as fractions, name)` of the faces the photo's People regions name (empty without any).
 fn people_of(s: &mut Session, id: PhotoId) -> Vec<([f32; 4], Option<String>)> {
-    let Ok(v) = crate::people::ops::faces(s, &serde_json::json!({"id": id.0})) else { return Vec::new() };
-    let Some(list) = v.get("faces").and_then(Value::as_array) else { return Vec::new() };
-    list.iter()
-        .filter_map(|f| {
-            let r = f.get("rect")?.as_array()?;
-            let rect = [r.first()?.as_f64()? as f32, r.get(1)?.as_f64()? as f32, r.get(2)?.as_f64()? as f32, r.get(3)?.as_f64()? as f32];
-            Some((rect, f.get("name").and_then(Value::as_str).map(str::to_string)))
-        })
+    let Some(p) = s.catalog.photo(id) else { return Vec::new() };
+    p.regions
+        .iter()
+        .filter(|r| r.kind == lightcraft_meta::RegionKind::Face)
+        .map(|r| ([r.rect.x0 as f32, r.rect.y0 as f32, r.rect.x1 as f32, r.rect.y1 as f32], r.name.clone()))
         .collect()
-}
-
-#[cfg(not(feature = "people"))]
-fn people_of(_: &mut Session, _: PhotoId) -> Vec<([f32; 4], Option<String>)> {
-    Vec::new()
 }

@@ -106,7 +106,7 @@ fn apply_copies(app: &mut LightcraftApp, ctx: &egui::Context, st: &State, ids: &
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     super::right::header(ui, "Proposals");
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 0, bottom: 8 }).show(ui, |ui| {
-        let key = egui::Id::new("proposals-state");
+        let key = egui::Id::unique("proposals-state");
         let mut st: State = ui.data(|d| d.get_temp(key)).unwrap_or_default();
         st.open = true;
         body(app, ui, &mut st);
@@ -117,7 +117,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 /// The section at the top of Versions (the classic window, workspaces off).
 pub fn section(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
-    let key = egui::Id::new("proposals-state");
+    let key = egui::Id::unique("proposals-state");
     let mut st: State = ui.data(|d| d.get_temp(key)).unwrap_or_default();
     ui.add_space(6.0);
     let head = ui.add(

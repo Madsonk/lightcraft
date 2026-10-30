@@ -3759,6 +3759,7 @@ dependencies = [
  "lightcraft-preview",
  "lightcraft-raster",
  "lightcraft-raw",
+ "lightcraft-restore",
  "lightcraft-retouch",
  "lightcraft-scenes",
  "lightcraft-search",
@@ -3994,6 +3995,20 @@ dependencies = [
  "zune-core",
  "zune-jpeg",
  "zune-jpegxl",
+]
+
+[[package]]
+name = "lightcraft-restore"
+version = "0.15.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "log",
+ "miniz_oxide 0.9.1",
+ "rayon",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
