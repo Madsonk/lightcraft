@@ -251,6 +251,7 @@ fn spot_of(s: &mut Session, id: PhotoId, d: &DevelopSettings, x: f64, y: f64, ra
     spot
 }
 
+#[allow(clippy::too_many_arguments)]
 fn plan_photo(
     s: &mut Session,
     ph: PhotoSkin,

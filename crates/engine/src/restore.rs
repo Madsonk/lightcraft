@@ -82,6 +82,7 @@ mod imp {
     use lightcraft_restore::{Denoiser, Image, Upscaler, files};
     use serde_json::{Value, json};
 
+    #[allow(clippy::wildcard_imports)]
     use super::*;
 
     /// The two models.

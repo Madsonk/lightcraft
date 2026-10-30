@@ -324,6 +324,7 @@ fn skin_mask(ph: &PhotoSkin) -> Option<Vec<bool>> {
 }
 
 /// Plan a palette harmonization over `ids` (`lot`: one parameter set for all of them).
+#[allow(clippy::too_many_arguments)]
 pub fn plan(
     s: &mut Session,
     ids: &[PhotoId],
