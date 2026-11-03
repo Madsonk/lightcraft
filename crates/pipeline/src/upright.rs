@@ -40,7 +40,7 @@ impl Segment {
     pub fn is_empty(&self) -> bool {
         self.len() == 0.0
     }
-    pub(crate) fn mid(&self) -> Point {
+    pub fn mid(&self) -> Point {
         self.a.lerp(self.b, 0.5)
     }
     /// Homogeneous line through the endpoints, normalized so (a, b) is a unit normal.
