@@ -435,6 +435,7 @@ fn fixed_ok_label(app: &LightcraftApp, dlg: &Dialog, informational: bool) -> &'s
         Dialog::AutoStack { .. } => "Create Stacks",
         Dialog::CaptureTime { .. } => "Change Time",
         Dialog::Cull { .. } => "Cull",
+        Dialog::SortingHelp { .. } => "OK",
         Dialog::CopySettings { .. } => "Copy",
         Dialog::PasteSettings { .. } => "Paste",
         Dialog::TextPrompt { command, .. } => prompt_verb(command),
