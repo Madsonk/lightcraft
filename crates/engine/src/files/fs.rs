@@ -89,7 +89,12 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
         if crate::video::is_video_path(path) {
             return crate::video::probe_for_import(path);
         }
-        let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
+        use std::io::Read;
+        // one open, then everything from the open file: its size and modification time are not
+        // round trips of their own (on a network share each of them is one)
+        let mut file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+        let meta = file.metadata().ok();
+        let len = meta.as_ref().map_or(0, |m| usize::try_from(m.len()).unwrap_or(usize::MAX));
         // a big raw is described from its first megabytes and a sampled content key: its 20 to 50 MB are not read
         // (a USB disk or a share reads them at 20 to 30 MB/s). Anything the head does not settle is read whole.
         if len > super::PROBE_HEAD_MIN
@@ -98,9 +103,10 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
             return Ok(info);
         }
         let _permit = crate::memory::work_gate().acquire(len);
-        let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).map_err(|e| format!("{path}: {e}"))?;
         let mut info = probe_bytes(path, &bytes)?;
-        info.file_modified = file_modified(path);
+        info.file_modified = meta.as_ref().and_then(modified_iso);
         Ok(info)
     });
     (loader, probe)
@@ -130,10 +136,10 @@ fn fs_load<T>(path: &str, max_edge: usize, load: impl FnOnce(Vec<u8>) -> Result<
     r
 }
 
-/// `path`'s modification time as ISO 8601 (see [`ProbeInfo::file_modified`]); `None` when the
+/// The modification time in `meta` as ISO 8601 (see [`ProbeInfo::file_modified`]); `None` when the
 /// filesystem doesn't say or the time is before 1970.
-fn file_modified(path: &str) -> Option<String> {
-    let t = std::fs::metadata(path).ok()?.modified().ok()?;
+fn modified_iso(meta: &std::fs::Metadata) -> Option<String> {
+    let t = meta.modified().ok()?;
     let secs = i64::try_from(t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs()).ok()?;
     Some(crate::import::civil(secs))
 }

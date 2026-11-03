@@ -29,6 +29,10 @@ pub struct QuickJob {
     pub cached: Vec<(Arc<PreviewCache>, Hash128)>,
     /// Embedded preview of an unedited raw: (path, loader, max edge).
     pub embedded: Option<(String, PreviewLoader, usize)>,
+    /// Import tiles need this many pixels when a render can provide them. `None` accepts any
+    /// camera JPEG immediately (ordinary transient stand-ins and preview-only imports).
+    /// An undersized JPEG remains the fallback if the render fails or is unavailable.
+    pub minimum_embedded_edge: Option<usize>,
     /// Last resort: run this thumbnail job.
     pub small: Option<Box<RenderJob>>,
     /// Where to keep what the embedded preview gave (memory, and the library's disk cache on the internal disk), so the
@@ -79,17 +83,26 @@ impl QuickJob {
                 return done(rendered(Arc::unwrap_or_clone(img)), Some(QuickSource::Cached));
             }
         }
+        let mut embedded_fallback = None;
         if let Some((path, loader, edge)) = &self.embedded
             && let Some(image) = loader(path, *edge)
         {
             if let Some((cache, k)) = &self.store {
                 cache.put_deferred(*k, Arc::new(image.clone()));
             }
-            return done(rendered(image), Some(QuickSource::Embedded));
+            if self.minimum_embedded_edge.is_none_or(|minimum| image.width.max(image.height) >= minimum) {
+                return done(rendered(image), Some(QuickSource::Embedded));
+            }
+            embedded_fallback = Some(image);
         }
         if let Some(job) = self.small {
             let r = job.run();
-            return RenderResult { request_id, key, quick: Some(QuickSource::Small), ..r };
+            if r.rendered.is_ok() || embedded_fallback.is_none() {
+                return RenderResult { request_id, key, quick: Some(QuickSource::Small), ..r };
+            }
+        }
+        if let Some(image) = embedded_fallback {
+            return done(rendered(image), Some(QuickSource::Embedded));
         }
         done(Err("no quick preview".into()), None)
     }
