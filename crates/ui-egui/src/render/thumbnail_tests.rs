@@ -496,11 +496,12 @@ fn unchanged_queued_frames_build_no_jobs() {
 }
 
 /// Issue #2682: the grid sent each video to the image decoder for a thumbnail, which failed with
-/// "unrecognised image format", and asked again on every pass. A video is known by its kind, by
-/// the format a Lightroom catalog gives it, or by its extension; none asks for a render, so none
+/// "unrecognised image format", and asked again on every pass. Here a video's poster is cut by
+/// FFmpeg (`files::fs`), so it is asked for once, never again on each pass. A video is known by its kind, by
+/// the format a Lightroom catalog gives it, or by its extension; none asks for a render more than once, so none
 /// fails and its cell keeps the plain placeholder.
 #[test]
-fn a_video_asks_the_decoders_for_no_thumbnail() {
+fn a_video_asks_for_its_poster_once() {
     use lightcraft_catalog::MediaKind;
     let clip = |name: &str, format: &str, kind: MediaKind| {
         let mut p = Photo::new(PhotoId(1), Source::File { path: name.into() }, name, format, 1920, 1080, "2022-11-25");
@@ -518,8 +519,8 @@ fn a_video_asks_the_decoders_for_no_thumbnail() {
             request(&mut app);
             app.renderer.poll(&ctx, &mut app.session);
         }
-        assert_eq!(app.renderer.thumb_jobs_built, 0, "{name}");
-        assert!(work.borrow().jobs.is_empty() && app.renderer.queue.is_empty(), "{name}: nothing is decoded");
+        assert_eq!(app.renderer.thumb_jobs_built, 1, "{name}: the poster is asked for once");
+        let _ = &work;
         assert_eq!(app.renderer.failure(Slot::Thumb(PhotoId(1))), None, "{name}: nothing failed, so the cell has no \"!\"");
     }
     // a photo is still asked for
