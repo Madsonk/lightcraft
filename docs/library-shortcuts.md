@@ -19,6 +19,7 @@ Select photos in Photo Grid or Square Grid, then use:
 | `Shift` + `0`–`9`, `P`, `X` or `U` | Apply the action and select the next photo |
 | ⌘⌥⇧K / Ctrl+Alt+Shift+K | Set Keyword Shortcut: type the keywords, with commas between them, that `Shift+K` adds |
 | `Shift+K` | Add the keyword shortcut's keywords to the selected photos, or remove them when every selected photo has them all |
+| `Cmd+Alt+J` / `Ctrl+Alt+J` | AI Picks (fork): show the AI Picks panel (cull the view, see why, apply the stars). It was `Shift+K` before 0.18, which upstream now gives to the keyword shortcut. |
 | `\` (backslash) | Show / hide the Filter Bar |
 | ⌘K / Ctrl+K | Add Keywords: show the Keywords panel with the cursor in its Add keyword box |
 | ⌘L / Ctrl+L | Enable Filters: switch the filter off and on |
