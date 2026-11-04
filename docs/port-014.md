@@ -244,3 +244,18 @@ Not yet proven here: real-model runs of depth / MI-GAN / restore (only compile, 
 
 ## Étape 5 portée (30/10)
 lc-port-015 = 508cec44 (CI 8/8 prouvée sur cet arbre via lc-retouch-015, ci6). Restore SCUNet/SPAN, retouche proposée (Shift+N), depth/Lens Blur/MI-GAN présents ; modèles depth/face à télécharger par l’utilisateur (erreurs actionnables, pas de panic). Bundle signé ad hoc, codesign vérifié.
+
+## Port on upstream v0.18.0 (2026-11-04)
+
+Branch `lc-port-018` = `lc-port-015` + merge of v0.18.0 (18 conflict files resolved by hand, upstream taken then the fork re-applied).
+
+| Point | Result |
+|---|---|
+| `thumb_job` returned `None` for videos (upstream has no video module) | the guard is removed; the fork's FFmpeg poster loader serves videos |
+| `Shift+K` | upstream's keyword shortcut; the fork's AI Picks moved to `Cmd+Alt+J` (menu, tooltip, French, `docs/library-shortcuts.md`) |
+| French | upstream's `fr.json` / `fr-formats.json` kept, 453 + 198 fork messages and 80 formats re-added (fork-only keys, original order kept) |
+| Dropdowns | the fork's five unnamed combos now carry an accessible name (strict kittest check) |
+| Tests that assumed the Library centre | `local_places` sets `workspaces = false` (an empty library opens on Import in the fork) |
+| `Line::mid` | stays `pub` (autoframe uses it) |
+
+CI read on this branch: fmt, clippy (`--workspace --all-targets`), heif, parity, layers, assets, wasm all EXIT 0. Tests: all pass except `dialog_role::settings_is_a_dialog_too`, which panics without a Georgian font (upstream added `ka`; the local craft-fonts has none): an environment gap, not the fork.
