@@ -595,7 +595,7 @@ pub(crate) fn album_field(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut Im
             None if !d.new_album.is_empty() => crate::i18n::tr("New album").into(),
             None => crate::i18n::tr("None").into(),
         };
-        crate::widgets::combo_box("import-album").selected_text(cur).show_ui(ui, |ui| {
+        let named = crate::widgets::combo_box("import-album").selected_text(cur).show_ui(ui, |ui| {
             if ui.selectable_label(d.album.is_none() && d.new_album.is_empty(), crate::i18n::tr("None")).clicked() {
                 d.album = None;
                 d.new_album.clear();
@@ -613,6 +613,7 @@ pub(crate) fn album_field(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut Im
                 }
             }
         });
+        crate::widgets::name_combo(&named.response, crate::i18n::tr("Album"));
         if d.album.is_none() && !d.new_album.is_empty() {
             let r = ui.add(egui::TextEdit::singleline(&mut d.new_album).desired_width(f32::INFINITY));
             register(ui, "field:importAlbumName", r.rect);
@@ -630,7 +631,7 @@ pub(crate) fn preset_field(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut I
             .find(|p| p.id == d.preset)
             .map(|p| crate::i18n::builtin_label(&p.name, p.builtin).to_string())
             .unwrap_or_else(|| crate::i18n::tr("None").into());
-        crate::widgets::combo_box("import-preset").selected_text(cur).height(300.0).show_ui(ui, |ui| {
+        let named = crate::widgets::combo_box("import-preset").selected_text(cur).height(300.0).show_ui(ui, |ui| {
             if ui.selectable_label(d.preset.is_empty(), crate::i18n::tr("None")).clicked() {
                 d.preset.clear();
             }
@@ -646,6 +647,7 @@ pub(crate) fn preset_field(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut I
                 }
             }
         });
+        crate::widgets::name_combo(&named.response, crate::i18n::tr("Preset"));
     });
 }
 

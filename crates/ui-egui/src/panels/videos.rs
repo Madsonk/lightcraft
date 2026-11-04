@@ -814,7 +814,7 @@ fn filters(app: &mut LightcraftApp, ui: &mut egui::Ui, v: &Value) {
     ui.horizontal_wrapped(|ui| {
         ui.label(egui::RichText::new(tr("Person")).color(t.text_label));
         let current = app.caches.videos.person.clone().unwrap_or_else(|| tr("Everyone").to_string());
-        crate::widgets::combo_box("videosPerson").selected_text(current).show_ui(ui, |ui| {
+        let named = crate::widgets::combo_box("videosPerson").selected_text(current).show_ui(ui, |ui| {
             if ui.selectable_label(app.caches.videos.person.is_none(), tr("Everyone")).clicked() {
                 app.caches.videos.person = None;
                 app.caches.videos.dirty = true;
@@ -826,6 +826,7 @@ fn filters(app: &mut LightcraftApp, ui: &mut egui::Ui, v: &Value) {
                 }
             }
         });
+        crate::widgets::name_combo(&named.response, tr("Person"));
         ui.add_space(12.0);
         let d = match app.caches.videos.described {
             None => 0,
