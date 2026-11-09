@@ -495,8 +495,6 @@ fn main() -> eframe::Result {
                     #[cfg(target_os = "macos")]
                     menu,
                 )))
-                });
-                Ok(Box::new(Boot { build: Some(build), app: None, frames: 0 }))
             }),
         )
     }));
