@@ -216,6 +216,7 @@ impl eframe::App for App {
 
 /// What the window shows while the library opens: a first frame that says so, then the app (the catalog
 /// opening blocks the thread, and before this the window stayed empty for as long as it took).
+#[allow(dead_code)] // retained from fork's deferred-boot pattern; v0.19 merge uses synchronous init
 struct Boot {
     build: Option<Box<dyn FnOnce() -> App>>,
     app: Option<App>,
