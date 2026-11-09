@@ -37,8 +37,9 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let busy = app.flow.job.is_some();
         let working = app.flow.portrait.preview.is_some() || app.flow.portrait.apply.is_some() || app.flow.portrait.want_eyes;
         // ---- auto retouch
+        let batch_running = app.flow.job.as_ref().is_some_and(|j| matches!(j.phase, flow::Phase::Retouching));
         ui.horizontal_wrapped(|ui| {
-            if crate::design::button(ui, "portraitAuto", tr("Auto retouch"), crate::design::Kind::Secondary, !busy && !working)
+            if crate::design::button(ui, "portraitAuto", tr("Auto retouch"), crate::design::Kind::Secondary, !busy && !working && !batch_running)
                 .on_hover_text(tr("The prudent default recipe on this photo: one undo step"))
                 .clicked()
             {
@@ -46,16 +47,34 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             }
             let (ids, with_selection) = flow::targets(app);
             let n = ids.len();
-            let label = if with_selection { tr_format!("Retouch the selection ({n})", n = n) } else { tr_format!("Retouch the album ({n})", n = n) };
-            if text_button(ui, "portraitAlbum", &label, false)
-                .on_hover_text(tr("Auto retouch every photo, one after the other; Stop keeps what is done"))
+            let auto_label =
+                if with_selection { tr_format!("Auto retouch selection ({n})", n = n) } else { tr_format!("Auto retouch album ({n})", n = n) };
+            if text_button(ui, "portraitAlbum", &auto_label, false)
+                .on_hover_text(tr("Auto retouch every photo with the default recipe, one by one; Stop keeps what is done"))
                 .clicked()
                 && !busy
+                && !batch_running
             {
-                flow::start_retouch(app, ids);
+                flow::start_retouch(app, ids.clone());
+            }
+            let apply_label = if with_selection {
+                tr_format!("Apply settings to selection ({n})", n = n)
+            } else {
+                tr_format!("Apply settings to album ({n})", n = n)
+            };
+            if text_button(ui, "portraitBatchSettings", &apply_label, false)
+                .on_hover_text(tr("Apply the current sliders to every photo, one by one (AI retouch in batch); Stop keeps what is done"))
+                .clicked()
+                && !busy
+                && !batch_running
+            {
+                match flow::current_portrait_steps(app) {
+                    Ok(steps) => flow::start_retouch_with_steps(app, ids, steps),
+                    Err(e) => app.flow.portrait.error = e,
+                }
             }
         });
-        if working {
+        if working || batch_running {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(tr("Working…")).color(t.accent));
                 if text_button(ui, "portraitStop", "Stop", false).clicked() {
@@ -67,8 +86,48 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                         run.cancel();
                     }
                     app.flow.portrait.apply = None;
+                    if let Some(job) = &mut app.flow.job {
+                        job.stop = true;
+                        if let Some(run) = &mut job.run {
+                            run.cancel();
+                        }
+                    }
                 }
             });
+        }
+        if batch_running && let Some(job) = &app.flow.job {
+            let (retouched, no_face, failed) = job.run.as_ref().map_or((0, 0, 0), |r| r.counts());
+            let done = job.run.as_ref().map_or(job.done, |r| r.done);
+            let total = job.total.max(1);
+            ui.add(
+                egui::ProgressBar::new((done as f32 / total as f32).clamp(0.0, 1.0))
+                    .text(format!("{done}/{total}"))
+                    .desired_width(ui.available_width()),
+            );
+            let elapsed = job.started.elapsed().as_secs_f64();
+            let eta = if done > 0 && done < total {
+                let per = elapsed / done as f64;
+                let rem = per * (total.saturating_sub(done)) as f64;
+                tr_format!(" · ~{rem}s left", rem = rem.round().max(0.0) as u64)
+            } else {
+                String::new()
+            };
+            ui.label(
+                RichText::new(tr_format!(
+                    "Retouched: {r} · No face: {nf} · Failed: {f}{eta}",
+                    r = retouched,
+                    nf = no_face,
+                    f = failed,
+                    eta = eta
+                ))
+                .size(11.5)
+                .color(t.text_dim),
+            );
+            ui.label(
+                RichText::new(tr("AI batch retouch runs one photo at a time; originals are never touched. Stop keeps completed photos (one undo step)."))
+                    .size(11.0)
+                    .color(t.text_dim),
+            );
         }
         if !app.flow.portrait.error.is_empty() {
             ui.label(RichText::new(app.flow.portrait.error.clone()).color(egui::Color32::from_rgb(225, 120, 110)));

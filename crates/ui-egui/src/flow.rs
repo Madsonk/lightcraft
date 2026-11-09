@@ -514,14 +514,30 @@ fn new_job(app: &LightcraftApp, one_click: bool, phase: Phase, run: Option<Portr
     }
 }
 
-/// Auto-retouch the photos of `ids`: one photo at a time on a worker, the window never waits.
-pub fn start_retouch(app: &mut LightcraftApp, ids: Vec<u64>) {
-    if app.flow.job.is_some() || ids.is_empty() {
+/// The portrait steps for the current slider values, or an error if none are set.
+pub fn current_portrait_steps(app: &LightcraftApp) -> Result<Vec<lightcraft_develop::PortraitStep>, String> {
+    let steps = slider_steps(app)?;
+    if steps.iter().any(|st| st.amount > 0.0) {
+        Ok(steps)
+    } else {
+        Err(tr("Move a slider first, or use Auto retouch").to_string())
+    }
+}
+
+/// Retouch `ids` with explicit `steps`, one photo at a time on a worker (the window never waits).
+pub fn start_retouch_with_steps(app: &mut LightcraftApp, ids: Vec<u64>, steps: Vec<lightcraft_develop::PortraitStep>) {
+    if app.flow.job.is_some() || ids.is_empty() || steps.is_empty() {
         return;
     }
     app.flow.summary = None;
-    let run = PortraitRun::new(ids.into_iter().map(PhotoId).collect(), ps::auto_steps(), false, 4);
+    app.flow.portrait.error.clear();
+    let run = PortraitRun::new(ids.into_iter().map(PhotoId).collect(), steps, false, 4);
     app.flow.job = Some(new_job(app, false, Phase::Retouching, Some(run)));
+}
+
+/// Auto-retouch the photos of `ids`: one photo at a time on a worker, the window never waits.
+pub fn start_retouch(app: &mut LightcraftApp, ids: Vec<u64>) {
+    start_retouch_with_steps(app, ids, ps::auto_steps());
 }
 
 pub fn ask_one_click(app: &mut LightcraftApp) {
