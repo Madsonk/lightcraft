@@ -378,6 +378,7 @@ fn a_camera_jpeg_decoded_across_a_cache_clear_is_not_kept() {
             embedded_on_disk: on_disk,
             minimum_embedded_edge: None,
             small: None,
+            store: None,
         };
         // the user discards the cache while the job is on its way
         cache.clear();
@@ -394,6 +395,7 @@ fn a_camera_jpeg_decoded_across_a_cache_clear_is_not_kept() {
             embedded_on_disk: on_disk,
             minimum_embedded_edge: None,
             small: None,
+            store: None,
         };
         assert!(quick.run().rendered.is_ok());
         assert!(cache.get_memory(key).is_some(), "on disk {on_disk}: kept when made after the clear");
