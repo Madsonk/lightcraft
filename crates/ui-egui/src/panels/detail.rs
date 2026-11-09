@@ -863,11 +863,21 @@ fn request_sort_view(app: &mut LightcraftApp, id: PhotoId) {
         }
         app.sort_last = Some(id);
         let dir = app.sort_dir;
-        let ahead = (1..=SORT_AHEAD).filter_map(|n| i.checked_add_signed(dir.saturating_mul(n as isize)).and_then(|j| ids.get(j))).copied();
-        let behind = (1..=SORT_BEHIND).filter_map(|n| i.checked_add_signed(-dir.saturating_mul(n as isize)).and_then(|j| ids.get(j))).copied();
-        for (n, nid) in ahead.chain(behind).enumerate() {
+        // nearest photos first (higher priority) so stepping fast finds the next ones ready sooner
+        for (d, nid) in (1..=SORT_AHEAD)
+            .filter_map(|n| i.checked_add_signed(dir.saturating_mul(n as isize)).and_then(|j| ids.get(j)).map(|&id| (n, id)))
+        {
             if let Some(q) = app.session.sort_view_job(nid) {
-                app.renderer.prefetch_quick(Slot::Prefetch(n as u8), q, PREFETCH_PRIORITY);
+                let prio = PREFETCH_PRIORITY + (SORT_AHEAD as u32).saturating_sub(d as u32) / 2;
+                app.renderer.prefetch_quick(Slot::Prefetch((d - 1) as u8), q, prio);
+            }
+        }
+        for (d, nid) in (1..=SORT_BEHIND)
+            .filter_map(|n| i.checked_add_signed(-dir.saturating_mul(n as isize)).and_then(|j| ids.get(j)).map(|&id| (n, id)))
+        {
+            if let Some(q) = app.session.sort_view_job(nid) {
+                let prio = PREFETCH_PRIORITY + (SORT_BEHIND as u32).saturating_sub(d as u32);
+                app.renderer.prefetch_quick(Slot::Prefetch((SORT_AHEAD + d - 1) as u8), q, prio);
             }
         }
     }
