@@ -747,14 +747,22 @@ pub fn request_thumb(app: &mut LightcraftApp, id: PhotoId, size: usize, priority
             app.renderer.remember_thumb(photo, bucket, job.key, quick.is_some(), priority);
         }
     }
+    // Offscreen prefetch (grid scroll buffer): load the cheap quick/embedded stand-in now, but defer the
+    // expensive full RAW render until the cell is on/near screen. This keeps triage scrolling and batch
+    // loading responsive. Filmstrip/look-ahead/videos use higher priority and still get full renders.
+    let allow_full = priority >= 8;
     match quick {
         Some(q) => {
             app.renderer.request_quick(Slot::ThumbQuick(id), q, priority + 1);
-            if !embedded_is_final && !app.renderer.is_pending(Slot::ThumbQuick(id)) {
+            if !embedded_is_final && allow_full && !app.renderer.is_pending(Slot::ThumbQuick(id)) {
                 app.renderer.request(Slot::Thumb(id), job, BACKGROUND_THUMB_PRIORITY);
             }
         }
-        None => app.renderer.request(Slot::Thumb(id), job, priority),
+        None => {
+            if allow_full {
+                app.renderer.request(Slot::Thumb(id), job, priority);
+            }
+        }
     }
 }
 
