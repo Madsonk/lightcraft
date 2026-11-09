@@ -645,8 +645,9 @@ fn run(
             return Err(Fallback::NotTried);
         }
         let s = &*lightcraft_pipeline::settings_for(s, req);
-        // content-aware Fill spots (`spots::fill_box`) have no GPU kernel: the CPU renders the photo
-        if s.spots.iter().any(|sp| sp.mode == lightcraft_develop::SpotMode::Fill) {
+        // content-aware Fill spots (`spots::fill_box`) and inpainted spots (baked portrait/retouch
+        // patches composited via aux) have no GPU kernel: the CPU renders the photo
+        if s.spots.iter().any(|sp| matches!(sp.mode, lightcraft_develop::SpotMode::Fill | lightcraft_develop::SpotMode::Inpaint)) {
             return Err(Fallback::NotTried);
         }
         // in flight until this returns; not tried once the process is ending (issue #620)
