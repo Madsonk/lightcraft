@@ -399,8 +399,8 @@ fn show_inner(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         if let Some(r) = scroll_to {
             ui.scroll_to_rect(r.translate(origin.to_vec2()), None);
         }
-        // only the rows on screen and a screen above and below it (their thumbnails are prefetched)
-        let prefetch = viewport.expand2(vec2(0.0, viewport.height()));
+        // rows on screen plus a buffer above and below so thumbnails are ready while scrolling/triaging
+        let prefetch = viewport.expand2(vec2(0.0, viewport.height() * 1.5));
         for row in rows_between(&lay.rows, prefetch.top(), prefetch.bottom()) {
             for i in row.start..row.end {
                 let (Some(&id), Some(&rect)) = (ids.get(i), lay.cells.get(i)) else { continue };

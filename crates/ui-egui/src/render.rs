@@ -373,10 +373,11 @@ impl Slot {
 #[cfg(test)]
 pub(crate) const TEST_WORKERS: usize = 2;
 
-/// Render workers an app starts with: the machine's job-pool size, at most six (none on wasm).
+/// Render workers an app starts with: the machine's job-pool size, at most eight (none on wasm).
+/// Capped below the machine maximum to leave headroom under memory pressure during triage batches.
 #[cfg(not(test))]
 fn default_workers() -> usize {
-    if cfg!(target_arch = "wasm32") { 0 } else { JobPool::<Slot, Finished>::default_threads().min(6) }
+    if cfg!(target_arch = "wasm32") { 0 } else { JobPool::<Slot, Finished>::default_threads().min(8) }
 }
 
 /// Render workers an app starts with in this crate's tests: [`TEST_WORKERS`].
@@ -392,10 +393,10 @@ impl Default for Renderer {
 }
 
 impl Renderer {
-    /// Explicit worker count for hosts and bounded validation runs (one to six on native).
+    /// Explicit worker count for hosts and bounded validation runs (one to eight on native).
     /// Browser hosts continue to use inline jobs or their installed worker offload.
     pub fn with_worker_threads(threads: usize) -> Self {
-        let threads = if cfg!(target_arch = "wasm32") { 0 } else { threads.clamp(1, 6) };
+        let threads = if cfg!(target_arch = "wasm32") { 0 } else { threads.clamp(1, 8) };
         Renderer {
             #[cfg(test)]
             thumb_jobs_built: 0,

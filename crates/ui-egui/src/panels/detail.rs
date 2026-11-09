@@ -843,8 +843,8 @@ fn paint_sort_view_badge(p: &egui::Painter, t: &Tokens, shown: bool, img_rect: R
     p.galley(bg.min + vec2(8.0, 4.0), g, Color32::WHITE);
 }
 
-/// Ask for the sort view of `id`, and read the neighbours ahead (the way the user is going) and one behind while this
-/// one is judged.
+/// Ask for the sort view of `id`, and read the neighbours ahead (the way the user is going) and
+/// several behind while this one is judged, so triage stepping stays ahead of the user.
 fn request_sort_view(app: &mut LightcraftApp, id: PhotoId) {
     if app.renderer.textures.get(&Slot::Preview).is_none_or(|t| t.photo != id)
         && let Some(q) = app.session.sort_view_job(id)
@@ -864,7 +864,7 @@ fn request_sort_view(app: &mut LightcraftApp, id: PhotoId) {
         app.sort_last = Some(id);
         let dir = app.sort_dir;
         let ahead = (1..=SORT_AHEAD).filter_map(|n| i.checked_add_signed(dir.saturating_mul(n as isize)).and_then(|j| ids.get(j))).copied();
-        let behind = i.checked_add_signed(-dir).and_then(|j| ids.get(j)).copied();
+        let behind = (1..=SORT_BEHIND).filter_map(|n| i.checked_add_signed(-dir.saturating_mul(n as isize)).and_then(|j| ids.get(j))).copied();
         for (n, nid) in ahead.chain(behind).enumerate() {
             if let Some(q) = app.session.sort_view_job(nid) {
                 app.renderer.prefetch_quick(Slot::Prefetch(n as u8), q, PREFETCH_PRIORITY);
@@ -1172,11 +1172,14 @@ fn request_stand_in(app: &mut LightcraftApp, id: PhotoId, edge: usize, with_crop
 
 /// Neighbour prefetch: below on-screen thumbnails, above background thumbnail refreshes.
 const PREFETCH_PRIORITY: u32 = 4;
-/// How many photos ahead of the one judged the sort view reads (its previews are small: a handful of ms each).
-const SORT_AHEAD: usize = 6;
+/// How many photos ahead of the one judged the sort view reads in the direction of travel (its
+/// previews are small: a handful of ms each). Raised for faster triage/culling batch loading.
+const SORT_AHEAD: usize = 14;
+/// How many photos behind the current one the sort view keeps ready (a step back is instant).
+const SORT_BEHIND: usize = 4;
 /// Photos prepared ahead at once (each render spreads over the cores already): the others wait,
 /// so the photo the user steps to next finds a worker free.
-const PREFETCH_AT_ONCE: usize = 2;
+const PREFETCH_AT_ONCE: usize = 3;
 /// Prepared-ahead slots, by the photo's place in the view: a step keeps the photos still ahead in
 /// the slots they have (nothing is asked for twice), and the jump to another part of the shoot
 /// replaces what was waiting.
