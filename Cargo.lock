@@ -3615,12 +3615,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-autoframe"
+version = "0.20.0"
+dependencies = [
+ "lightcraft-develop",
+ "lightcraft-geom",
+ "lightcraft-pipeline",
+ "lightcraft-raster",
+ "serde",
+]
+
+[[package]]
+name = "lightcraft-autoseg"
+version = "0.20.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-catalog"
 version = "0.20.0"
 dependencies = [
  "chrono",
  "crc32fast",
  "dhat",
+ "lightcraft-culler",
  "lightcraft-develop",
  "lightcraft-geom",
  "lightcraft-meta",
@@ -3693,6 +3716,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-culler"
+version = "0.20.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lightcraft-denoise"
 version = "0.20.0"
 dependencies = [
@@ -3726,6 +3757,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-depth"
+version = "0.20.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "lightcraft-raster",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-develop"
 version = "0.20.0"
 dependencies = [
@@ -3748,12 +3791,17 @@ dependencies = [
  "harfrust 0.13.3",
  "jxl-oxide",
  "libc",
+ "lightcraft-autoframe",
+ "lightcraft-autoseg",
  "lightcraft-catalog",
  "lightcraft-codecs",
  "lightcraft-color",
+ "lightcraft-culler",
  "lightcraft-denoise",
  "lightcraft-denoise-core",
+ "lightcraft-depth",
  "lightcraft-develop",
+ "lightcraft-facemesh",
  "lightcraft-faces",
  "lightcraft-fetch",
  "lightcraft-geocode",
@@ -3763,24 +3811,43 @@ dependencies = [
  "lightcraft-lensdb",
  "lightcraft-merge",
  "lightcraft-meta",
+ "lightcraft-migan",
  "lightcraft-pipeline",
  "lightcraft-preview",
  "lightcraft-raster",
  "lightcraft-raw",
+ "lightcraft-restore",
+ "lightcraft-retouch",
  "lightcraft-scenes",
+ "lightcraft-search",
  "lightcraft-segment",
  "lightcraft-slideshow",
+ "lightcraft-style",
+ "lightcraft-taste",
  "lightcraft-testkit",
  "lightcraft-tiff",
  "log",
  "miniz_oxide 0.9.1",
+ "png",
  "rayon",
  "serde",
  "serde_json",
+ "siphasher",
  "thiserror 2.0.21",
  "unicode-normalization",
  "unicode-segmentation",
  "web-time",
+]
+
+[[package]]
+name = "lightcraft-facemesh"
+version = "0.20.0"
+dependencies = [
+ "image",
+ "miniz_oxide 0.9.1",
+ "ndarray",
+ "rayon",
+ "serde_json",
 ]
 
 [[package]]
@@ -3918,6 +3985,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-migan"
+version = "0.20.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "lightcraft-raster",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-pipeline"
 version = "0.20.0"
 dependencies = [
@@ -3987,6 +4066,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-restore"
+version = "0.20.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-fetch",
+ "log",
+ "miniz_oxide 0.9.1",
+ "rayon",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lightcraft-retouch"
+version = "0.20.0"
+dependencies = [
+ "image",
+ "serde_json",
+]
+
+[[package]]
 name = "lightcraft-scenes"
 version = "0.20.0"
 dependencies = [
@@ -3995,6 +4096,23 @@ dependencies = [
  "lightcraft-raster",
  "rayon",
  "serde",
+]
+
+[[package]]
+name = "lightcraft-search"
+version = "0.20.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "half",
+ "image",
+ "lightcraft-fetch",
+ "log",
+ "rayon",
+ "serde",
+ "serde_json",
+ "siphasher",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -4021,8 +4139,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-style"
+version = "0.20.0"
+dependencies = [
+ "lightcraft-color",
+ "lightcraft-develop",
+ "lightcraft-pipeline",
+ "lightcraft-raster",
+ "lightcraft-scenes",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-sysmem"
 version = "0.20.0"
+
+[[package]]
+name = "lightcraft-taste"
+version = "0.20.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "lightcraft-testkit"
@@ -4050,6 +4191,7 @@ dependencies = [
  "lightcraft-catalog",
  "lightcraft-codecs",
  "lightcraft-color",
+ "lightcraft-culler",
  "lightcraft-denoise",
  "lightcraft-develop",
  "lightcraft-engine",
