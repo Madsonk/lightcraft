@@ -160,6 +160,7 @@ impl QuitPrompt {
 }
 
 pub struct LightcraftApp {
+    #[allow(dead_code)] // stubbed during 0.19.0 port merge; re-integrate model_setup API
     pub(crate) model_setup: model_setup::Pending,
     /// Per-catalog-revision caches of library-wide results the panels show every frame
     /// (expensive on big libraries).
