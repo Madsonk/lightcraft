@@ -206,9 +206,9 @@ fn edit_copy(s: &mut Session, p: &Value, id: lightcraft_catalog::PhotoId, opts: 
 /// preview-only photo this version hasn't checked yet: its stamp is refreshed so it isn't probed
 /// again (see [`lightcraft_catalog::Photo::preview_checked`]).
 pub(crate) fn content_op(id: lightcraft_catalog::PhotoId, ph: &lightcraft_catalog::Photo, info: crate::media::ProbeInfo) -> Option<Op> {
-    let preview_checked = lightcraft_catalog::preview_stamp(&info.preview_only);
+    let preview_checked = ph.preview_stamp(&info.preview_only);
     // a photo imported before the sampled keys keeps its full hash when the same file is probed again (size and
-    // dimensions are the same), so its cached thumbnails stay valid
+    // dimensions are the same), so its cached thumbnails stay valid (fork: ps1- sampled keys compat)
     let same_key = info.content_hash == ph.content_hash
         || match (info.content_hash.as_deref(), ph.content_hash.as_deref()) {
             (Some(a), Some(b)) => a.starts_with("ps1-") != b.starts_with("ps1-") && !a.contains(':') && !b.contains(':'),
