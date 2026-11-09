@@ -209,6 +209,7 @@ pub(super) fn only_shows(dlg: &Dialog) -> bool {
             | Dialog::AllMetadata { .. }
             | Dialog::WhatsNew
             | Dialog::SortingHelp { .. }
+            | Dialog::Welcome { .. }
             | Dialog::ManageEffects { .. }
             | Dialog::ViewOptions
     ) || matches!(dlg, Dialog::SynchronizeFolder { counts: Some(c), .. } if c.up_to_date())

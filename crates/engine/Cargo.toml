@@ -41,6 +41,7 @@ log = { workspace = true }
 ab_glyph = { workspace = true }
 # Apply the font’s vertical substitutions and origins to Japanese watermarks.
 harfrust = { version = "0.13", default-features = false, features = ["std"] }
+unicode-normalization = "0.1"
 unicode-segmentation = "1.13"
 lightcraft-segment = { workspace = true, optional = true }
 lightcraft-restore = { workspace = true, optional = true }
@@ -61,6 +62,8 @@ lightcraft-taste = { workspace = true, optional = true }
 lightcraft-fetch = { workspace = true }
 # capture-time parsing for face recognition (native only)
 chrono = { workspace = true }
+# free space of the drive holding the preview cache (the low-disk alert; pure Rust: rustix / windows-sys)
+fs4 = { workspace = true }
 
 [features]
 # Analyze Faces (eyes open / closed, eye sharpness, the mesh of the portrait sliders) with MediaPipe Face Landmarker. Off for the web build.

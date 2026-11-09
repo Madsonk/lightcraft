@@ -35,8 +35,12 @@ mod hdr_display;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
+#[cfg(any(target_os = "linux", windows))]
+mod profile_file;
 #[cfg(target_os = "macos")]
 mod screen_profile;
+#[cfg(windows)]
+mod win_screen_profile;
 mod window_gpu;
 
 use dialog_filter::FileDialogExt as _;
@@ -79,7 +83,67 @@ fn app_icon() -> egui::IconData {
     eframe::icon_data::from_png_bytes(png).unwrap_or_default()
 }
 
-struct App(LightcraftApp, PrefsWriter, #[cfg(target_os = "macos")] Option<native_menu::NativeMenu>);
+struct App(LightcraftApp, PrefsWriter, Option<WindowTextures>, #[cfg(target_os = "macos")] Option<native_menu::NativeMenu>);
+
+/// Draws renders that stayed on the GPU: registers their textures with the window's egui-wgpu
+/// renderer (the GPU renderer runs on the window's device, see [`adopt_window_device`]).
+struct WindowTextures {
+    device: eframe::wgpu::Device,
+    queue: eframe::wgpu::Queue,
+    renderer: std::sync::Arc<egui::mutex::RwLock<eframe::egui_wgpu::Renderer>>,
+}
+
+impl lightcraft_ui_egui::render::ScreenTextures for WindowTextures {
+    fn show(&mut self, frame: &lightcraft_engine::media::ScreenFrame, id: Option<egui::TextureId>) -> Option<egui::TextureId> {
+        let view = frame.texture.create_view(&Default::default());
+        let mut r = self.renderer.write();
+        let filter = eframe::wgpu::FilterMode::Linear;
+        Some(match id {
+            Some(id) => {
+                r.update_egui_texture_from_wgpu_texture(&self.device, &view, filter, id);
+                id
+            }
+            None => r.register_native_texture(&self.device, &view, filter),
+        })
+    }
+
+    fn free(&mut self, id: egui::TextureId) {
+        self.renderer.write().free_texture(&id);
+    }
+
+    fn read(&self, frame: &lightcraft_engine::media::ScreenFrame) -> Option<egui::ColorImage> {
+        match lightcraft_engine::gpu::read_texture(&self.device, &self.queue, &frame.texture, frame.width, frame.height) {
+            Ok(img) => Some(egui::ColorImage::from_rgba_unmultiplied([img.width, img.height], img.data.as_flattened())),
+            Err(e) => {
+                log::warn!("gpu: a view can't be read back for the screenshot: {e}");
+                None
+            }
+        }
+    }
+}
+
+/// Render on the window's device (off the UI thread: building the kernels takes a moment), so the
+/// loupe's drafts are drawn straight from the GPU; the textures they leave are shown through
+/// [`WindowTextures`] once that worked. Otherwise the GPU renderer makes a device of its own, as
+/// before, and every render comes back as pixels.
+fn adopt_window_device(rs: &eframe::egui_wgpu::RenderState, ctx: &egui::Context) -> WindowTextures {
+    let (device, queue, info) = (rs.device.clone(), rs.queue.clone(), rs.adapter.get_info());
+    let ctx = ctx.clone();
+    // before the first frame's GPU warm-up can start a device of its own
+    lightcraft_engine::gpu::set_window_device_pending(true);
+    let spawned = std::thread::Builder::new().name("lc-gpu-window".into()).spawn(move || {
+        match lightcraft_engine::gpu::adopt_window_device(device, queue, info) {
+            Ok(()) => log::info!("gpu: rendering on the window's device"),
+            Err(e) => log::info!("gpu: renders come back as pixels: {e}"),
+        }
+        ctx.request_repaint();
+    });
+    if let Err(e) = spawned {
+        log::warn!("gpu: {e}");
+        lightcraft_engine::gpu::set_window_device_pending(false);
+    }
+    WindowTextures { device: rs.device.clone(), queue: rs.queue.clone(), renderer: rs.renderer.clone() }
+}
 
 impl eframe::App for App {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
@@ -89,7 +153,7 @@ impl eframe::App for App {
     }
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
-        if let Some(m) = self.2.as_mut()
+        if let Some(m) = self.3.as_mut()
             && m.update(&mut self.0, ctx)
             && lightcraft_ui_egui::panels::notices::may_close(&mut self.0)
         {
@@ -109,6 +173,13 @@ impl eframe::App for App {
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.0.perf.host_frame_ms = frame.info().cpu_usage.map(|s| f64::from(s) * 1000.0);
+        // the GPU renderer adopted the window's device: its renders can be drawn as they are
+        if self.2.is_some()
+            && lightcraft_engine::gpu::on_window_device()
+            && let Some(t) = self.2.take()
+        {
+            self.0.renderer.set_screen_textures(Box::new(t));
+        }
         self.0.ui(ui);
     }
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -328,99 +399,102 @@ fn main() -> eframe::Result {
                 // the window's renderer is up (eframe calls this after creating it)
                 win_files_app.started(window_renderer);
                 came_up_app.store(true, std::sync::atomic::Ordering::Relaxed);
-                // the window is up: what takes time (the catalog opening, on a cold disk several seconds) waits for the
-                // first frame, which says so
-                let ctx = cc.egui_ctx.clone();
-                let render_format = cc.wgpu_render_state.as_ref().map(|r| r.target_format);
-                let svc = services(cc, app_log_file.as_deref());
-                let build: Box<dyn FnOnce() -> App> = Box::new(move || {
-                    let (mut session, mut problem) = open_session(in_memory, &launch, seed_demo && files.is_empty());
-                    // AI masks: the SAM 3 checkpoint (facebook/sam3) in <config>/models/sam3, or LIGHTCRAFT_SAM3_DIR
-                    // (never required: without it, AI masks offer to download it; see docs/ai-masks.md)
-                    // and the user's own download locations, one base URL per line (LIGHTCRAFT_SAM3_MIRRORS too)
-                    session = session.with_default_sam3_model();
-                    // HDR display: SDR unless the surface, platform and display all allow HDR
-                    hdr_display::report(render_format);
-                    let mut app = LightcraftApp::new(session, svc);
-                    app.set_startup_update_check(true);
-                    if let Some(ui) = prefs {
-                        app.ui = ui;
+                let (mut session, mut problem) = open_session(in_memory, &launch, seed_demo && files.is_empty());
+                // AI masks: the SAM 3 checkpoint (facebook/sam3) in <config>/models/sam3, or LIGHTCRAFT_SAM3_DIR
+                // (never required: without it, AI masks offer to download it; see docs/ai-masks.md)
+                // and the user's own download locations, one base URL per line (LIGHTCRAFT_SAM3_MIRRORS too)
+                session = session.with_default_sam3_model();
+                // HDR display: SDR unless the surface, platform and display all allow HDR
+                hdr_display::report(cc.wgpu_render_state.as_ref().map(|r| r.target_format));
+                let mut app = LightcraftApp::new(session, services(cc, app_log_file.as_deref()));
+                app.set_startup_update_check(true);
+                if let Some(ui) = prefs {
+                    app.ui = ui;
+                }
+                // the recent libraries to choose from (issue #1290), checked on a worker once shown
+                if launch == Launch::Ask {
+                    problem = Some(LibraryProblem::choose_later(&app.ui.settings));
+                }
+                app.alt_asks_for_library = matches!(launch, Launch::Open { alt_asks: true, .. });
+                lightcraft_ui_egui::i18n::set_language(app.ui.language);
+                app.integrated_titlebar = cfg!(target_os = "macos");
+                app.notices.extend(prefs_warning);
+                app.notices.extend(launch_notices);
+                app.notices.extend(window_notice);
+                app.gpu_notice = true;
+                app.disk_space_notice = true;
+                // an empty library opens where Import is offered (a grid, with the sidebar); before
+                // the snapshot below, so this alone isn't written to the settings file
+                if problem.is_none() && files.is_empty() {
+                    lightcraft_ui_egui::panels::empty_library::open_on_empty_library(&mut app);
+                }
+                // what's on disk now: only changes are written
+                let writer = PrefsWriter {
+                    path: if in_memory { None } else { prefs_path() },
+                    written: serde_json::to_vec_pretty(&app.ui).unwrap_or_default(),
+                    library: app.ui.settings.library_path.clone(),
+                    keep_file: keep_prefs_file,
+                    ..Default::default()
+                };
+                // a library opened from its catalog file is the one in use from now on, as Open Library makes it
+                // (after the snapshot above, so the writer saves it)
+                if opened_by_argument
+                    && problem.is_none()
+                    && let Some(dir) = app.session.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.to_string_lossy().into_owned())
+                {
+                    let settings = &mut app.ui.settings;
+                    if settings.library_path != dir && !settings.library_path.is_empty() {
+                        let previous = settings.library_path.clone();
+                        lightcraft_ui_egui::panels::settings::remember_library(&mut settings.recent_libraries, &previous);
                     }
-                    // the recent libraries to choose from (issue #1290), checked on a worker once shown
-                    if launch == Launch::Ask {
-                        problem = Some(LibraryProblem::choose_later(&app.ui.settings));
+                    lightcraft_ui_egui::panels::settings::remember_library(&mut settings.recent_libraries, &dir);
+                    settings.library_path = dir;
+                }
+                // the workspaces: <config>/workspaces.json beside ui.json (nothing read or written for --memory or LIGHTCRAFT_NO_PREFS)
+                lightcraft_ui_egui::workspaces::attach(
+                    &mut app,
+                    if in_memory { None } else { prefs_path().and_then(|p| p.parent().map(|d| d.join(lightcraft_ui_egui::workspaces::FILE))) },
+                );
+                // after the snapshot above, so the writer saves the switched-off preference
+                if let Some(notice) = gpu_crash {
+                    app.ui.settings.gpu = false;
+                    app.notices.push(notice);
+                }
+                if let Some(port) = control_port {
+                    let rx = control_server::start(port, cc.egui_ctx.clone());
+                    app = app.with_control(rx);
+                }
+                if let Some(mut p) = problem {
+                    // imported once the user has chosen where (into the library, or the temporary session)
+                    p.pending_import = files;
+                    app.library_problem = Some(p);
+                } else if !files.is_empty() {
+                    // listed and read on the import worker once the window shows (issue #374: never
+                    // here, before the first frame, where a large folder kept the window from
+                    // appearing)
+                    if let Err(e) = lightcraft_ui_egui::import::start_paths(&mut app, files) {
+                        log::warn!("import at launch: {e}");
                     }
-                    app.alt_asks_for_library = matches!(launch, Launch::Open { alt_asks: true, .. });
-                    lightcraft_ui_egui::i18n::set_language(app.ui.language);
-                    app.integrated_titlebar = cfg!(target_os = "macos");
-                    app.notices.extend(prefs_warning);
-                    app.notices.extend(launch_notices);
-                    app.notices.extend(window_notice);
-                    app.gpu_notice = true;
-                    // an empty library opens where Import is offered (a grid, with the sidebar); before
-                    // the snapshot below, so this alone isn't written to the settings file
-                    if problem.is_none() && files.is_empty() {
-                        lightcraft_ui_egui::panels::empty_library::open_on_empty_library(&mut app);
-                    }
-                    // what's on disk now: only changes are written
-                    let writer = PrefsWriter {
-                        path: if in_memory { None } else { prefs_path() },
-                        written: serde_json::to_vec_pretty(&app.ui).unwrap_or_default(),
-                        library: app.ui.settings.library_path.clone(),
-                        keep_file: keep_prefs_file,
-                        ..Default::default()
-                    };
-                    // a library opened from its catalog file is the one in use from now on, as Open Library makes it
-                    // (after the snapshot above, so the writer saves it)
-                    if opened_by_argument
-                        && problem.is_none()
-                        && let Some(dir) = app.session.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.to_string_lossy().into_owned())
-                    {
-                        let settings = &mut app.ui.settings;
-                        if settings.library_path != dir && !settings.library_path.is_empty() {
-                            let previous = settings.library_path.clone();
-                            lightcraft_ui_egui::panels::settings::remember_library(&mut settings.recent_libraries, &previous);
-                        }
-                        lightcraft_ui_egui::panels::settings::remember_library(&mut settings.recent_libraries, &dir);
-                        settings.library_path = dir;
-                    }
-                    // the workspaces: <config>/workspaces.json beside ui.json (nothing read or written for --memory or LIGHTCRAFT_NO_PREFS)
-                    lightcraft_ui_egui::workspaces::attach(
-                        &mut app,
-                        if in_memory { None } else { prefs_path().and_then(|p| p.parent().map(|d| d.join(lightcraft_ui_egui::workspaces::FILE))) },
-                    );
-                    // after the snapshot above, so the writer saves the switched-off preference
-                    if let Some(notice) = gpu_crash {
-                        app.ui.settings.gpu = false;
-                        app.notices.push(notice);
-                    }
-                    if let Some(port) = control_port {
-                        let rx = control_server::start(port, ctx.clone());
-                        app = app.with_control(rx);
-                    }
-                    if let Some(mut p) = problem {
-                        // imported once the user has chosen where (into the library, or the temporary session)
-                        p.pending_import = files;
-                        app.library_problem = Some(p);
-                    } else if !files.is_empty() {
-                        // listed and read on the import worker once the window shows (issue #374: never
-                        // here, before the first frame, where a large folder kept the window from
-                        // appearing)
-                        if let Err(e) = lightcraft_ui_egui::import::start_paths(&mut app, files) {
-                            log::warn!("import at launch: {e}");
-                        }
-                        app.ui.view = lightcraft_ui_egui::state::ViewMode::PhotoGrid;
-                    }
-                    // native menu bar generated from the command registry (macOS; elsewhere the menus are
-                    // drawn in the window's top bar). LIGHTCRAFT_NO_NATIVE_MENU=1 keeps the in-window menus.
+                    app.ui.view = lightcraft_ui_egui::state::ViewMode::PhotoGrid;
+                }
+                // native menu bar generated from the command registry (macOS; elsewhere the menus are
+                // drawn in the window's top bar). LIGHTCRAFT_NO_NATIVE_MENU=1 keeps the in-window menus.
+                #[cfg(target_os = "macos")]
+                let menu =
+                    (std::env::var_os("LIGHTCRAFT_NO_NATIVE_MENU").is_none()).then(|| native_menu::NativeMenu::install(&mut app, &cc.egui_ctx));
+                // the GPU renderer on the window's device, when GPU rendering is on
+                // (LIGHTCRAFT_GPU_WINDOW=0: a device of its own, renders read back - for comparison or a driver
+                // that misbehaves with compute and drawing on one device)
+                let window_device = std::env::var_os("LIGHTCRAFT_GPU_WINDOW").is_none_or(|v| v != "0");
+                let window_textures =
+                    cc.wgpu_render_state.as_ref().filter(|_| gpu_on && window_device).map(|rs| adopt_window_device(rs, &cc.egui_ctx));
+                Ok(Box::new(App(
+                    app,
+                    writer,
+                    window_textures,
                     #[cfg(target_os = "macos")]
-                    let menu = (std::env::var_os("LIGHTCRAFT_NO_NATIVE_MENU").is_none()).then(|| native_menu::NativeMenu::install(&mut app, &ctx));
-                    App(
-                        app,
-                        writer,
-                        #[cfg(target_os = "macos")]
-                        menu,
-                    )
+                    menu,
+                )))
                 });
                 Ok(Box::new(Boot { build: Some(build), app: None, frames: 0 }))
             }),

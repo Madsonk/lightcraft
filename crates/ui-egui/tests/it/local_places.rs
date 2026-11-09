@@ -35,6 +35,7 @@ impl Drop for Scratch {
 fn harness(places: Vec<(String, String)>, kept: Vec<String>) -> Harness<'static, LightcraftApp> {
     let services = Services { local_places: Some(places), pick_folder: Some(Box::new(|| None)), ..Default::default() };
     let mut app = LightcraftApp::new(lightcraft_engine::Session::new(), services);
+    app.headless_host = true;
     app.ui.left_panel = true;
     app.ui.settings.workspaces = false; // (the fork opens an empty library on Import, which has no side panels)
     app.ui.local_roots = kept;

@@ -177,7 +177,11 @@ fn file_hash(path: &str, scheme: &str) -> Option<String> {
     if !scheme.is_empty() {
         return crate::video::sampled_hash_tagged(Path::new(path), scheme).ok();
     }
-    hash_reader(std::fs::File::open(path).ok()?)
+    use std::io::Read;
+    // the opened file must be regular (a FIFO or device would never end), and no more than its size at open is read
+    let file = std::fs::File::open(path).ok()?;
+    let meta = file.metadata().ok().filter(|m| m.is_file())?;
+    hash_reader(file.take(meta.len()))
 }
 
 /// The content hash of what `r` gives, read in pieces (the hash import computes of the whole).
@@ -244,6 +248,9 @@ mod tests {
         std::fs::write(&f, b"pixels").unwrap();
         assert_eq!(file_hash(f.to_str().unwrap(), ""), Some(lightcraft_preview::hash_bytes(b"pixels").to_string()));
         assert_eq!(file_hash(dir.0.join("nope").to_str().unwrap(), ""), None);
+        assert_eq!(file_hash(dir.0.to_str().unwrap(), ""), None, "a folder has no content hash");
+        #[cfg(unix)]
+        assert_eq!(file_hash("/dev/zero", ""), None, "a device never ends");
     }
 }
 
@@ -273,7 +280,7 @@ pub fn find_candidates(cat: &Catalog) -> Vec<FindCandidate> {
 pub enum MatchBy {
     /// Same name and size (and content, when the library knows its hash).
     Name,
-    /// Renamed: same size and content hash.
+    /// Renamed: same content hash (and size, when the library knows it).
     Content,
 }
 
@@ -367,8 +374,8 @@ fn name_key(path: &str) -> String {
 /// Matching, per photo:
 /// 1. a file with the same name ([`name_key`]: any letter case), the same size and the same
 ///    content hash;
-/// 2. renamed: a file of the same size with the same content hash (only same-size files are
-///    read, so this stays cheap);
+/// 2. renamed: a file with the same content hash (and the same size, when one is on record; with
+///    no size on record every file is read, but the hash alone confirms identity);
 /// 3. without a hash to confirm (or the file was edited in place): the one file with the same
 ///    name and size. Several such files are ambiguous: the photo is skipped and reported in
 ///    `ambiguous`, never guessed (two cameras' `IMG_0001.CR3` of one size are different photos).
@@ -416,16 +423,17 @@ pub fn plan_find_missing(candidates: &[FindCandidate], folder: &str) -> std::res
         // 1. same name and size, confirmed by the content hash
         let mut hit: Option<(String, MatchBy)> =
             hash.and_then(|h| named.iter().find(|f| hash_of(f, h).as_deref() == Some(h))).map(|f| (f.to_string(), MatchBy::Name));
-        // 2. renamed: same size and content
+        // 2. renamed: same content, and same size when one is on record
         if hit.is_none()
             && let Some(h) = hash
-            && size > 0
         {
-            let sizes = by_size.get_or_insert_with(|| {
-                let mut m: HashMap<u64, Vec<String>> = HashMap::new();
-                for f in &files {
-                    if let Some(n) = size_of(f) {
-                        m.entry(n).or_default().push(f.clone());
+            if size > 0 {
+                let sizes = by_size.get_or_insert_with(|| {
+                    let mut m: HashMap<u64, Vec<String>> = HashMap::new();
+                    for f in &files {
+                        if let Some(n) = size_of(f) {
+                            m.entry(n).or_default().push(f.clone());
+                        }
                     }
                 }
                 m
@@ -434,6 +442,9 @@ pub fn plan_find_missing(candidates: &[FindCandidate], folder: &str) -> std::res
                 .get(&size)
                 .and_then(|v| v.iter().find(|f| !used.contains(*f) && hash_of(f, h).as_deref() == Some(h)))
                 .map(|f| (f.clone(), MatchBy::Content));
+            } else {
+                hit = files.iter().find(|f| !used.contains(*f) && hash_of(f, h).as_deref() == Some(h)).map(|f| (f.clone(), MatchBy::Content));
+            }
         }
         // 3. same name and size only (no hash, or the file was edited in place): one candidate
         //    is taken, several are ambiguous and skipped rather than guessed
