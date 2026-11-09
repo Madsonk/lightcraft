@@ -863,6 +863,14 @@ fn request_sort_view(app: &mut LightcraftApp, id: PhotoId) {
         }
         app.sort_last = Some(id);
         let dir = app.sort_dir;
+        let ahead = (1..=SORT_AHEAD).filter_map(|n| i.checked_add_signed(dir.saturating_mul(n as isize)).and_then(|j| ids.get(j))).copied();
+        let behind = i.checked_add_signed(-dir).and_then(|j| ids.get(j)).copied();
+        for (n, nid) in ahead.chain(behind).enumerate() {
+            if let Some(q) = app.session.sort_view_job(nid) {
+                app.renderer.prefetch_quick(Slot::Prefetch(n as u8), q, PREFETCH_PRIORITY);
+            }
+        }
+    }
 }
 
 /// Stepping fast (an arrow held down): the render waits until the photo stays, the camera JPEG or

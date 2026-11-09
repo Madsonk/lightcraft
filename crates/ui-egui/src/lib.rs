@@ -43,6 +43,7 @@ pub mod lightroom_import;
 pub mod links;
 pub mod loupe_timing;
 pub mod menus;
+mod model_setup;
 mod missing_sweep;
 pub mod panels;
 pub mod pick;
@@ -159,6 +160,7 @@ impl QuitPrompt {
 }
 
 pub struct LightcraftApp {
+    pub(crate) model_setup: model_setup::Pending,
     /// Per-catalog-revision caches of library-wide results the panels show every frame
     /// (expensive on big libraries).
     pub caches: Caches,

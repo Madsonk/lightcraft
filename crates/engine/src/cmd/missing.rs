@@ -435,13 +435,12 @@ pub fn plan_find_missing(candidates: &[FindCandidate], folder: &str) -> std::res
                             m.entry(n).or_default().push(f.clone());
                         }
                     }
-                }
-                m
-            });
-            hit = sizes
-                .get(&size)
-                .and_then(|v| v.iter().find(|f| !used.contains(*f) && hash_of(f, h).as_deref() == Some(h)))
-                .map(|f| (f.clone(), MatchBy::Content));
+                    m
+                });
+                hit = sizes
+                    .get(&size)
+                    .and_then(|v| v.iter().find(|f| !used.contains(*f) && hash_of(f, h).as_deref() == Some(h)))
+                    .map(|f| (f.clone(), MatchBy::Content));
             } else {
                 hit = files.iter().find(|f| !used.contains(*f) && hash_of(f, h).as_deref() == Some(h)).map(|f| (f.clone(), MatchBy::Content));
             }

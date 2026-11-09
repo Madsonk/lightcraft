@@ -124,7 +124,6 @@ impl QuickJob {
                     return done(rendered(image), Some(QuickSource::Embedded));
                 }
                 embedded_fallback = Some(image);
->>>>>>> v0.19.0
             }
         }
         if let Some(job) = self.small {

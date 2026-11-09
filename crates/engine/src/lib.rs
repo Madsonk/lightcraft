@@ -1565,5 +1565,4 @@ pub(crate) fn orientation_change(from: lightcraft_geom::Orientation, to: lightcr
             close(t.map(tx, ty, 1.0, 1.0), to.map(rx, ry, 1.0, 1.0))
         })
     })
->>>>>>> v0.19.0
 }

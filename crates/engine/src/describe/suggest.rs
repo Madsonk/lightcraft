@@ -225,6 +225,8 @@ pub fn suggest(s: &mut Session, p: &Value) -> Result<Value> {
                     fallback: None,
                     denoise: None,
                     reduced: None,
+                    camera_profile: None,
+                    outliers: false,
                 };
                 pics.push(crate::search::Picture { id, key: skey, source });
                 moments.push(Moment { item: ck.clone(), ms: Some(f.ms), id: id.0, skey });

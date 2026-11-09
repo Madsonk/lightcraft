@@ -100,6 +100,8 @@ fn frame_items(s: &mut Session, p: &Value, dir: Option<std::path::PathBuf>, forc
                 fallback: None,
                 denoise: None,
                 reduced: None,
+                camera_profile: None,
+                outliers: false,
             };
             items.push(Item { id, key: super::search_key(&ck, Some(f.ms)), source, want_vector: true, want_hash: false });
         }
