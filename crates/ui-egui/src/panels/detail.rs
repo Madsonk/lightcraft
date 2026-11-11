@@ -828,7 +828,6 @@ fn sort_view_wanted(app: &mut LightcraftApp, ui: &egui::Ui, a: &LoupeAsk) -> boo
         && !ui.input(|i| i.key_down(egui::Key::Backslash))
         && app.hover_preview.is_none()
         && matches!(a.overlay, lightcraft_pipeline::Overlay::None)
-        && app.session.catalog.photo(a.id).is_some_and(|p| app.session.embedded_thumb_is_final(p))
         && app.session.sort_view_job(a.id).is_some()
 }
 

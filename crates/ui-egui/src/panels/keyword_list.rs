@@ -338,28 +338,27 @@ fn drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, rect: Rect, path: &st
     } else if let Some(ids) = app.ui.dragging_photos.clone() {
         outline(ui);
         if released {
-            // only the photos that didn't have it get it
-            let lacking = |id: &u64| {
-                app.session
-                    .catalog
-                    .photo(PhotoId(*id))
-                    .is_some_and(|p| !p.meta.keywords.iter().any(|k| same(&lightcraft_catalog::keywords::clean(k), path)))
-            };
-            let n = ids.iter().filter(|id| lacking(id)).count();
-            app.ui.dragging_photos = None;
-            match app.run("photo.setMeta", json!({"ids": ids, "addKeywords": [path]})) {
-                Ok(_) => app.toast(
-                    ui.ctx(),
-                    crate::i18n::tr_format!(
-                        "Added “{keyword}” to {n} photo{}",
-                        if n == 1 { "" } else { "s" },
-                        keyword = path.replace('|', " › "),
-                        n = n
-                    ),
-                ),
-                Err(e) => app.toast(ui.ctx(), e),
-            }
+            drop_photos(app, ui.ctx(), ids, path);
         }
+    }
+}
+
+/// Give keyword `path` to the dragged photos `ids` (only the ones lacking it count), and say so.
+pub(crate) fn drop_photos(app: &mut LightcraftApp, ctx: &egui::Context, ids: Vec<u64>, path: &str) {
+    let lacking = |id: &u64| {
+        app.session
+            .catalog
+            .photo(PhotoId(*id))
+            .is_some_and(|p| !p.meta.keywords.iter().any(|k| same(&lightcraft_catalog::keywords::clean(k), path)))
+    };
+    let n = ids.iter().filter(|id| lacking(id)).count();
+    app.ui.dragging_photos = None;
+    match app.run("photo.setMeta", json!({"ids": ids, "addKeywords": [path]})) {
+        Ok(_) => app.toast(
+            ctx,
+            crate::i18n::tr_format!("Added “{keyword}” to {n} photo{}", if n == 1 { "" } else { "s" }, keyword = path.replace('|', " › "), n = n),
+        ),
+        Err(e) => app.toast(ctx, e),
     }
 }
 

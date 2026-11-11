@@ -31,7 +31,7 @@ pub use load::{load_bytes, load_bytes_decoded, load_bytes_with, load_vec, load_v
 #[cfg(test)]
 use preview::PLAN_PREFIX;
 pub(crate) use preview::decode_raw_preview;
-pub use preview::{PREVIEW_BYTES_READ, PreviewRead, embedded_preview_srgb, fs_preview_loader, load_embedded_preview, preview_window};
+pub use preview::{PREVIEW_BYTES_READ, PreviewRead, embedded_preview_srgb, fs_plain_jpeg_loader, fs_preview_loader, load_embedded_preview, preview_window};
 pub use probe::{PROBE_HEAD, PROBE_HEAD_MIN, embedded_lens, probe_bytes, probe_head, probe_head_why};
 #[cfg(test)]
 use probe::{meta_of, preview_reason};

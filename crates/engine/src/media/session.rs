@@ -1,4 +1,4 @@
-use super::quick::{QuickJob, SORT_VIEW_EDGE, content_key, embedded_thumb_key, source_info};
+use super::quick::{QuickJob, SORT_VIEW_EDGE, SORT_VIEW_EDGE_JPEG, content_key, embedded_thumb_key, source_info};
 use super::render::{RenderJob, RenderResult};
 use super::settings_hash::with_process;
 use super::source::{PreviewLoader, RENDER_CACHE_VERSION, SourceLevel, SourceRef, THUMB_SIZES, face_edge, source_edge_needed, thumb_bucket};
@@ -466,15 +466,21 @@ impl crate::Session {
     /// a final render: its [`QuickSource`] is `Cached`/`Embedded`, and the UI labels it "Preview".
     pub fn sort_view_job(&mut self, id: PhotoId) -> Option<QuickJob> {
         let p = self.catalog.photo(id)?.clone();
-        let (path, loader) = self.embedded_of(&p)?;
-        let key = Self::sort_view_key(&p);
+        let (path, loader, edge) = match self.embedded_of(&p) {
+            Some((path, loader)) => (path, loader, SORT_VIEW_EDGE),
+            None => {
+                let (path, loader) = Self::plain_jpeg_of(&p)?;
+                (path, loader, SORT_VIEW_EDGE_JPEG)
+            }
+        };
+        let key = Self::sort_view_key(&p, edge);
         let h = Hasher128::new().str(&content_key(&p)).str("sortview-job").finish();
         Some(QuickJob {
             request_id: 0,
             photo: id,
             key: h.0 as u64,
             cached: vec![(self.media.rendered.clone(), key)],
-            embedded: Some((path, loader, SORT_VIEW_EDGE)),
+            embedded: Some((path, loader, edge)),
             embedded_cache: None,
             embedded_on_disk: false,
             minimum_embedded_edge: None,
@@ -483,9 +489,29 @@ impl crate::Session {
         })
     }
 
+    /// A plain, unedited JPEG file: its sort view is a scaled decode ([`crate::files::fs_plain_jpeg_loader`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn plain_jpeg_of(p: &Photo) -> Option<(String, PreviewLoader)> {
+        match &p.source {
+            Source::File { path }
+                if p.kind == MediaKind::Image
+                    && crate::import::has_import_look(p)
+                    && std::path::Path::new(path).extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("jpg") || e.eq_ignore_ascii_case("jpeg")) =>
+            {
+                Some((path.clone(), crate::files::fs_plain_jpeg_loader()))
+            }
+            _ => None,
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn plain_jpeg_of(_: &Photo) -> Option<(String, PreviewLoader)> {
+        None
+    }
+
     /// Cache key of a photo's sort view (see [`Self::sort_view_job`]).
-    fn sort_view_key(p: &Photo) -> Hash128 {
-        Hasher128::new().str(&content_key(p)).str("sortview").u64(SORT_VIEW_EDGE as u64).u64(RENDER_CACHE_VERSION).finish()
+    fn sort_view_key(p: &Photo, edge: usize) -> Hash128 {
+        Hasher128::new().str(&content_key(p)).str("sortview").u64(edge as u64).u64(RENDER_CACHE_VERSION).finish()
     }
 
     /// The camera's embedded JPEG of an unedited raw at up to `max_edge` pixels (its full size for

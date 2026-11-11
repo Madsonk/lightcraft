@@ -1902,3 +1902,19 @@ fn v5_extends_a_dng_tone_curve_past_white_in_stops() {
     let (white, beyond) = (at(Process::V5, 0.0), at(Process::V5, 1.0));
     assert!(beyond < 254.0 && beyond - white >= 3.0, "{white} then {beyond} a stop past the sensor's white");
 }
+
+/// The sort view of a plain JPEG is a scaled decode: no larger than the edge asked, its aspect kept.
+#[test]
+fn the_plain_jpeg_sort_loader_fits_the_edge() {
+    let img = lightcraft_raster::Rgba8::from_fn(400, 300, |x, y| [(x / 2) as u8, (y / 2) as u8, 90, 255]);
+    let jpeg = lightcraft_codecs::encode_jpeg(&lightcraft_codecs::EncodeImage::rgba8(&img), 90, Default::default(), &Default::default()).unwrap();
+    let dir = std::env::temp_dir().join(format!("lc-sortjpeg-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("a.jpg");
+    std::fs::write(&file, jpeg).unwrap();
+    let load = super::fs_plain_jpeg_loader();
+    let small = load(file.to_str().unwrap(), 100).expect("decodes");
+    assert!(small.width.max(small.height) <= 100 && small.width > small.height, "{}x{}", small.width, small.height);
+    assert!(load(dir.join("missing.jpg").to_str().unwrap(), 100).is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}

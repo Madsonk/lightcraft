@@ -18,6 +18,9 @@ pub enum QuickSource {
 /// screen, small enough to decode in a few ms and to keep a whole shoot of them on the internal disk.
 pub const SORT_VIEW_EDGE: usize = 2048;
 
+/// Long edge of the sort view of a plain JPEG: no focus check is asked of it, so less than a raw's.
+pub const SORT_VIEW_EDGE_JPEG: usize = 1600;
+
 /// Something to show *now* for a photo while its real render is prepared. Tried in order: cached
 /// renders, the embedded preview of an unedited raw, a thumbnail-level render.
 #[derive(Clone)]

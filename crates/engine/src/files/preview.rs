@@ -142,6 +142,22 @@ pub fn fs_preview_loader() -> PreviewLoader {
     })
 }
 
+/// Sort-view loader for a plain JPEG (a phone or an export, no embedded raw preview): a DCT-scaled
+/// decode straight to `max_edge`, a fraction of the full decode the loupe would otherwise render.
+/// A JPEG with an ICC profile or an Adobe RGB hint takes the general decode.
+pub fn fs_plain_jpeg_loader() -> PreviewLoader {
+    Arc::new(|path: &str, max_edge: usize| {
+        let bytes = std::fs::read(path).ok()?;
+        let edge = u32::try_from(max_edge).unwrap_or(u32::MAX);
+        if let Ok(Some((image, orientation))) = lightcraft_codecs::decode_jpeg_srgb8_fit(&bytes, edge, edge) {
+            return Some(image.oriented(preview_orientation(&bytes, orientation)));
+        }
+        let d = lightcraft_codecs::decode(&bytes, fit_box(max_edge)).ok()?;
+        let o = preview_orientation(&bytes, d.orientation);
+        Some(d.to_srgb8().oriented(o))
+    })
+}
+
 /// What [`preview_window`] read from a file, so a caller can see what a preview cost.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PreviewRead {

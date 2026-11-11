@@ -27,6 +27,7 @@ fn keyword_row(app: &mut LightcraftApp, ui: &mut egui::Ui, n: &KeywordNode, id: 
     if let Some(k) = open_id {
         tree_toggle(ui, &resp, indent, k, open, format!("keywordToggle:{}", n.path), &n.name);
     }
+    drop_photos_here(app, ui, &resp, &n.path);
     let resp = resp.on_hover_text(if n.children.is_empty() { n.path.clone() } else { format!("{} (includes the keywords below it)", n.path) });
     if resp.clicked() {
         let v = if sel { serde_json::Value::Null } else { json!(n.path) };
@@ -52,4 +53,17 @@ fn keyword_row(app: &mut LightcraftApp, ui: &mut egui::Ui, n: &KeywordNode, id: 
             let _ = app.run("keyword.delete", json!({"keyword": n.path}));
         }
     });
+}
+
+/// Photos dragged from the grid onto a row: it lights up and a release gives them the keyword.
+fn drop_photos_here(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Response, path: &str) {
+    let Some(ids) = app.ui.dragging_photos.clone() else { return };
+    if !super::albums::pointer_over_row(ui, resp.rect) {
+        return;
+    }
+    let t = crate::theme::Tokens::get(ui.ctx());
+    ui.painter().rect_stroke(resp.rect.shrink2(egui::vec2(8.0, 1.0)), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    if ui.input(|i| i.pointer.primary_released()) {
+        crate::panels::keyword_list::drop_photos(app, ui.ctx(), ids, path);
+    }
 }
