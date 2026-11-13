@@ -22,3 +22,12 @@
 - Une feature **sans preuve** n'est pas protégée : un merge propre peut l'effacer sans que rien ne le signale.
 - Toute ligne dont la colonne « Upstream » devient « fourni » doit être **réévaluée** : on préfère l'upstream et on supprime notre code (règle du port 0.14 : « quand upstream fournit déjà, préférer upstream »).
 - `depth` (#5) est le cas urgent : 0 test, et upstream vient d'arriver sur le même terrain.
+
+## Tests upstream qui échouent sur le fork (état au 13 nov 2026)
+
+| Test | État | Preuve |
+|---|---|---|
+| `lightcraft-pipeline` : `tests_light::v1_and_v2_render_as_before_v3` | **échoue** | reproduit sur `f473c3d36` (tip du fork avant le merge 0.21.0) : `left: [5201756129139503724, 10832193741061795827]`, `right: [6624979530767351604, 9773754074516659789]`. Le fork change donc le rendu des process versions 1 et 2 — à investiguer : c'est visible pour l'utilisateur sur d'anciennes photos. |
+
+Conséquence : ce test n'est pas dans les gates du fork (ni `port-check`, ni la CI), mais il **doit** être traité :
+soit on identifie et corrige la cause, soit on met à jour les goldens en documentant le changement de rendu.
