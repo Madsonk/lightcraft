@@ -201,7 +201,7 @@ mod tests {
     use super::*;
 
     fn lb(amount: f64, focus: f64, range: f64) -> LensBlur {
-        LensBlur { enabled: true, amount, focal_distance: focus, focal_range: range }
+        LensBlur { enabled: true, amount, focal_distance: focus, focal_range: range, ..LensBlur::default() }
     }
 
     #[test]

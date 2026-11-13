@@ -139,3 +139,43 @@ impl DepthModel {
 pub fn sync(model: &DepthModel) -> Result<()> {
     Ok(model.device.synchronize()?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The working size of the depth model: both sides are whole patches, and the patch count
+    /// stays inside the token budget the model was exported with.
+    #[test]
+    fn working_size_snaps_to_patches_and_respects_the_budget() {
+        let p = model::PATCH;
+        for (w, h) in [(1000usize, 667usize), (3000, 2000), (12, 9), (1, 1)] {
+            let (tw, th) = DepthModel::working_size(w, h, DEFAULT_SIZE);
+            assert_eq!(tw % p, 0, "{w}×{h} -> {tw}×{th}: width not on a patch boundary");
+            assert_eq!(th % p, 0, "{w}×{h} -> {tw}×{th}: height not on a patch boundary");
+            assert!(tw >= p && th >= p);
+            assert!((tw / p) * (th / p) <= MAX_PATCHES, "{w}×{h} -> {tw}×{th}: {} patches over the budget {}", (tw / p) * (th / p), MAX_PATCHES);
+        }
+    }
+
+    #[test]
+    fn working_size_keeps_the_aspect_and_grows_with_the_asked_size() {
+        let small = DepthModel::working_size(3000, 2000, DEFAULT_SIZE / 2);
+        let big = DepthModel::working_size(3000, 2000, DEFAULT_SIZE);
+        assert!(big.0 >= small.0 && big.1 >= small.1, "small {small:?} big {big:?}");
+        // 3:2 stays roughly 3:2 (within one patch of rounding on each side)
+        let ratio = big.0 as f64 / big.1 as f64;
+        assert!((ratio - 1.5).abs() < 0.05, "ratio {ratio}");
+    }
+
+    #[test]
+    fn a_model_directory_is_recognised_by_its_weights_file() {
+        let dir = std::env::temp_dir().join(format!("depth-model-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!is_model_dir(&dir), "empty directory is not a model");
+        std::fs::write(dir.join(WEIGHTS_FILE), b"not really weights").unwrap();
+        assert!(is_model_dir(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
