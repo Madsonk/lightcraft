@@ -58,7 +58,8 @@ impl crate::Session {
         let source_key = super::quick::source_identity(&p);
         let decoder = super::quick::decoder_key(&p);
         // Temporary "before" settings must not replace the photo's cached develop hash.
-        let settings_hash = if before { settings.hash64() ^ crate::files::hot_pixel_key(&settings) } else { self.media.settings_hashes.get(id, &settings) };
+        let settings_hash =
+            if before { settings.hash64() ^ crate::files::hot_pixel_key(&settings) } else { self.media.settings_hashes.get(id, &settings) };
         let settings_hash = if settings.aux.is_empty() { settings_hash } else { settings_hash ^ settings.aux.key().rotate_left(13) };
         let salt = self.media.denoise_salt(id, &settings);
         let profile_salt = self.media.camera_profile_salt(&settings.profile.id);
@@ -496,7 +497,10 @@ impl crate::Session {
             Source::File { path }
                 if p.kind == MediaKind::Image
                     && crate::import::has_import_look(p)
-                    && std::path::Path::new(path).extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("jpg") || e.eq_ignore_ascii_case("jpeg")) =>
+                    && std::path::Path::new(path)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .is_some_and(|e| e.eq_ignore_ascii_case("jpg") || e.eq_ignore_ascii_case("jpeg")) =>
             {
                 Some((path.clone(), crate::files::fs_plain_jpeg_loader()))
             }

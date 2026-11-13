@@ -62,7 +62,7 @@ pub fn apply(r: Rendered, req: Request) -> Result<Rendered, String> {
 
 #[cfg(not(feature = "restore"))]
 mod imp {
-    use super::*;
+    use super::{Rendered, Request};
 
     pub fn apply(_: Rendered, _: Request) -> Result<Rendered, String> {
         Err("AI denoise and super-resolution are not available in this build".into())

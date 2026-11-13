@@ -113,20 +113,16 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 String::new()
             };
             ui.label(
-                RichText::new(tr_format!(
-                    "Retouched: {r} · No face: {nf} · Failed: {f}{eta}",
-                    r = retouched,
-                    nf = no_face,
-                    f = failed,
-                    eta = eta
-                ))
-                .size(11.5)
-                .color(t.text_dim),
+                RichText::new(tr_format!("Retouched: {r} · No face: {nf} · Failed: {f}{eta}", r = retouched, nf = no_face, f = failed, eta = eta))
+                    .size(11.5)
+                    .color(t.text_dim),
             );
             ui.label(
-                RichText::new(tr("AI batch retouch runs one photo at a time; originals are never touched. Stop keeps completed photos (one undo step)."))
-                    .size(11.0)
-                    .color(t.text_dim),
+                RichText::new(tr(
+                    "AI batch retouch runs one photo at a time; originals are never touched. Stop keeps completed photos (one undo step).",
+                ))
+                .size(11.0)
+                .color(t.text_dim),
             );
         }
         if !app.flow.portrait.error.is_empty() {

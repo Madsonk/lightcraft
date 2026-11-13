@@ -346,10 +346,7 @@ fn drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, rect: Rect, path: &st
 /// Give keyword `path` to the dragged photos `ids` (only the ones lacking it count), and say so.
 pub(crate) fn drop_photos(app: &mut LightcraftApp, ctx: &egui::Context, ids: Vec<u64>, path: &str) {
     let lacking = |id: &u64| {
-        app.session
-            .catalog
-            .photo(PhotoId(*id))
-            .is_some_and(|p| !p.meta.keywords.iter().any(|k| same(&lightcraft_catalog::keywords::clean(k), path)))
+        app.session.catalog.photo(PhotoId(*id)).is_some_and(|p| !p.meta.keywords.iter().any(|k| same(&lightcraft_catalog::keywords::clean(k), path)))
     };
     let n = ids.iter().filter(|id| lacking(id)).count();
     app.ui.dragging_photos = None;

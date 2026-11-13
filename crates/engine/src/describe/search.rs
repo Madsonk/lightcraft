@@ -19,7 +19,9 @@ use std::collections::{HashMap, HashSet};
 use lightcraft_catalog::{MediaKind, PhotoId};
 use serde_json::{Value, json};
 
-use super::honest::{self, Centre};
+#[cfg(feature = "search")]
+use super::honest;
+use super::honest::Centre;
 use super::{Effective, fold};
 use crate::cmd::{bad, bool_or, f64_or, str_param};
 use crate::video::speech::{self, Level, Speech, same_word};
@@ -134,6 +136,7 @@ impl Meaning {
 
 /// The options of the meaning side of a search.
 #[derive(Clone, Copy)]
+#[cfg_attr(not(feature = "search"), allow(dead_code))]
 struct Honest {
     centre: Centre,
     /// Margin over the noise ceiling (cosine units), if a floor is asked.

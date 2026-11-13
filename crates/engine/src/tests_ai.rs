@@ -28,9 +28,12 @@ fn lens_blur_uses_the_attached_depth_map_and_changes_the_render() {
     let id = s.active().unwrap();
     let ph = s.catalog.photo(id).unwrap().clone();
     let plain = render(&mut s);
-    // enabled without a depth map: nothing to blur by, the render is unchanged
+    // Port 0.21: without a depth map, upstream's subject-based Lens Blur applies (the fork's
+    // depth path needs the map), so the render now changes instead of staying untouched.
     s.execute("lensblur.set", &json!({"amount": 100, "focus": 100, "range": 10})).unwrap();
-    assert_eq!(render(&mut s), plain);
+    assert_ne!(render(&mut s), plain, "upstream Lens Blur blurs by its subject estimate");
+    // With the depth map attached, the fork's depth-driven path takes over (the gate in
+    // `pipeline::lib` keeps upstream's module out when a depth map is present).
     assert!(s.execute("lensblur.set", &json!({"point": [0.3, 0.5]})).is_err(), "a focus point needs the depth map");
     // with a depth map the far half is blurred and the focused half is not
     s.store_depth_map(&ph, split_depth()).unwrap();

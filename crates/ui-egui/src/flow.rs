@@ -517,11 +517,7 @@ fn new_job(app: &LightcraftApp, one_click: bool, phase: Phase, run: Option<Portr
 /// The portrait steps for the current slider values, or an error if none are set.
 pub fn current_portrait_steps(app: &LightcraftApp) -> Result<Vec<lightcraft_develop::PortraitStep>, String> {
     let steps = slider_steps(app)?;
-    if steps.iter().any(|st| st.amount > 0.0) {
-        Ok(steps)
-    } else {
-        Err(tr("Move a slider first, or use Auto retouch").to_string())
-    }
+    if steps.iter().any(|st| st.amount > 0.0) { Ok(steps) } else { Err(tr("Move a slider first, or use Auto retouch").to_string()) }
 }
 
 /// Retouch `ids` with explicit `steps`, one photo at a time on a worker (the window never waits).

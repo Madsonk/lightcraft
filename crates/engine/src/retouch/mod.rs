@@ -44,6 +44,13 @@ pub fn scale_adjust(a: &LocalAdjustments, k: f64) -> LocalAdjustments {
         noise: a.noise * k,
         moire: a.moire * k,
         defringe: a.defringe * k,
+        // Port 0.21: upstream's Lens Blur inside a mask (0..100) joins the scaled sliders; its
+        // switches are copied as they are (a scale must not turn a blur on or off).
+        lens_blur: a.lens_blur * k,
+        lens_blur_off: a.lens_blur_off,
+        lens_blur_outside: a.lens_blur_outside,
+        lens_blur_boost: a.lens_blur_boost * k,
+        lens_blur_transition: a.lens_blur_transition * k,
         color_hue: a.color_hue,
         color_sat: a.color_sat * k,
         amount: a.amount,

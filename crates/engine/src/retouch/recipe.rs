@@ -663,6 +663,7 @@ fn plans(s: &mut Session, ids: &[PhotoId], p: &Value, c: &str) -> Result<Arc<Pla
 }
 
 /// Settle a photo at `dose`: reduce the dose while a check is over its threshold.
+#[allow(clippy::unreachable)] // the loop returns on its last round; the tail is a proof, not a path
 fn settle(s: &mut Session, pp: &PhotoPlan, o: &Opts, dose: f32, c: &str) -> Result<(f32, DevelopSettings, Arc<Frame>, Qc, Option<Value>)> {
     let mut dz = dose;
     let mut reduced = None;

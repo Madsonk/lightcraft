@@ -3617,7 +3617,7 @@ dependencies = [
 
 [[package]]
 name = "lightcraft-autoframe"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "lightcraft-develop",
  "lightcraft-geom",
@@ -3628,7 +3628,7 @@ dependencies = [
 
 [[package]]
 name = "lightcraft-autoseg"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -3718,7 +3718,7 @@ dependencies = [
 
 [[package]]
 name = "lightcraft-culler"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3759,7 +3759,7 @@ dependencies = [
 
 [[package]]
 name = "lightcraft-depth"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -3843,7 +3843,7 @@ dependencies = [
 
 [[package]]
 name = "lightcraft-facemesh"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "image",
  "miniz_oxide 0.9.1",
@@ -3988,7 +3988,7 @@ dependencies = [
 
 [[package]]
 name = "lightcraft-migan"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -4069,7 +4069,7 @@ dependencies = [
 
 [[package]]
 name = "lightcraft-restore"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -4083,7 +4083,7 @@ dependencies = [
 
 [[package]]
 name = "lightcraft-retouch"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "image",
  "serde_json",
@@ -4102,7 +4102,7 @@ dependencies = [
 
 [[package]]
 name = "lightcraft-search"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -4142,7 +4142,7 @@ dependencies = [
 
 [[package]]
 name = "lightcraft-style"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "lightcraft-color",
  "lightcraft-develop",
@@ -4160,7 +4160,7 @@ version = "0.21.0"
 
 [[package]]
 name = "lightcraft-taste"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "serde",
  "serde_json",

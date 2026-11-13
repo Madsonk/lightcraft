@@ -139,6 +139,7 @@ pub enum Gesture {
 /// full-screen aware), crop overlays and the render requests for the current view, or, when no
 /// photo is active, the empty-library message if the library is empty and "No photo selected"
 /// otherwise.
+#[allow(clippy::cognitive_complexity)] // one draw pass: filmstrip, photo, crop overlays, render asks
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let full = ui.max_rect();
@@ -873,16 +874,16 @@ fn request_sort_view(app: &mut LightcraftApp, id: PhotoId) {
         app.sort_last = Some(id);
         let dir = app.sort_dir;
         // nearest photos first (higher priority) so stepping fast finds the next ones ready sooner
-        for (d, nid) in (1..=SORT_AHEAD)
-            .filter_map(|n| i.checked_add_signed(dir.saturating_mul(n as isize)).and_then(|j| ids.get(j)).map(|&id| (n, id)))
+        for (d, nid) in
+            (1..=SORT_AHEAD).filter_map(|n| i.checked_add_signed(dir.saturating_mul(n as isize)).and_then(|j| ids.get(j)).map(|&id| (n, id)))
         {
             if let Some(q) = app.session.sort_view_job(nid) {
                 let prio = PREFETCH_PRIORITY + (SORT_AHEAD as u32).saturating_sub(d as u32) / 2;
                 app.renderer.prefetch_quick(Slot::Prefetch((d - 1) as u8), q, prio);
             }
         }
-        for (d, nid) in (1..=SORT_BEHIND)
-            .filter_map(|n| i.checked_add_signed(-dir.saturating_mul(n as isize)).and_then(|j| ids.get(j)).map(|&id| (n, id)))
+        for (d, nid) in
+            (1..=SORT_BEHIND).filter_map(|n| i.checked_add_signed(-dir.saturating_mul(n as isize)).and_then(|j| ids.get(j)).map(|&id| (n, id)))
         {
             if let Some(q) = app.session.sort_view_job(nid) {
                 let prio = PREFETCH_PRIORITY + (SORT_BEHIND as u32).saturating_sub(d as u32);

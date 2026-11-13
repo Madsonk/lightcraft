@@ -1060,7 +1060,25 @@ fn linear(cx: &mut Cx<'_>, sampled: &Buf, info: &SourceInfo, plan: &Plan<'_>, ho
     }
     // Lens Blur (global or a mask's): on the CPU, like the CPU renderer's (`lens_blur::apply`)
     let mut host_img = cx.read_rgb(&img, w, h);
-    lightcraft_pipeline::lens_blur::apply_with(&mut host_img, s, &plan.frame, plan.px_per_long, plan.mattes.as_deref(), plan.lens_subject.as_deref());
+    // Port 0.21 union: a photo carrying a depth map keeps the fork's depth-driven Lens Blur
+    // (`pipeline::lensblur`); every other photo gets upstream's subject/mask-driven one. Both
+    // must not run, or the photo is blurred twice. TODO: fold the depth map into `lens_blur`.
+    match s.aux.depth.as_deref() {
+        Some(depth) => {
+            let plane = lightcraft_pipeline::lensblur::depth_plane(depth, &plan.frame, w, h, &host_img);
+            lightcraft_pipeline::lensblur::apply(&mut host_img, &plane, &s.lens_blur, plan.px_per_long);
+        }
+        None => {
+            lightcraft_pipeline::lens_blur::apply_with(
+                &mut host_img,
+                s,
+                &plan.frame,
+                plan.px_per_long,
+                plan.mattes.as_deref(),
+                plan.lens_subject.as_deref(),
+            );
+        }
+    }
     cx.gpu.upload(rgb_words(&host_img))
 }
 
