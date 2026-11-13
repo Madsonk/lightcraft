@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       upstream_tag:
-        description: 'Upstream tag to try (e.g. v0.21.0). Empty = latest upstream release.'
+        description: 'Upstream tag to try (e.g. v0.21.1). Empty = latest upstream release.'
         required: false
         type: string
 permissions:
@@ -18,14 +18,17 @@ concurrency:
 jobs:
   port:
     runs-on: macos-14
-    timeout-minutes: 180
+    timeout-minutes: 240
     env:
       APP: lightcraft
       UPSTREAM_REPO: storytold/lightcraft
     steps:
-      - uses: actions/checkout@v4
-        with: { ref: madson, fetch-depth: 0 }
-      - name: Configure
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: madson
+          fetch-depth: 0
+      - name: Configure git
         run: |
           git remote add upstream "https://github.com/${UPSTREAM_REPO}.git" || git remote set-url upstream "https://github.com/${UPSTREAM_REPO}.git"
           git config user.name  "madson-port-bot"
@@ -33,26 +36,32 @@ jobs:
           git config rerere.enabled true
           git config merge.conflictStyle zdiff3
           git config diff.algorithm histogram
-      # rerere: reuse resolutions from previous ports instead of re-deciding them
+      # rerere: a conflict resolved once is reused by the next port.
       - name: Restore rerere cache
         uses: actions/cache@v4
         with:
           path: .git/rr-cache
-          key: rerere-${{ env.APP }}
+          key: rerere-lightcraft
           restore-keys: rerere-
       - name: Resolve tag
         id: tag
-        env: { GH_TOKEN: ${{ github.token }} }
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ inputs.upstream_tag }}"
           if [ -z "$TAG" ]; then TAG=$(gh release view --repo "${UPSTREAM_REPO}" --json tagName -q .tagName); fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-      - run: git fetch upstream --tags
-      - name: Up to date?
+      - name: Fetch upstream
+        run: git fetch upstream --tags
+      - name: Already up to date?
         id: state
         run: |
-          if git merge-base --is-ancestor "${{ steps.tag.outputs.tag }}" HEAD; then echo "uptodate=yes" >> "$GITHUB_OUTPUT"; else echo "uptodate=no" >> "$GITHUB_OUTPUT"; fi
-      # Dry merge on a scratch branch: never touches madson until the gates are green.
+          if git merge-base --is-ancestor "${{ steps.tag.outputs.tag }}" HEAD; then
+            echo "uptodate=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "uptodate=no" >> "$GITHUB_OUTPUT"
+          fi
+      # Dry merge on a scratch branch: madson is never touched until the gates are green.
       - name: Dry merge
         id: merge
         if: steps.state.outputs.uptodate == 'no'
@@ -69,40 +78,48 @@ jobs:
       - name: Upload conflict list
         if: steps.merge.outputs.result == 'conflict'
         uses: actions/upload-artifact@v4
-        with: { name: 'conflicts-${{ steps.tag.outputs.tag }}', path: conflicts.txt }
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          name: conflicts
+          path: conflicts.txt
+      - name: Rust toolchain
         if: steps.merge.outputs.result == 'merged'
-        with: { components: clippy, rustfmt }
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Gates
         if: steps.merge.outputs.result == 'merged'
         run: |
           set -o pipefail
           cargo fmt --check
           cargo check -p lightcraft-engine --features faces,autoseg -p lightcraft-ui-egui -p lightcraft-cli
-          cargo clippy -p lightcraft-engine -p lightcraft-ui-egui -p lightcraft-cli -- -D warnings
-          cargo test -p lightcraft-engine --features faces,autoseg --lib -- cull portrait facemesh autoseg dust mask
+          cargo clippy -p lightcraft-engine --features faces,autoseg -- -D warnings
+          cargo clippy -p lightcraft-ui-egui -p lightcraft-cli -- -D warnings
+          cargo test -p lightcraft-engine --features faces,autoseg --lib
       - name: Save rerere cache
         if: always()
         uses: actions/cache@v4
         with:
           path: .git/rr-cache
-          key: rerere-${{ env.APP }}-${{ github.run_id }}
+          key: rerere-lightcraft-${{ github.run_id }}
           restore-keys: rerere-
       - name: Open a PR (never push to madson)
         if: steps.merge.outputs.result == 'merged'
-        env: { GH_TOKEN: ${{ github.token }} }
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git commit -m "Port ${{ steps.tag.outputs.tag }}: merge upstream into madson (bot)"
           git push origin "port-bot/${{ steps.tag.outputs.tag }}"
           gh pr create --repo "${{ github.repository }}" --base madson \
             --head "port-bot/${{ steps.tag.outputs.tag }}" \
             --title "Port ${{ steps.tag.outputs.tag }} : merge upstream (gates verts)" \
-            --body "Merge à blanc + cargo fmt/clippy/check/test verts. Relire docs/port-*.md avant de merger."
+            --body "Merge à blanc + fmt/clippy/check/tests verts. Relire docs/port-*.md avant de merger."
       - name: Report a conflict
         if: steps.merge.outputs.result == 'conflict'
-        env: { GH_TOKEN: ${{ github.token }} }
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh issue create --repo "${{ github.repository }}" \
             --title "Port ${{ steps.tag.outputs.tag }} : $(wc -l < conflicts.txt) fichiers en conflit" \
             --body-file conflicts.txt || true
-      - run: echo "port-check $APP ${{ steps.tag.outputs.tag }} => ${{ steps.merge.outputs.result || 'n/a' }}"
+      - name: Summary
+        run: echo "port-check $APP ${{ steps.tag.outputs.tag }} => ${{ steps.merge.outputs.result || 'n/a' }}"
