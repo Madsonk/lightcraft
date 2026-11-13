@@ -12,6 +12,9 @@
 pub const UPDATE_APP: craft_update::app::App = craft_update::app::App {
     icon_png: Some(include_bytes!("../../../assets/app-icon/hicolor/128x128/apps/ai.storyteller.lightcraft.png")),
     accent: Some([0xf2, 0xa5, 0x16]),
+    // The fork updates from its own releases: pointing at storytold/lightcraft would offer the
+    // official build and replace this one, losing every fork feature (madson port, 2026-11-13).
+    repo: "Madsonk/lightcraft",
     ..craft_update::suite::LIGHTCRAFT
 };
 
