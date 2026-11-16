@@ -349,12 +349,19 @@ pub(crate) fn drop_photos(app: &mut LightcraftApp, ctx: &egui::Context, ids: Vec
         app.session.catalog.photo(PhotoId(*id)).is_some_and(|p| !p.meta.keywords.iter().any(|k| same(&lightcraft_catalog::keywords::clean(k), path)))
     };
     let n = ids.iter().filter(|id| lacking(id)).count();
+    let videos = crate::panels::grid::all_videos(app, &ids);
     app.ui.dragging_photos = None;
     match app.run("photo.setMeta", json!({"ids": ids, "addKeywords": [path]})) {
-        Ok(_) => app.toast(
-            ctx,
-            crate::i18n::tr_format!("Added “{keyword}” to {n} photo{}", if n == 1 { "" } else { "s" }, keyword = path.replace('|', " › "), n = n),
-        ),
+        Ok(_) => {
+            let keyword = path.replace('|', " › ");
+            let plural = if n == 1 { "" } else { "s" };
+            let text = if videos {
+                crate::i18n::tr_format!("Added “{keyword}” to {n} video{}", plural, keyword = keyword, n = n)
+            } else {
+                crate::i18n::tr_format!("Added “{keyword}” to {n} photo{}", plural, keyword = keyword, n = n)
+            };
+            app.toast(ctx, text);
+        }
         Err(e) => app.toast(ctx, e),
     }
 }

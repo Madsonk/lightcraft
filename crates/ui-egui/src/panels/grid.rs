@@ -1218,11 +1218,18 @@ pub fn drag_feedback(app: &mut LightcraftApp, ctx: &egui::Context) {
     let Some(pos) = pos else { return };
     let t = Tokens::get(ctx);
     let n = ids.len();
+    let videos = all_videos(app, ids);
     ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
     // a drop target under the pointer says where they would go (only this frame's)
     let frame = ctx.cumulative_frame_nr();
     let hint = ctx.data(|d| d.get_temp::<(u64, String)>(egui::Id::unique("drag-photos-hint"))).filter(|(f, _)| *f == frame).map(|(_, text)| text);
-    let text = hint.unwrap_or_else(|| crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n));
+    let text = hint.unwrap_or_else(|| {
+        if videos {
+            crate::i18n::tr_format!("{n} video{}", if n == 1 { "" } else { "s" }, n = n)
+        } else {
+            crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n)
+        }
+    });
     egui::Area::new(egui::Id::unique("drag-photos")).order(egui::Order::Tooltip).interactable(false).fixed_pos(pos + vec2(14.0, 10.0)).show(
         ctx,
         |ui| {
@@ -1235,6 +1242,12 @@ pub fn drag_feedback(app: &mut LightcraftApp, ctx: &egui::Context) {
 }
 
 pub use super::filterbar::label_color;
+
+/// True when `ids` are all videos: the Videos view drags those, and the drag label and the drop
+/// notices then say "video" instead of "photo" (a mixed drag keeps the photo wording).
+pub fn all_videos(app: &LightcraftApp, ids: &[u64]) -> bool {
+    !ids.is_empty() && ids.iter().all(|id| app.session.catalog.photo(PhotoId(*id)).is_some_and(|p| p.is_video()))
+}
 
 /// Albums hold library photos (issue #684): true when `ids` are photos and all of them are
 /// browsed (Local) ones, which album views never show.

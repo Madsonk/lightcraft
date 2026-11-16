@@ -392,13 +392,9 @@ fn folder_drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::R
     };
     let all_here = !photos.is_empty() && photos.iter().all(|p| here(p));
     let count = photos.len();
+    let videos = crate::panels::grid::all_videos(app, &ids);
     let released = ui.input(|i| i.pointer.primary_released());
-    let hint = match (&refused, all_here) {
-        (Some(_), _) => crate::i18n::tr("Can't be moved here").to_string(),
-        (None, true) => crate::i18n::tr_format!("Already in “{}”", name),
-        (None, false) => crate::i18n::tr_format!("Move {n} photo{} to “{}”", if count == 1 { "" } else { "s" }, name, n = count),
-    };
-    crate::panels::grid::drag_hint(ui.ctx(), hint);
+    crate::panels::grid::drag_hint(ui.ctx(), drop_hint(refused.is_some(), all_here, &name, count, videos));
     if let Some(why) = refused {
         ui.ctx().set_cursor_icon(egui::CursorIcon::NotAllowed);
         if released {
@@ -425,6 +421,24 @@ fn folder_drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::R
         } else {
             move_photos_here(app, ui.ctx(), Some(&ids), &n.path, &name);
         }
+    }
+}
+
+/// What the dragged label says over a Folders row: that it can't take them, that they are there
+/// already, or where a drop would put them. `videos`: they are all videos (dragged from the Videos
+/// view), which the label says.
+fn drop_hint(refused: bool, all_here: bool, name: &str, count: usize, videos: bool) -> String {
+    if refused {
+        return crate::i18n::tr("Can't be moved here").to_string();
+    }
+    if all_here {
+        return crate::i18n::tr_format!("Already in “{}”", name);
+    }
+    let plural = if count == 1 { "" } else { "s" };
+    if videos {
+        crate::i18n::tr_format!("Move {n} video{} to “{}”", plural, name, n = count)
+    } else {
+        crate::i18n::tr_format!("Move {n} photo{} to “{}”", plural, name, n = count)
     }
 }
 
@@ -472,10 +486,13 @@ pub(crate) fn move_photos(app: &mut LightcraftApp, ids: Option<&[u64]>, path: &s
 }
 
 /// What a move of `n` photos into the folder `name` says: how many moved and that Undo moves them
-/// back, or that they were there already.
-pub(crate) fn moved_text(n: u64, name: &str) -> String {
+/// back, or that they were there already. `videos`: they were all videos (dragged from the Videos
+/// view), which the message says.
+pub(crate) fn moved_text(n: u64, name: &str, videos: bool) -> String {
     if n == 0 {
         crate::i18n::tr_format!("Already in “{}”", name)
+    } else if videos {
+        crate::i18n::tr_format!("Moved {n} video{} to “{}”. Edit → Undo moves them back.", if n == 1 { "" } else { "s" }, name, n = n)
     } else {
         crate::i18n::tr_format!("Moved {n} photo{} to “{}”. Edit → Undo moves them back.", if n == 1 { "" } else { "s" }, name, n = n)
     }
@@ -490,8 +507,12 @@ pub(crate) fn created_text(path: &str, parent: &str) -> String {
 
 /// [`move_photos`], saying how it went in a toast.
 fn move_photos_here(app: &mut LightcraftApp, ctx: &egui::Context, ids: Option<&[u64]>, path: &str, name: &str) {
+    let videos = match ids {
+        Some(ids) => crate::panels::grid::all_videos(app, ids),
+        None => false,
+    };
     match move_photos(app, ids, path) {
-        Ok(n) => app.toast(ctx, moved_text(n, name)),
+        Ok(n) => app.toast(ctx, moved_text(n, name, videos)),
         Err(e) => app.toast(ctx, e),
     }
 }

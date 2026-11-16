@@ -905,7 +905,7 @@ fn video_card(app: &mut LightcraftApp, ui: &mut egui::Ui, r: &Value) {
     let Some(id) = r["id"].as_u64() else { return };
     ui.vertical(|ui| {
         ui.set_width(VCARD);
-        let (pr, resp) = ui.allocate_exact_size(vec2(VCARD, VCARD * 9.0 / 16.0), Sense::click());
+        let (pr, resp) = ui.allocate_exact_size(vec2(VCARD, VCARD * 9.0 / 16.0), Sense::click_and_drag());
         register(ui, format!("videoCard:{id}"), pr);
         let shown = match r["poster"].as_str() {
             Some(p) => paint_picture(app, ui, pr, p, None),
@@ -931,6 +931,12 @@ fn video_card(app: &mut LightcraftApp, ui: &mut egui::Ui, r: &Value) {
         }
         if resp.clicked() {
             open_moment(app, id, None);
+        }
+        // a video can be dropped on an album, a keyword or a folder, as a grid photo can: the Videos
+        // view has no selection, so the drag carries that video alone (only the primary button
+        // drags, so a right-button drag leaves the click alone)
+        if resp.drag_started_by(egui::PointerButton::Primary) {
+            app.ui.dragging_photos = Some(vec![id]);
         }
         let name = r["name"].as_str().unwrap_or_default();
         let g = crate::widgets::one_line(ui.painter(), name, t.semibold(12.0), t.text, VCARD);

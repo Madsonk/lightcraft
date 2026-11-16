@@ -5,10 +5,13 @@
 
 use std::time::Duration;
 
+use egui::{Pos2, Rect};
+use lightcraft_catalog::{AlbumId, PhotoId};
 use serde_json::{Value, json};
 
 use crate::headless::Headless;
 use crate::i18n::{Locale, set_language, tr};
+use crate::panels::grid;
 use crate::panels::videos::Section;
 use crate::state::ViewMode;
 use crate::{LightcraftApp, Services};
@@ -248,4 +251,226 @@ fn the_preview_plays_a_moment_without_sound_and_closes() {
     assert_eq!(r["ok"], true, "{r}");
     h.step();
     assert!(h.app.caches.videos.player.is_none(), "closed");
+}
+
+// ------------------------------------------------------------------ dragging a video out of the list
+
+/// `path` as a video file: the bytes are never read by a drop (an album, a keyword and a folder drop
+/// only change the catalog row, or move the file), so any content does.
+fn write_clip(path: &std::path::Path) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, b"a video file, not decoded by these tests").unwrap();
+}
+
+/// `path` in the catalog as a library video (as an import would leave it).
+fn add_video(s: &mut lightcraft_engine::Session, path: &std::path::Path) -> u64 {
+    use lightcraft_catalog::{MediaKind, Op, Photo, Source};
+    let id = s.catalog.alloc_photo_id();
+    let name = path.file_name().unwrap().to_string_lossy().to_string();
+    let mut p = Photo::new(id, Source::File { path: path.to_string_lossy().into() }, &name, "MP4", 320, 240, "2026-01-01T10:00:00");
+    p.kind = MediaKind::Video;
+    p.duration = Some(12.0);
+    s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    id.0
+}
+
+/// `path` in the catalog as a library photo (as an import would leave it).
+fn add_photo(s: &mut lightcraft_engine::Session, path: &std::path::Path) -> u64 {
+    use lightcraft_catalog::{Op, Photo, Source};
+    let id = s.catalog.alloc_photo_id();
+    let name = path.file_name().unwrap().to_string_lossy().to_string();
+    let p = Photo::new(id, Source::File { path: path.to_string_lossy().into() }, &name, "PNG", 8, 8, "2026-01-01T10:00:00");
+    s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    id.0
+}
+
+/// The Videos view on `s` with one video per `paths`, `set` applied to the window, settled.
+fn videos_view(mut s: lightcraft_engine::Session, paths: &[&std::path::Path], set: Value) -> (Headless, Vec<u64>) {
+    let ids = paths.iter().map(|p| add_video(&mut s, p)).collect();
+    let mut h = Headless::new(LightcraftApp::new(s, Services { png: None, ..Default::default() }), [1300.0, 1100.0], 1.0);
+    let r = h.request("ui.set", set, T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    (h, ids)
+}
+
+fn widget(h: &Headless, id: &str) -> Rect {
+    h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r).unwrap_or_else(|| panic!("no widget {id}"))
+}
+
+/// Press the primary button at `at`.
+fn press(h: &mut Headless, at: Pos2) {
+    h.app.synthetic.push(egui::Event::PointerMoved(at));
+    h.app.synthetic.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+}
+
+/// Move the pointer, pressed, from `from` to `to` over a few frames.
+fn glide(h: &mut Headless, from: Pos2, to: Pos2) {
+    for i in 1..=8 {
+        h.app.synthetic.push(egui::Event::PointerMoved(from + (to - from) * (i as f32 / 8.0)));
+        h.step();
+    }
+}
+
+fn release(h: &mut Headless, at: Pos2) {
+    h.app.synthetic.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    h.step();
+}
+
+/// Click a widget the way a person does (press and release on it).
+fn click(h: &mut Headless, id: &str) {
+    let at = widget(h, id).center();
+    press(h, at);
+    release(h, at);
+}
+
+/// What the dragged label says this frame instead of the count, if a drop target set it.
+fn hint(h: &Headless) -> Option<String> {
+    h.view.ctx.data(|d| d.get_temp::<(u64, String)>(egui::Id::unique("drag-photos-hint"))).map(|(_, text)| text)
+}
+
+fn toast(h: &Headless) -> String {
+    h.app.ui.toast.as_ref().map(|(t, _, _)| t.clone()).unwrap_or_default()
+}
+
+fn keywords_of(h: &Headless, id: u64) -> Vec<String> {
+    h.app.session.catalog.photo(lightcraft_catalog::PhotoId(id)).unwrap().meta.keywords.clone()
+}
+
+/// A video dragged from the list joins an album, and the notice says "video".
+#[test]
+fn a_video_dragged_from_the_videos_view_joins_an_album() {
+    let dir = temp_dir("album-drop");
+    let clip = dir.join("clip.mp4");
+    write_clip(&clip);
+    let (mut h, ids) =
+        videos_view(lightcraft_engine::Session::with_demo(), &[&clip], json!({"view": "videos", "leftPanel": true, "sidebar": ["albums"]}));
+    let id = ids[0];
+    let album = h.app.run("album.create", json!({"name": "Plage", "addSelected": false})).unwrap()["id"].as_u64().unwrap();
+    h.settle(SETTLE);
+    // Given its poster pressed and dragged onto the album's row
+    let from = widget(&h, &format!("videoCard:{id}")).center();
+    let row = widget(&h, &format!("source:album:{album}")).center();
+    press(&mut h, from);
+    glide(&mut h, from, row);
+    // Then the drag carries that video alone: the Videos view has no selection
+    assert_eq!(h.app.ui.dragging_photos, Some(vec![id]));
+    assert!(!h.app.session.selection.contains(PhotoId(id)), "the Videos view selects nothing");
+    release(&mut h, row);
+    // and the drop put it in the album, saying "video"
+    assert_eq!(h.app.session.catalog.album(AlbumId(album)).unwrap().photos, vec![PhotoId(id)]);
+    assert_eq!(toast(&h), "Added 1 video to “Plage”");
+    assert!(h.app.ui.dragging_photos.is_none(), "the drag ended");
+}
+
+/// A video dragged from the list takes a keyword from the Keyword List, and the notice says "video".
+#[test]
+fn a_video_dragged_from_the_videos_view_is_tagged_in_the_keyword_list() {
+    let dir = temp_dir("keyword-drop");
+    let clip = dir.join("clip.mp4");
+    write_clip(&clip);
+    let (mut h, ids) = videos_view(lightcraft_engine::Session::with_demo(), &[&clip], json!({"view": "videos", "right": "keywords"}));
+    let id = ids[0];
+    assert!(keywords_of(&h, id).is_empty());
+    let from = widget(&h, &format!("videoCard:{id}")).center();
+    let row = widget(&h, "keywordRow:mountains").center();
+    press(&mut h, from);
+    glide(&mut h, from, row);
+    release(&mut h, row);
+    assert_eq!(keywords_of(&h, id), vec!["mountains".to_string()]);
+    assert_eq!(toast(&h), "Added “mountains” to 1 video");
+}
+
+/// A video dragged from the list onto a folder asks first (titled for videos), then moves there on
+/// disk, and the label and the notice say "video".
+#[test]
+fn a_video_dragged_from_the_videos_view_moves_to_a_folder() {
+    let dir = temp_dir("folder-drop");
+    let (trip, home) = (dir.join("trip"), dir.join("home"));
+    let (clip, other) = (trip.join("clip.mp4"), home.join("other.mp4"));
+    write_clip(&clip);
+    write_clip(&other);
+    let (mut h, ids) = videos_view(
+        lightcraft_engine::Session::new().with_fs(),
+        &[&clip, &other],
+        json!({"view": "videos", "leftPanel": true, "sidebar": ["folders"]}),
+    );
+    let id = ids[0];
+    let name = dir.file_name().unwrap().to_string_lossy().to_string();
+    let from = widget(&h, &format!("videoCard:{id}")).center();
+    let row = widget(&h, &format!("source:libfolder:{}", dir.to_string_lossy().replace('\\', "/"))).center();
+    press(&mut h, from);
+    glide(&mut h, from, row);
+    // (the label is read from the pointer as the frame before saw it)
+    h.step();
+    // Then the label says where it would go, and "video"
+    assert_eq!(hint(&h).as_deref(), Some(format!("Move 1 video to “{name}”").as_str()));
+    // and the release asks first: nothing moved yet
+    release(&mut h, row);
+    assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::MovePhotos { .. })), "{:?}", h.app.ui.dialog);
+    assert!(clip.is_file(), "not before Move");
+    // the question is titled for videos, not photos
+    let dlg = h.app.ui.dialog.clone().expect("the question");
+    assert_eq!(crate::dialogs::dialog_title(&h.app, &dlg), "Move Videos");
+    h.step();
+    click(&mut h, "button:dialogOk");
+    // Then the file moved, the video follows it, and the notice says "video"
+    assert!(dir.join("clip.mp4").is_file() && !clip.exists(), "moved on disk");
+    assert_eq!(toast(&h), format!("Moved 1 video to “{name}”. Edit → Undo moves them back."));
+    assert!(h.app.ui.dragging_photos.is_none(), "the drag ended");
+    // and one Undo moves it back
+    h.app.run("edit.undo", json!({})).unwrap();
+    assert!(clip.is_file() && !dir.join("clip.mp4").exists(), "back where it was");
+}
+
+/// A drag of photos and videos together keeps the photo words, as it kept them before videos could be
+/// dragged.
+#[test]
+fn only_a_drag_of_nothing_but_videos_says_video() {
+    let dir = temp_dir("all-videos");
+    let clip = dir.join("clip.mp4");
+    write_clip(&clip);
+    let (mut h, ids) = videos_view(lightcraft_engine::Session::new().with_fs(), &[&clip], json!({"view": "videos"}));
+    let video = ids[0];
+    let image = add_photo(&mut h.app.session, &dir.join("p.png"));
+    assert!(grid::all_videos(&h.app, &[video]), "a video");
+    assert!(!grid::all_videos(&h.app, &[video, image]), "a photo among them: photo words");
+    assert!(!grid::all_videos(&h.app, &[image]), "a photo");
+    assert!(!grid::all_videos(&h.app, &[]), "nothing");
+}
+
+/// The texts a drop of videos shows, in both languages.
+#[test]
+fn the_words_of_a_video_drop_say_video() {
+    assert_eq!(crate::panels::left::moved_text(1, "home", true), "Moved 1 video to “home”. Edit → Undo moves them back.");
+    assert_eq!(crate::panels::left::moved_text(3, "home", true), "Moved 3 videos to “home”. Edit → Undo moves them back.");
+    assert_eq!(crate::panels::left::moved_text(1, "home", false), "Moved 1 photo to “home”. Edit → Undo moves them back.");
+    assert_eq!(crate::panels::left::moved_text(0, "home", true), "Already in “home”");
+    set_language(Locale::Fr);
+    assert_eq!(crate::i18n::tr_format!("{n} video{}", "", n = 1), "1 vidéo");
+    assert_eq!(crate::i18n::tr_format!("{n} video{}", "s", n = 4), "4 vidéos");
+    assert_eq!(crate::i18n::tr_format!("Added {n} video{} to “{}”", "", "Plage", n = 1), "1 vidéo ajoutée(s) à « Plage »");
+    assert_eq!(crate::i18n::tr_format!("Added “{keyword}” to {n} video{}", "", keyword = "montagnes", n = 1), "« montagnes » ajouté à 1 vidéo");
+    assert_eq!(
+        crate::i18n::tr_format!("Moved {n} video{} to “{}”. Edit → Undo moves them back.", "", "home", n = 1),
+        "1 vidéo déplacée vers « home ». Modifier → Annuler les remet en place."
+    );
+    assert_eq!(crate::i18n::tr_format!("Move {n} video{} to “{}”?", "", "home", n = 1), "Déplacer 1 vidéo vers « home » ?");
+    assert_eq!(crate::panels::left::moved_text(1, "home", true), "1 vidéo déplacée vers « home ». Modifier → Annuler les remet en place.");
+    assert_eq!(crate::panels::left::moved_text(2, "home", true), "2 vidéos déplacées vers « home ». Modifier → Annuler les remet en place.");
+    assert_eq!(tr("Move Videos"), "Déplacer les vidéos");
+    assert_eq!(tr("Move Photos"), "Déplacer les photos");
+    set_language(Locale::En);
 }

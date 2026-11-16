@@ -433,7 +433,7 @@ fn title_bar_handle(ctx: &egui::Context, band: egui::Rect, dialog: egui::Rect) {
 }
 
 /// The title of a dialog.
-fn dialog_title(app: &LightcraftApp, dlg: &Dialog) -> String {
+pub(crate) fn dialog_title(app: &LightcraftApp, dlg: &Dialog) -> String {
     match dlg {
         Dialog::TextPrompt { title, .. } => title.as_str(),
         Dialog::NewAlbum { folder: true, .. } => "Create Folder",
@@ -475,6 +475,7 @@ fn dialog_title(app: &LightcraftApp, dlg: &Dialog) -> String {
         Dialog::Merge { opts } => opts.title(),
         Dialog::Settings { .. } => "Settings",
         Dialog::ConfirmDelete { .. } => "Delete Photos",
+        Dialog::MovePhotos { ids, .. } if crate::panels::grid::all_videos(app, ids) => "Move Videos",
         Dialog::MovePhotos { .. } => "Move Photos",
         Dialog::LightroomCatalog { .. } => "Lightroom Classic Catalog",
         Dialog::LightroomDestination { .. } => "Import Lightroom Catalog",
@@ -759,8 +760,9 @@ fn confirmed(app: &mut LightcraftApp, ctx: &egui::Context, dlg: &mut Dialog) -> 
         }
         // a move says how it went, or why nothing moved
         Ok(r) if matches!(dlg, Dialog::MovePhotos { .. }) => {
-            if let Dialog::MovePhotos { name, .. } = dlg {
-                let text = crate::panels::left::moved_text(r["moved"].as_u64().unwrap_or(0), name);
+            if let Dialog::MovePhotos { ids, name, .. } = dlg {
+                let videos = crate::panels::grid::all_videos(app, ids);
+                let text = crate::panels::left::moved_text(r["moved"].as_u64().unwrap_or(0), name, videos);
                 app.toast(ctx, text);
             }
             closed = true;
@@ -1981,10 +1983,16 @@ fn delete_effects_body(ui: &mut egui::Ui, t: &Tokens, dlg: &mut Dialog) {
 }
 
 /// The body of the MovePhotos dialog.
-fn move_photos_body(ui: &mut egui::Ui, t: &Tokens, dlg: &mut Dialog) {
+fn move_photos_body(app: &LightcraftApp, ui: &mut egui::Ui, t: &Tokens, dlg: &mut Dialog) {
     let Dialog::MovePhotos { ids, name, dont_ask, .. } = dlg else { return };
     let n = ids.len();
-    ui.label(crate::i18n::tr_format!("Move {n} photo{} to “{}”?", if n == 1 { "" } else { "s" }, name, n = n));
+    let plural = if n == 1 { "" } else { "s" };
+    let question = if crate::panels::grid::all_videos(app, ids) {
+        crate::i18n::tr_format!("Move {n} video{} to “{}”?", plural, name, n = n)
+    } else {
+        crate::i18n::tr_format!("Move {n} photo{} to “{}”?", plural, name, n = n)
+    };
+    ui.label(question);
     ui.label(egui::RichText::new(crate::i18n::tr("Their files and XMP sidecars move on disk. Edit → Undo moves them back.")).color(t.text_dim));
     ui.add_space(4.0);
     let c = ui.checkbox(dont_ask, crate::i18n::tr("Don't ask again"));
@@ -2154,7 +2162,7 @@ fn dialog_content(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, body_m
             ui.label(crate::i18n::tr_format!("Move {what} to Recently Deleted?", what = what));
             ui.label(egui::RichText::new(crate::i18n::tr("They can be restored from Recently Deleted until it is emptied.")).color(t.text_dim));
         }
-        Dialog::MovePhotos { .. } => move_photos_body(ui, t, dlg),
+        Dialog::MovePhotos { .. } => move_photos_body(app, ui, t, dlg),
         d @ Dialog::SynchronizeFolder { .. } => crate::sync::body(app, ui, d),
         Dialog::LightroomCatalog { .. } => lightroom_catalog_body(app, ui, t, dlg),
         d @ Dialog::LightroomDestination { .. } => crate::lightroom_destination::body(app, ui, d),
