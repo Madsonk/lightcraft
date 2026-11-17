@@ -4286,5 +4286,12 @@
   "tool:Develop": "Réglages",
   "tool:Presets": "Styles",
   "tool:Red Eye": "Yeux rouges",
-  "tool:Proposals": "Propositions"
+  "tool:Proposals": "Propositions",
+  "Analogous": "Analogues",
+  "Complementary": "Complémentaires",
+  "Cool": "Froid",
+  "Split": "Scindé",
+  "Triadic": "Triadique",
+  "Warm": "Chaud",
+  "Harmonize the overall colour toward this scheme (Colour Mixer, editable)": "Harmoniser la couleur globale vers ce schéma (Mélangeur de couleurs, modifiable)"
 }

@@ -36,6 +36,8 @@ struct Pending {
 struct State {
     /// 0 Light, 1 Medium, 2 Strong.
     impact: usize,
+    /// Overall colour target: 0 = none, 1.. = a scheme.
+    color_scheme: usize,
     steps: BTreeMap<String, bool>,
     result: Option<Value>,
     open: bool,
@@ -47,6 +49,15 @@ struct State {
 }
 
 const IMPACTS: [(&str, &str); 3] = [("Light", "light"), ("Medium", "medium"), ("Strong", "strong")];
+const COLOR_SCHEMES: [(&str, Option<&str>); 7] = [
+    ("None", None),
+    ("Warm", Some("warm")),
+    ("Cool", Some("cool")),
+    ("Complementary", Some("complementary")),
+    ("Analogous", Some("analogous")),
+    ("Triadic", Some("triadic")),
+    ("Split", Some("split")),
+];
 
 /// The Retouch space works on the photo being retouched, the Library on the selection.
 fn in_retouch_space(app: &LightcraftApp) -> bool {
@@ -63,7 +74,11 @@ fn ids_of(app: &LightcraftApp) -> Vec<u64> {
 }
 
 fn params(st: &State, ids: &[u64]) -> Value {
-    json!({"ids": ids, "recipe": "natural-skin", "impact": IMPACTS[st.impact.min(2)].1, "steps": st.steps})
+    let mut p = json!({"ids": ids, "recipe": "natural-skin", "impact": IMPACTS[st.impact.min(2)].1, "steps": st.steps});
+    if let Some(scheme) = COLOR_SCHEMES[st.color_scheme.min(COLOR_SCHEMES.len() - 1)].1 {
+        p["target"] = json!({"scheme": scheme});
+    }
+    p
 }
 
 /// Validate: virtual copies, the original untouched. One call per photo (the plan of each is cached by the
@@ -170,12 +185,25 @@ pub(crate) fn pair(app: &mut LightcraftApp, ui: &mut egui::Ui, active: u64, afte
     }
 }
 
-/// "5 of 8 steps · Medium · skin texture −30 %": the plan in one line.
+/// "7 of 8 steps · Medium · 1 face · skin texture −30 %": the plan in one line.
 fn summary(p: &Value, impact: &str) -> String {
     let steps = p["steps"].as_array().cloned().unwrap_or_default();
     let on = steps.iter().filter(|s| s["enabled"].as_bool().unwrap_or(false) && s["available"].as_bool().unwrap_or(false)).count();
+    let faces = p["faces"].as_u64().unwrap_or(0);
+    let face_note = match (p["mode"].as_str().unwrap_or("flat"), faces) {
+        ("portrait", 1) => " · 1 face".to_string(),
+        ("portrait", n) if n > 1 => format!(" · {n} faces"),
+        _ => String::new(),
+    };
     let texture = p["qc"]["textureChange"].as_f64().map(|v| format!(" · {}", tr_format!("skin texture {:+.0} %", v * 100.0))).unwrap_or_default();
-    tr_format!("{on} of {total} steps · {impact}{texture}", on = on, total = steps.len(), impact = tr(impact), texture = texture)
+    tr_format!(
+        "{on} of {total} steps · {impact}{face_note}{texture}",
+        on = on,
+        total = steps.len(),
+        impact = tr(impact),
+        face_note = face_note,
+        texture = texture
+    )
 }
 
 fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &mut State) {
@@ -199,6 +227,18 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &mut State) {
             let r = text_button(ui, &format!("proposalsImpact{i}"), label, st.impact == i);
             if r.clicked() && st.impact != i {
                 st.impact = i;
+                st.result = None;
+            }
+        }
+    });
+    // overall colour target (enables the "Overall colour" step; schemes work on every photo)
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new(tr("Color")).color(t.text_dim).size(12.0));
+        for (i, (label, _)) in COLOR_SCHEMES.iter().enumerate() {
+            let r = text_button(ui, &format!("proposalsColor{i}"), tr(label), st.color_scheme == i)
+                .on_hover_text(tr("Harmonize the overall colour toward this scheme (Colour Mixer, editable)"));
+            if r.clicked() && st.color_scheme != i {
+                st.color_scheme = i;
                 st.result = None;
             }
         }
@@ -253,6 +293,9 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &mut State) {
     });
     if let Some(p) = &photo {
         ui.label(RichText::new(summary(p, IMPACTS[st.impact.min(2)].0)).color(t.text_label).size(12.0));
+        if let Some(note) = p["faceNote"].as_str().filter(|s| !s.is_empty()) {
+            ui.label(RichText::new(format!("⚠ {note}")).color(t.caution).size(11.0));
+        }
         for w in p["steps"].as_array().into_iter().flatten().flat_map(|s| s["warnings"].as_array().into_iter().flatten()).filter_map(Value::as_str) {
             ui.label(RichText::new(format!("⚠ {w}")).color(t.caution).size(11.0));
         }
