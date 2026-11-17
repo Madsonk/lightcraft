@@ -253,6 +253,51 @@ fn the_preview_plays_a_moment_without_sound_and_closes() {
     assert!(h.app.caches.videos.player.is_none(), "closed");
 }
 
+/// A folder drop takes its videos too: the review lists the clip beside the photo, and the direct
+/// import queues it (a folder's videos used to be skipped in silence).
+#[test]
+fn a_folder_drop_takes_its_videos_too() {
+    let dir = temp_dir("folder-videos");
+    let img = lightcraft_raster::Rgba8 { width: 64, height: 48, data: vec![[90, 120, 160, 255]; 64 * 48] };
+    let bytes = lightcraft_codecs::encode_png(&lightcraft_codecs::EncodeImage::rgba8(&img), &lightcraft_codecs::EncodeMeta::default()).unwrap();
+    std::fs::write(dir.join("p.png"), bytes).unwrap();
+    write_clip(&dir.join("c.mp4"));
+    let mut s = lightcraft_engine::Session::new().with_fs();
+    s.open_library(dir.join("lib"), false).unwrap();
+    let mut h = Headless::new(LightcraftApp::new(s, Services::default()), [1300.0, 900.0], 1.0);
+    h.settle(SETTLE);
+    let folder = dir.to_string_lossy().to_string();
+    // the review of a drop lists the clip
+    crate::import::open(&mut h.app, vec![folder.clone()]).unwrap();
+    assert!(h.step_until(T, |h| matches!(h.app.ui.dialog, Some(crate::state::Dialog::Import { .. }))), "the review opens");
+    let Some(crate::state::Dialog::Import { opts }) = &h.app.ui.dialog else { panic!("no import review") };
+    let names: Vec<&str> = opts.candidates.iter().map(|c| c.name.as_str()).collect();
+    assert!(names.contains(&"p.png") && names.contains(&"c.mp4"), "the photo and its clip: {names:?}");
+    h.app.ui.dialog = None;
+    h.step();
+    // and the direct import queues it (`Settings ▸ Import ▸ import dropped files directly`)
+    let r = crate::import::start_paths(&mut h.app, vec![folder]);
+    assert!(r.is_ok(), "{r:?}");
+    assert!(
+        h.step_until(T, |h| h.app.import.as_ref().is_some_and(|t| t.total == 2)),
+        "the photo and the clip are queued (total: {:?})",
+        h.app.import.as_ref().map(|t| t.total)
+    );
+    h.settle(SETTLE);
+    let photos: Vec<String> = h
+        .app
+        .session
+        .catalog
+        .photos()
+        .filter(|p| p.in_library())
+        .filter_map(|p| match &p.source {
+            lightcraft_catalog::Source::File { path } => Some(path.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(photos.iter().any(|p| p.ends_with("p.png")), "the photo is imported: {photos:?}");
+}
+
 // ------------------------------------------------------------------ dragging a video out of the list
 
 /// `path` as a video file: the bytes are never read by a drop (an album, a keyword and a folder drop

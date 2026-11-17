@@ -128,6 +128,11 @@ pub fn expand_report(paths: &[String], skip: Option<&Path>, limits: crate::walk:
     expand_report_noting(paths, skip, limits, None, false)
 }
 
+/// [`expand_report`], taking the videos of folders too when `videos` (see [`expand_kinds`]).
+pub fn expand_report_kinds(paths: &[String], skip: Option<&Path>, limits: crate::walk::Limits, videos: bool) -> Expansion {
+    expand_report_noting(paths, skip, limits, None, videos)
+}
+
 /// ([`expand_report`], handing the listing of every folder that is walked to `note`, as
 /// [`expand_noting`] does, and taking the videos of folders too when `videos`.)
 fn expand_report_noting(

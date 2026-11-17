@@ -232,7 +232,7 @@ pub fn start(app: &mut LightcraftApp, d: &ImportDialog) -> Result<Value, String>
         (true, false) => "copy",
         (true, true) => "move",
     };
-    let mut params = json!({"mode": mode, "keywords": d.keywords()});
+    let mut params = json!({"mode": mode, "keywords": d.keywords(), "videos": true});
     if !d.recipe.is_empty() {
         params["recipe"] = recipe_items(&d.recipe);
     }
@@ -269,9 +269,10 @@ pub fn start(app: &mut LightcraftApp, d: &ImportDialog) -> Result<Value, String>
     Ok(json!({"importing": total}))
 }
 
-/// Start importing `paths` (files or folders) in the background, e.g. dropped on the window.
+/// Start importing `paths` (files or folders) in the background, e.g. dropped on the window. A
+/// folder's videos are imported too, like `videos.import` (`library.import` with `videos: true`).
 pub fn start_paths(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value, String> {
-    start_paths_with(app, paths, json!({"mode": "add"}))
+    start_paths_with(app, paths, json!({"mode": "add", "videos": true}))
 }
 
 /// [`start_paths`] with `library.import`'s options (`{"mode": "add", "videos": true}`: a folder's

@@ -147,6 +147,7 @@ pub fn open(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value, String
     }
     let sources = paths.clone();
     let (input, paths) = ScanInput::new(&mut app.session, &paths);
+    let input = input.with_videos(true);
     let progress = std::sync::Arc::new(ScanProgress::default());
     let (tx, rx) = std::sync::mpsc::channel();
     let p = progress.clone();

@@ -2382,6 +2382,25 @@ fn import_preview_reports_what_the_scan_skipped() {
     let _ = std::fs::remove_dir_all(&deep);
 }
 
+/// `library.importPreview` takes a folder's videos too when asked (`videos: true`, as the review
+/// of a dropped folder and the import that follows do), and leaves them out otherwise.
+#[test]
+fn import_preview_takes_a_folders_videos_when_asked() {
+    let src = temp_dir("preview-videos");
+    write_png(&src.join("a.png"), 1);
+    std::fs::write(src.join("clip.mp4"), b"a video, not probed as a photo").unwrap();
+    let mut s = Session::new().with_fs();
+    let photos = s.execute("library.importPreview", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    assert_eq!(photos["scanned"], 1, "the clip is left out by default: {photos}");
+    assert_eq!(photos["skipped"]["unsupported"], 1, "and counted as skipped: {photos}");
+    let all = s.execute("library.importPreview", &json!({"paths": [src.to_string_lossy()], "videos": true})).unwrap();
+    assert_eq!(all["scanned"], 2, "the photo and the clip: {all}");
+    assert_eq!(ids(&all, "candidates"), 2, "{all}");
+    assert_eq!(all["skipped"], json!({"unreadable": 0, "unsupported": 0}), "nothing is left out: {all}");
+    assert!(all["candidates"].as_array().is_some_and(|c| c.iter().any(|c| c["name"] == "clip.mp4")), "{all}");
+    let _ = std::fs::remove_dir_all(&src);
+}
+
 /// XMP sidecars are read with their photos, so they are not "skipped": the expansion, the scan and
 /// `library.importPreview` count them (in any letter case, in subfolders too) as nothing, and still
 /// count every other file that is not a photo.

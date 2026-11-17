@@ -1,4 +1,4 @@
-use super::files::{Seen, expand, expand_report, is_supported, probe_all, reusable_probes};
+use super::files::{Seen, expand, expand_report_kinds, is_supported, probe_all, reusable_probes};
 use super::types::ImportCandidate;
 use super::{HashMap, Path, PathBuf, PhotoId, ProbeInfo, Session, Source};
 
@@ -12,6 +12,9 @@ pub struct ScanInput {
     /// ([`library_hashes`]), on the scan's thread.
     library: std::sync::Arc<lightcraft_catalog::Catalog>,
     cache: HashMap<String, ProbeInfo>,
+    /// Take the videos of folders too, as an import with `videos: true` would (a review that may
+    /// then import them; a file named directly is always probed).
+    videos: bool,
 }
 
 /// The library's photos of `files`: path → (photo, its summary as a candidate that is there
@@ -91,9 +94,21 @@ impl ScanInput {
         // (no table of the library here: this is the session's thread, and the library may hold
         // millions of photos. The scan looks up what it finds)
         let library = std::sync::Arc::new(s.catalog.clone());
-        let input =
-            ScanInput { probe: adopting_full_hashes(s, s.media.file_probe.clone()), skip, library, cache: std::mem::take(&mut s.import_probes) };
+        let input = ScanInput {
+            probe: adopting_full_hashes(s, s.media.file_probe.clone()),
+            skip,
+            library,
+            cache: std::mem::take(&mut s.import_probes),
+            videos: false,
+        };
         (input, paths.to_vec())
+    }
+
+    /// Take the videos of the folders this scan walks too ([`expand_report_kinds`]): the review of a
+    /// folder drop or of an Import dialog lists them, so the import that follows can add them.
+    pub fn with_videos(mut self, videos: bool) -> Self {
+        self.videos = videos;
+        self
     }
 
     /// The folder a scan never enters (the library's own).
@@ -337,8 +352,14 @@ pub fn scan(s: &mut Session, paths: &[String]) -> Vec<ImportCandidate> {
 /// [`scan`] keeping what the walks left out. The probes are already kept in the session for the
 /// import that follows, so `probes` of the output is empty.
 pub fn scan_report(s: &mut Session, paths: &[String]) -> ScanOutput {
+    scan_report_kinds(s, paths, false)
+}
+
+/// [`scan_report`], taking the videos of folders too when `videos` (`library.importPreview` with
+/// `videos: true`, as the import that follows would).
+pub fn scan_report_kinds(s: &mut Session, paths: &[String], videos: bool) -> ScanOutput {
     let (input, paths) = ScanInput::new(s, paths);
-    let mut out = scan_with(input, &paths, &ScanProgress::default());
+    let mut out = scan_with(input.with_videos(videos), &paths, &ScanProgress::default());
     s.import_probes = std::mem::take(&mut out.probes);
     out
 }
@@ -346,7 +367,7 @@ pub fn scan_report(s: &mut Session, paths: &[String]) -> ScanOutput {
 /// [`scan`] without the session, so it can run on a worker thread. Stops early (returning what it
 /// has) when `progress.cancel` is set.
 pub fn scan_with(input: ScanInput, paths: &[String], progress: &ScanProgress) -> ScanOutput {
-    let expansion = expand_report(paths, input.skip.as_deref(), crate::walk::Limits::default());
+    let expansion = expand_report_kinds(paths, input.skip.as_deref(), crate::walk::Limits::default(), input.videos);
     let mut out = scan_files(input, expansion.files, progress);
     out.truncated = expansion.truncated;
     out.unreadable = expansion.unreadable;
@@ -356,7 +377,7 @@ pub fn scan_with(input: ScanInput, paths: &[String], progress: &ScanProgress) ->
 
 /// [`scan_with`] for files that were found already (`paths` expanded, [`expand`]). The walks'
 /// diagnostics ([`ScanOutput::truncated`] and friends) are left empty: who expanded the paths has
-/// them ([`expand_report`]).
+/// them ([`expand_report`](super::files::expand_report)).
 pub(crate) fn scan_files(mut input: ScanInput, files: Vec<String>, progress: &ScanProgress) -> ScanOutput {
     use std::sync::atomic::Ordering::Relaxed;
     let by_path = library_files(&input.library, &files);

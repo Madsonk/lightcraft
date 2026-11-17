@@ -57,7 +57,7 @@ pub use job::{ImportJob, Prepared, candidate_thumb_key, import, import_with};
 pub(crate) use scan::scan_files;
 pub use scan::{
     ScanInput, ScanOutput, ScanProgress, browse_files, browse_order, browse_path, browse_queue, browse_queue_until, browse_spelling, scan,
-    scan_report, scan_with,
+    scan_report, scan_report_kinds, scan_with,
 };
 #[cfg(test)]
 use scan::{library_files, library_hashes};
