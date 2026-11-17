@@ -41,6 +41,9 @@ pub struct Filter {
     #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "null_as_empty")]
     pub flags: Vec<Flag>,
     pub kind: Option<MediaKind>,
+    /// Exclude this kind ("all except …").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_kind: Option<MediaKind>,
     pub edited: Option<bool>,
     pub album: Option<AlbumId>,
     /// Show "Recently Deleted" instead of the library.
@@ -53,14 +56,26 @@ pub struct Filter {
     pub library_folder: Option<String>,
     /// A keyword; hierarchical keywords match their children too (`travel` finds `travel|italy`).
     pub keyword: Option<String>,
+    /// Exclude photos having this keyword (hierarchical match).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_keyword: Option<String>,
+    /// Photos with no keyword.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub no_keyword: bool,
     /// A person: photos with a named face region of this name (case-insensitive), as read from XMP.
     pub person: Option<String>,
     /// Faces found by Analyze Faces: `any` (at least one face), `none` (analyzed, no face),
     /// `closedEyes` (a face with a closed eye), `eyesOpen` (faces, all eyes open) or `unanalyzed`.
     pub faces: Option<String>,
     pub camera: Option<String>,
+    /// Exclude this camera (case-insensitive).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_camera: Option<String>,
     /// Lens (case-insensitive substring).
     pub lens: Option<String>,
+    /// Exclude this lens (case-insensitive substring).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_lens: Option<String>,
     /// Capture date range, inclusive: `dateFrom` is compared as a lower bound (`2026-04-01`),
     /// `dateTo` as a prefix upper bound (`2026-04` includes all of April).
     pub date_from: Option<String>,
@@ -338,15 +353,24 @@ impl Filter {
         if let Some(k) = self.kind {
             v.push(format!("kind {}", format!("{k:?}").to_lowercase()));
         }
+        if let Some(k) = self.not_kind {
+            v.push(format!("kind not {}", format!("{k:?}").to_lowercase()));
+        }
         if let Some(e) = self.edited {
             v.push(if e { "edited".into() } else { "unedited".into() });
         }
+        if self.no_keyword {
+            v.push("no keyword".into());
+        }
         for (name, val) in [
             ("keyword", &self.keyword),
+            ("keyword not", &self.not_keyword),
             ("person", &self.person),
             ("faces", &self.faces),
             ("camera", &self.camera),
+            ("camera not", &self.not_camera),
             ("lens", &self.lens),
+            ("lens not", &self.not_lens),
             ("date", &self.date),
             ("folder", &self.library_folder),
             ("imported", &self.imported),
@@ -451,6 +475,9 @@ impl Filter {
         if self.flag.is_some_and(|f| f != p.flag) || self.label.is_some_and(|l| Some(l) != p.label) || self.kind.is_some_and(|k| k != p.kind) {
             return false;
         }
+        if self.not_kind.is_some_and(|k| k == p.kind) {
+            return false;
+        }
         if self.edited.is_some_and(|e| e != p.is_edited()) {
             return false;
         }
@@ -523,8 +550,16 @@ impl Filter {
         {
             return false;
         }
+        if self.no_keyword && !p.meta.keywords.is_empty() {
+            return false;
+        }
         if let Some(k) = &self.keyword
             && !p.meta.keywords.iter().any(|x| crate::keywords::is_under(x, k))
+        {
+            return false;
+        }
+        if let Some(k) = &self.not_keyword
+            && p.meta.keywords.iter().any(|x| crate::keywords::is_under(x, k))
         {
             return false;
         }
@@ -540,6 +575,16 @@ impl Filter {
         }
         if let Some(c) = &self.camera
             && !p.meta.camera.eq_ignore_ascii_case(c)
+        {
+            return false;
+        }
+        if let Some(c) = &self.not_camera
+            && p.meta.camera.eq_ignore_ascii_case(c)
+        {
+            return false;
+        }
+        if let Some(l) = &self.not_lens
+            && p.meta.lens.to_lowercase().contains(&l.to_lowercase())
         {
             return false;
         }

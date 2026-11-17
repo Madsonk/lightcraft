@@ -4294,5 +4294,9 @@
   "Triadic": "Triadique",
   "Warm": "Chaud",
   "Harmonize the overall colour toward this scheme (Colour Mixer, editable)": "Harmoniser la couleur globale vers ce schéma (Mélangeur de couleurs, modifiable)",
-  "Match Look": "Adapter le rendu (exposition/BB)"
+  "Match Look": "Adapter le rendu (exposition/BB)",
+  "not": "sauf",
+  "All except": "Tout sauf",
+  "Include this value": "Inclure cette valeur",
+  "Exclude this value": "Exclure cette valeur"
 }

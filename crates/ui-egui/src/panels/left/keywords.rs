@@ -6,6 +6,24 @@ use super::{Icon, KeywordNode, LightcraftApp, json};
 /// filters the grid by the keyword (children included), the triangle opens a level, and the
 /// context menu renames, merges or deletes the keyword across the library.
 pub(super) fn keyword_rows(app: &mut LightcraftApp, ui: &mut egui::Ui, nodes: &[KeywordNode], indent: f32) {
+    // virtual row: photos with no keyword
+    let none_count = app.session.catalog.photos().filter(|p| p.in_library() && p.meta.keywords.is_empty()).count();
+    let none_id = "keyword:__none__";
+    let none_sel = app.session.filter.no_keyword;
+    let none_label = crate::i18n::tr("No keyword").to_string();
+    if !out_of_sight(app, ui, none_id, &none_label, Some(none_count), indent, false) {
+        let resp = Row::new(none_id, Icon::Tag, &none_label).count(Some(none_count)).selected(none_sel).indent(indent).show(app, ui);
+        let resp = resp.on_hover_text(crate::i18n::tr("Photos with no keyword"));
+        if resp.clicked() {
+            browse_all_photos(app, !none_sel);
+            if none_sel {
+                let _ = app.run("library.filter", json!({"noKeyword": false}));
+            } else {
+                let _ =
+                    app.run("library.filter", json!({"keyword": serde_json::Value::Null, "notKeyword": serde_json::Value::Null, "noKeyword": true}));
+            }
+        }
+    }
     for n in nodes {
         // leaves (most keywords) have no open state to look up
         let open_id = (!n.children.is_empty()).then(|| egui::Id::unique(("kw-open", n.path.to_lowercase())));
@@ -32,7 +50,7 @@ fn keyword_row(app: &mut LightcraftApp, ui: &mut egui::Ui, n: &KeywordNode, id: 
     if resp.clicked() {
         let v = if sel { serde_json::Value::Null } else { json!(n.path) };
         browse_all_photos(app, !sel);
-        let _ = app.run("library.filter", json!({"keyword": v}));
+        let _ = app.run("library.filter", json!({"keyword": v, "notKeyword": serde_json::Value::Null, "noKeyword": false}));
     }
     crate::widgets::context_menu(&resp, |ui| {
         let has_sel = app.session.active().is_some();

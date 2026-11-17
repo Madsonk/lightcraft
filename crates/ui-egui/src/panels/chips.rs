@@ -91,8 +91,14 @@ pub(crate) fn display_label(chip: &FilterChip, filter: &lightcraft_catalog::Filt
     if chip.clear.get("only").is_some() {
         return format!("{} {}", tr("Only"), crate::i18n::tr_format!("{n} photos", n = if filter.only_none { 0 } else { filter.only.len() }));
     }
+    if chip.clear.get("noKeyword").is_some() {
+        return tr("No keyword").to_string();
+    }
     if let Some((prefix, value)) = chip.label.split_once(": ") {
-        return format!("{}: {}", tr(prefix), prefixed_value(prefix, value, filter));
+        let (neg, val) = value.strip_prefix("not ").map(|v| (true, v)).unwrap_or((false, value));
+        let val = if neg && prefix == "Type" { tr(val).to_string() } else { prefixed_value(prefix, val, filter) };
+        let val = if neg { format!("{} {val}", tr("not")) } else { val };
+        return format!("{}: {}", tr(prefix), val);
     }
     if let Some(value) = chip.label.strip_prefix("Rating ") {
         return format!("{} {value}", tr("Rating"));

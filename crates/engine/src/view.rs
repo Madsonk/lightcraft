@@ -191,6 +191,14 @@ pub fn filter_chips(f: &Filter, cat: &Catalog) -> Vec<FilterChip> {
         };
         add(format!("Type: {n}"), json!({"kind": Null}));
     }
+    if let Some(k) = f.not_kind {
+        let n = match k {
+            MediaKind::Image => "Photos",
+            MediaKind::Raw => "Raw",
+            MediaKind::Video => "Videos",
+        };
+        add(format!("Type: not {n}"), json!({"notKind": Null}));
+    }
     if let Some(m) = &f.merged {
         let n = match m.as_str() {
             "hdr" => "HDR",
@@ -203,11 +211,21 @@ pub fn filter_chips(f: &Filter, cat: &Catalog) -> Vec<FilterChip> {
     if let Some(e) = f.edited {
         add(if e { "Edited".into() } else { "Unedited".into() }, json!({"edited": Null}));
     }
-    for (name, key, val) in
-        [("Camera", "camera", &f.camera), ("Lens", "lens", &f.lens), ("Keyword", "keyword", &f.keyword), ("Person", "person", &f.person)]
-    {
+    if f.no_keyword {
+        add("No keyword".into(), json!({"noKeyword": false, "keyword": Null}));
+    }
+    for (name, key, val) in [
+        ("Camera", "camera", &f.camera),
+        ("Camera", "notCamera", &f.not_camera),
+        ("Lens", "lens", &f.lens),
+        ("Lens", "notLens", &f.not_lens),
+        ("Keyword", "keyword", &f.keyword),
+        ("Keyword", "notKeyword", &f.not_keyword),
+        ("Person", "person", &f.person),
+    ] {
         if let Some(x) = val {
-            add(format!("{name}: {x}"), json!({key: Null}));
+            let label = if key.starts_with("not") { format!("{name}: not {x}") } else { format!("{name}: {x}") };
+            add(label, json!({key: Null}));
         }
     }
     if let Some(d) = &f.date {

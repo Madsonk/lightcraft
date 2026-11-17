@@ -58,10 +58,12 @@ fn toggle(ui: &mut egui::Ui, id: &str, on: bool, tip: &str, draw: impl FnOnce(&e
 /// A dropdown showing `current`; `items` are (label, filter patch, selected).
 fn picker(app: &mut LightcraftApp, ui: &mut egui::Ui, id: &str, current: &str, active: bool, items: Vec<(String, Value, bool)>) {
     let t = Tokens::get(ui.ctx());
+    // camera/lens/keyword and kind labels are passed pre-translated/composed (or are raw metadata values)
+    let pretranslated = matches!(id, "camera" | "lens" | "keyword" | "kind");
     let r = crate::widgets::dropdown(
         ui,
         &format!("filter-{id}"),
-        if active && matches!(id, "camera" | "lens" | "keyword") { current } else { crate::i18n::tr(current) },
+        if pretranslated { current } else { crate::i18n::tr(current) },
         t.font(12.5),
         if active { t.text } else { t.text_label },
     );
@@ -72,17 +74,7 @@ fn picker(app: &mut LightcraftApp, ui: &mut egui::Ui, id: &str, current: &str, a
     egui::Popup::menu(&r).show(|ui| {
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
             for (label, patch, sel) in &items {
-                if ui
-                    .selectable_label(
-                        *sel,
-                        if matches!(id, "camera" | "lens" | "keyword") && patch.get(id).is_some_and(|value| !value.is_null()) {
-                            label.as_str()
-                        } else {
-                            crate::i18n::tr(label)
-                        },
-                    )
-                    .clicked()
-                {
+                if ui.selectable_label(*sel, if pretranslated { label.as_str() } else { crate::i18n::tr(label) }).clicked() {
                     chosen = Some(patch.clone());
                 }
             }
@@ -189,40 +181,58 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     ui.add_space(14.0);
 
     // kind + edited
-    let kind_label = match f.kind {
-        None => "All types",
-        Some(MediaKind::Image) => "Photos",
-        Some(MediaKind::Raw) => "Raw",
-        Some(MediaKind::Video) => "Videos",
+    let kind_excl = f.not_kind;
+    let kind_name = |k: MediaKind| match k {
+        MediaKind::Image => "Photos",
+        MediaKind::Raw => "Raw",
+        MediaKind::Video => "Videos",
     };
-    let kind_label = match f.merged.as_deref() {
-        Some("hdr") => "HDR",
-        Some("panorama") => "Panoramas",
-        Some("hdrPanorama") => "HDR Panoramas",
-        Some(_) => "Merged",
-        None => kind_label,
+    let (kind_label, kind_active) = if let Some(k) = kind_excl {
+        (format!("{} {}", crate::i18n::tr("All except"), crate::i18n::tr(kind_name(k))), true)
+    } else {
+        let l = match f.kind {
+            None => "All types",
+            Some(MediaKind::Image) => "Photos",
+            Some(MediaKind::Raw) => "Raw",
+            Some(MediaKind::Video) => "Videos",
+        };
+        let l = match f.merged.as_deref() {
+            Some("hdr") => "HDR",
+            Some("panorama") => "Panoramas",
+            Some("hdrPanorama") => "HDR Panoramas",
+            Some(_) => "Merged",
+            None => l,
+        };
+        (crate::i18n::tr(l).to_string(), f.kind.is_some() || f.merged.is_some())
     };
-    picker(
-        app,
-        ui,
-        "kind",
-        kind_label,
-        f.kind.is_some() || f.merged.is_some(),
-        [
-            ("All types", Value::Null, None),
-            ("Photos", json!("image"), Some(MediaKind::Image)),
-            ("Raw", json!("raw"), Some(MediaKind::Raw)),
-            ("Videos", json!("video"), Some(MediaKind::Video)),
-        ]
-        .into_iter()
-        .map(|(l, v, k)| (l.to_string(), json!({"kind": v, "merged": null}), f.kind == k && f.merged.is_none()))
-        .chain(
-            [("HDR", "hdr"), ("Panoramas", "panorama"), ("HDR Panoramas", "hdrPanorama")]
-                .into_iter()
-                .map(|(l, m)| (l.to_string(), json!({"kind": null, "merged": m}), f.merged.as_deref() == Some(m))),
-        )
-        .collect(),
-    );
+    let kind_items = {
+        let mut items: Vec<(String, Value, bool)> = vec![(
+            crate::i18n::tr("All types").to_string(),
+            json!({"kind": Value::Null, "notKind": Value::Null, "merged": Value::Null}),
+            f.kind.is_none() && kind_excl.is_none() && f.merged.is_none(),
+        )];
+        for (l, v, k) in [("Photos", "image", MediaKind::Image), ("Raw", "raw", MediaKind::Raw), ("Videos", "video", MediaKind::Video)] {
+            items.push((
+                crate::i18n::tr(l).to_string(),
+                json!({"kind": v, "notKind": Value::Null, "merged": Value::Null}),
+                f.kind == Some(k) && kind_excl.is_none() && f.merged.is_none(),
+            ));
+            items.push((
+                format!("{} {}", crate::i18n::tr("All except"), crate::i18n::tr(l)),
+                json!({"kind": Value::Null, "notKind": v, "merged": Value::Null}),
+                kind_excl == Some(k) && f.merged.is_none(),
+            ));
+        }
+        for (l, m) in [("HDR", "hdr"), ("Panoramas", "panorama"), ("HDR Panoramas", "hdrPanorama")] {
+            items.push((
+                crate::i18n::tr(l).to_string(),
+                json!({"kind": Value::Null, "notKind": Value::Null, "merged": m}),
+                f.merged.as_deref() == Some(m),
+            ));
+        }
+        items
+    };
+    picker(app, ui, "kind", &kind_label, kind_active, kind_items);
     let edited_label = match f.edited {
         None => "Edited or not",
         Some(true) => "Edited",
@@ -244,16 +254,79 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let ui: &mut egui::Ui = if two_rows { &mut row2 } else { &mut row1 };
     let values = app.caches.filter_values(&app.session.catalog);
     let (cameras, lenses, keywords) = (values.cameras.clone(), values.lenses.clone(), values.keywords.clone());
-    for (id, key, all_label, current, values) in [
-        ("camera", "camera", "Camera", f.camera.clone(), cameras),
-        ("lens", "lens", "Lens", f.lens.clone(), lenses),
-        ("keyword", "keyword", "Keyword", f.keyword.clone(), keywords),
-    ] {
-        let mut items = vec![(format!("Any {}", all_label.to_lowercase()), json!({key: Value::Null}), current.is_none())];
-        items.extend(values.into_iter().map(|v| (v.clone(), json!({key: v.clone()}), current.as_deref() == Some(v.as_str()))));
-        let shown = current.clone().unwrap_or_else(|| all_label.to_string());
+    // (id, include key, exclude key, all-label key, current include, current exclude, values, extra no-keyword)
+    let meta_specs: Vec<(&str, &str, &str, &str, Option<String>, Option<String>, Vec<String>, bool)> = vec![
+        ("camera", "camera", "notCamera", "Camera", f.camera.clone(), f.not_camera.clone(), cameras, false),
+        ("lens", "lens", "notLens", "Lens", f.lens.clone(), f.not_lens.clone(), lenses, false),
+        ("keyword", "keyword", "notKeyword", "Keyword", f.keyword.clone(), f.not_keyword.clone(), keywords, true),
+    ];
+    for (id, key, not_key, all_label, cur_in, cur_ex, vals, has_no_keyword) in meta_specs {
+        let no_kw = id == "keyword" && f.no_keyword;
+        let any_key = format!("Any {}", all_label.to_lowercase());
+        let any_label = crate::i18n::tr(&any_key);
+        let mut items: Vec<(String, Value, bool)> = vec![(
+            any_label.to_string(),
+            if has_no_keyword {
+                json!({key: Value::Null, not_key: Value::Null, "noKeyword": false})
+            } else {
+                json!({key: Value::Null, not_key: Value::Null})
+            },
+            cur_in.is_none() && cur_ex.is_none() && !no_kw,
+        )];
+        if has_no_keyword {
+            items.push((crate::i18n::tr("No keyword").to_string(), json!({key: Value::Null, not_key: Value::Null, "noKeyword": true}), no_kw));
+        }
+        for v in vals {
+            let sel = cur_in.as_deref() == Some(v.as_str());
+            items.push((
+                v.clone(),
+                if has_no_keyword {
+                    json!({key: v.clone(), not_key: Value::Null, "noKeyword": false})
+                } else {
+                    json!({key: v.clone(), not_key: Value::Null})
+                },
+                sel,
+            ));
+        }
+        let (shown, active, neg_value) = if no_kw {
+            (crate::i18n::tr("No keyword").to_string(), true, None)
+        } else if let Some(ref v) = cur_ex {
+            (format!("{} {v}", crate::i18n::tr("not")), true, Some(v.clone()))
+        } else if let Some(ref v) = cur_in {
+            (v.clone(), true, Some(v.clone()))
+        } else {
+            (crate::i18n::tr(all_label).to_string(), false, None)
+        };
         let shown = if shown.chars().count() > 22 { format!("{}…", shown.chars().take(21).collect::<String>()) } else { shown };
-        picker(app, ui, id, &shown, current.is_some(), items);
+        picker(app, ui, id, &shown, active, items);
+        // "−" toggle next to a selected value: include ↔ exclude ("tous sauf …")
+        if let Some(v) = neg_value.filter(|_| !no_kw) {
+            let is_ex = cur_ex.is_some();
+            let tip = if is_ex { crate::i18n::tr("Include this value") } else { crate::i18n::tr("Exclude this value") };
+            let resp = ui.add(egui::Button::new(egui::RichText::new(if is_ex { "−" } else { "≠" }).font(t.font(13.0))).small());
+            register(ui, format!("filter:{id}-not"), resp.rect);
+            if resp.on_hover_text(tip).clicked() {
+                if is_ex {
+                    filter(
+                        app,
+                        if has_no_keyword {
+                            json!({key: v, not_key: Value::Null, "noKeyword": false})
+                        } else {
+                            json!({key: v, not_key: Value::Null})
+                        },
+                    );
+                } else {
+                    filter(
+                        app,
+                        if has_no_keyword {
+                            json!({key: Value::Null, not_key: v, "noKeyword": false})
+                        } else {
+                            json!({key: Value::Null, not_key: v})
+                        },
+                    );
+                }
+            }
+        }
     }
 
     // save / clear
