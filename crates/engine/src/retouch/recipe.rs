@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use lightcraft_catalog::{Op, PhotoId, Version};
-use lightcraft_develop::{DevelopSettings, LocalAdjustments, Mask, MaskComponent, MaskOp, MaskShape, SegMask, Spot, SpotMode};
+use lightcraft_develop::{DevelopSettings, Light, LocalAdjustments, Mask, MaskComponent, MaskOp, MaskShape, SegMask, Spot, SpotMode, WbMode};
 use lightcraft_geom::Point;
 use lightcraft_retouch::dnb::{Mode, Role};
 use lightcraft_retouch::plane::Plane;
@@ -62,6 +62,10 @@ struct Step {
     masks: Vec<Mask>,
     spots: Vec<Spot>,
     mixer_values: Option<[lightcraft_develop::Hsl; 8]>,
+    /// Global base adjustments (camera step): auto tone/WB applied on top of the photo's settings.
+    base_light: Option<Light>,
+    base_wb: Option<(WbMode, f64, f64)>,
+    base_vibrance: Option<f64>,
     target: Vec<[f32; 3]>,
     skin_candidates: Vec<[f32; 2]>,
     warnings: Vec<String>,
@@ -78,6 +82,9 @@ impl Step {
             masks: Vec::new(),
             spots: Vec::new(),
             mixer_values: None,
+            base_light: None,
+            base_wb: None,
+            base_vibrance: None,
             target: Vec::new(),
             skin_candidates: Vec::new(),
             warnings: Vec::new(),
@@ -156,14 +163,37 @@ fn scaled_mask(m: &Mask, dose: f32, id: u32) -> Mask {
     c
 }
 
+fn lerp(a: f64, b: f64, t: f64) -> f64 {
+    a + (b - a) * t
+}
+
 /// The settings of a photo with the enabled steps at `dose` (spots and mixer included unless
 /// `local_only`).
 fn compose(pp: &PhotoPlan, o: &Opts, dose: f32, local_only: bool) -> DevelopSettings {
     let mut d = pp.ph.base.clone();
     let mut id = d.next_mask_id();
+    let dz = f64::from(dose);
     for st in &pp.steps {
         if !enabled(o, st) {
             continue;
+        }
+        // global base corrections (camera development), blended from the photo's settings by dose
+        if let Some(ref light) = st.base_light {
+            let base = &pp.ph.base.light;
+            d.light.exposure = lerp(base.exposure, light.exposure, dz).clamp(-5.0, 5.0);
+            d.light.contrast = lerp(base.contrast, light.contrast, dz).clamp(-100.0, 100.0);
+            d.light.highlights = lerp(base.highlights, light.highlights, dz).clamp(-100.0, 100.0);
+            d.light.shadows = lerp(base.shadows, light.shadows, dz).clamp(-100.0, 100.0);
+            d.light.whites = lerp(base.whites, light.whites, dz).clamp(-100.0, 100.0);
+            d.light.blacks = lerp(base.blacks, light.blacks, dz).clamp(-100.0, 100.0);
+        }
+        if let Some(vib) = st.base_vibrance {
+            d.color.vibrance = lerp(pp.ph.base.color.vibrance, vib, dz).clamp(-100.0, 100.0);
+        }
+        if let Some((mode, temp, tint)) = st.base_wb {
+            d.wb.mode = mode;
+            d.wb.temp = lerp(pp.ph.base.wb.temp, temp, dz).clamp(2000.0, 50000.0);
+            d.wb.tint = lerp(pp.ph.base.wb.tint, tint, dz).clamp(-150.0, 150.0);
         }
         for m in &st.masks {
             d.masks.push(scaled_mask(m, dose, id));
@@ -268,9 +298,36 @@ fn plan_photo(
     let no_face = "no face with usable skin was found";
     let mut steps = Vec::new();
 
-    // 1. camera development: the user's own settings are the base, nothing is added
+    // 1. camera development: auto tone + white balance as a global base correction (works on
+    // every photo, not only portraits), blended from the current settings by dose.
     let mut st = Step::new("camera", STEPS[0].1);
-    st.info = format!("kept as it is: exposure {:+.1} EV, white balance {:.0} K", ph.base.light.exposure, ph.base.wb.temp);
+    match s.source_now(id, crate::media::SourceLevel::Thumb) {
+        Ok(src) => {
+            let info = s.source_info(id);
+            let auto = lightcraft_pipeline::auto::auto_tone(&src, &info, &ph.base);
+            let (awb_t, awb_ti) = lightcraft_pipeline::auto::auto_wb(&src, &info);
+            let mut light = ph.base.light;
+            light.exposure = auto.exposure;
+            light.contrast = auto.contrast;
+            light.highlights = auto.highlights;
+            light.shadows = auto.shadows;
+            light.whites = auto.whites;
+            light.blacks = auto.blacks;
+            st.base_light = Some(light);
+            st.base_vibrance = Some(auto.vibrance);
+            st.base_wb = Some((WbMode::Custom, awb_t, awb_ti));
+            st.info = format!(
+                "auto base: exposure {:+.2} EV, contrast {:+.0}, highlights {:+.0}, shadows {:+.0}, whites {:+.0}, blacks {:+.0}, vibrance {:+.0}, WB {:.0} K / {:+.0} tint (blended from your settings by impact)",
+                auto.exposure, auto.contrast, auto.highlights, auto.shadows, auto.whites, auto.blacks, auto.vibrance, awb_t, awb_ti
+            );
+        }
+        Err(e) => {
+            st.info = format!(
+                "kept as it is: exposure {:+.1} EV, white balance {:.0} K (auto base unavailable: {e})",
+                ph.base.light.exposure, ph.base.wb.temp
+            );
+        }
+    }
     steps.push(st);
 
     // 2. sensor dust: only what a series proves (a spot that sits at the same place on most photos
@@ -905,10 +962,10 @@ mod tests {
             && a.red_eye == b.red_eye
             && a.optics == b.optics
             && a.detail == b.detail
-            && a.light == b.light
-            && a.wb == b.wb
-            && a.color == b.color
             && a.curve == b.curve
+            && a.grading == b.grading
+            && a.effects == b.effects
+            && a.calibration == b.calibration
     }
 
     #[test]
@@ -931,8 +988,12 @@ mod tests {
         assert_eq!(r["written"], true, "{r}");
         let after = (*s.develop_of(id).expect("develop")).clone();
         assert_eq!(s.undo.len(), undo + 1, "one undo step");
-        // red lines: no geometry, crop, tone of the whole photo, resampling or generated pixels
-        assert!(same_untouchables(&before, &after), "only masks, mixer and heal spots may change");
+        // red lines: no geometry, crop, resampling or generated pixels; global tone/WB may be
+        // adjusted by the camera step (base colour correction), the rest stays local/editable
+        assert!(
+            same_untouchables(&before, &after),
+            "geometry, crop and optics must not change; only masks, mixer, heal spots and base tone/WB may change"
+        );
         assert!(after.masks.iter().all(|m| m.name.starts_with(super::super::PREFIX)), "every mask is a named, editable Retouch mask");
         assert!(after.spots.starts_with(&before.spots), "heal spots are only added, never changed");
         assert!(

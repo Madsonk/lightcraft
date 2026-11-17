@@ -1305,6 +1305,63 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!(
+            "develop.matchLook",
+            "Match Look",
+            ["Photo", "Edit"],
+            None,
+            "{reference?: id (default: active), ids?, groups?: [settingsGroup] (default: copy groups), adaptExposure?: bool (true), adaptWb?: bool (true)} — copy the reference photo's edit to the targets, adapting exposure and white balance per photo so they look consistent (same style/contrast/colour, each scene's brightness and white balance matched to the reference's intent). Photos that cannot be read are skipped → {changed, skipped}",
+            has_selection,
+            |s, p| {
+                let c = "develop.matchLook";
+                let reference =
+                    p.get("reference").and_then(Value::as_u64).map(PhotoId).or_else(|| s.active()).ok_or_else(|| bad(c, "no reference photo"))?;
+                if s.catalog.photo(reference).is_none() {
+                    return Err(bad(c, format!("no such photo: {}", reference.0)));
+                }
+                let groups = groups_param(p, c)?.unwrap_or_else(SettingsGroup::default_copy);
+                let adapt_exposure = bool_or(p, "adaptExposure", true);
+                let adapt_wb = bool_or(p, "adaptWb", true);
+                let ref_dev = (*s.develop_of(reference).unwrap_or_default()).clone();
+                let ref_info = s.source_info(reference);
+                let ref_src = s.source_now(reference, SourceLevel::Thumb).map_err(|e| bad(c, format!("reference: {e}")))?;
+                let ref_auto = lightcraft_pipeline::auto::auto_tone(&ref_src, &ref_info, &ref_dev);
+                let (ref_wb_auto_t, ref_wb_auto_ti) = lightcraft_pipeline::auto::auto_wb(&ref_src, &ref_info);
+                let partial = lightcraft_develop::extract_groups(&ref_dev, &groups);
+                let has_light = groups.iter().any(|g| matches!(g, SettingsGroup::Light));
+                let has_wb = groups.iter().any(|g| matches!(g, SettingsGroup::WhiteBalance));
+                let ids: Vec<PhotoId> = s.targets(p)?.into_iter().filter(|x| *x != reference).collect();
+                let (mut ops, mut skipped) = (Vec::new(), Vec::new());
+                for id in ids {
+                    let (Some(d), Ok(src)) = (s.develop_of(id), s.source_now(id, SourceLevel::Thumb)) else {
+                        skipped.push(id.0);
+                        continue;
+                    };
+                    let info = s.source_info(id);
+                    let mut nd = lightcraft_develop::apply_partial(&d, &partial, 1.0);
+                    if adapt_exposure && has_light {
+                        let tgt_auto = lightcraft_pipeline::auto::auto_tone(&src, &info, &d);
+                        // keep the reference's brightness intent relative to auto, adapted to this scene
+                        nd.light.exposure = (ref_dev.light.exposure + (tgt_auto.exposure - ref_auto.exposure)).clamp(-5.0, 5.0);
+                    }
+                    if adapt_wb && has_wb {
+                        let (tgt_wb_t, tgt_wb_ti) = lightcraft_pipeline::auto::auto_wb(&src, &info);
+                        // preserve the reference's warmth/tint shift relative to auto, adapted to this scene
+                        nd.wb.mode = WbMode::Custom;
+                        nd.wb.temp = (ref_dev.wb.temp + (tgt_wb_t - ref_wb_auto_t)).clamp(2000.0, 50000.0);
+                        nd.wb.tint = (ref_dev.wb.tint + (tgt_wb_ti - ref_wb_auto_ti)).clamp(-150.0, 150.0);
+                    }
+                    if let Some(op) = s.develop_op(id, nd, "Match Look") {
+                        ops.push(op);
+                    }
+                }
+                let n = ops.len();
+                if n > 0 {
+                    s.commit("Match Look", Op::Batch { ops })?;
+                }
+                Ok(json!({"changed": n, "skipped": skipped, "reference": reference.0, "adaptExposure": adapt_exposure, "adaptWb": adapt_wb}))
+            }
+        ),
+        cmd!(
             "develop.autoSync",
             "Auto Sync",
             ["Edit"],
