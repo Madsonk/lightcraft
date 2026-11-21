@@ -336,6 +336,14 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         filter(app, json!({"noAlbum": !f.no_album}));
     }
 
+    // faces marked as passers-by, to check them or take the mark off
+    let strangers = f.faces.as_deref().is_some_and(|v| v.eq_ignore_ascii_case("strangers"));
+    let st = ui.selectable_label(strangers, egui::RichText::new(crate::i18n::tr("Has strangers")).font(t.font(12.5)));
+    register(ui, "button:strangers", st.rect);
+    if st.clicked() {
+        filter(app, json!({"faces": if strangers { Value::Null } else { json!("strangers") }}));
+    }
+
     // save / clear
     ui.add_space(14.0);
     let filtering = app.session.filter != Default::default();

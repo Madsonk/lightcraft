@@ -217,6 +217,9 @@ pub fn filter_chips(f: &Filter, cat: &Catalog) -> Vec<FilterChip> {
     if f.no_album {
         add("In no album".into(), json!({"noAlbum": false}));
     }
+    if f.faces.as_deref().is_some_and(|v| v.eq_ignore_ascii_case("strangers")) {
+        add("Has strangers".into(), json!({"faces": Null}));
+    }
     for (name, key, val) in [
         ("Camera", "camera", &f.camera),
         ("Camera", "notCamera", &f.not_camera),

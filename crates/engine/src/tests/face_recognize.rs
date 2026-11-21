@@ -716,6 +716,11 @@ fn strangers_and_false_faces_leave_the_unnamed_ones_and_stay_out() {
     // the filter finds the photo with a passer-by
     assert!(lightcraft_catalog::query::faces_match(s.catalog.photo(a).unwrap(), "strangers"));
     assert!(!lightcraft_catalog::query::faces_match(s.catalog.photo(b).unwrap(), "strangers"));
+    // the filter shows as a chip whose × takes it off
+    s.execute("library.filter", &json!({"faces": "strangers"})).unwrap();
+    let chips = crate::filter_chips(&s.filter, &s.catalog);
+    assert!(chips.iter().any(|c| c.label == "Has strangers" && c.clear == json!({"faces": null})), "{chips:?}");
+    s.execute("library.clearFilter", &json!({})).unwrap();
     // a named face cannot be marked; bad input is refused
     s.execute("faces.setName", &json!({"id": a.0, "index": 1, "name": "Ann"})).unwrap();
     assert!(s.execute("faces.markFaces", &json!({"faces": [{"photo": a.0, "index": 1}], "as": "stranger"})).is_err());
