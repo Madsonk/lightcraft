@@ -1128,3 +1128,30 @@ fn a_batch_that_cannot_be_rolled_back_whole_makes_earlier_changes_unknown() {
     assert_eq!(c.touched_since(start), None, "so nothing is said of what changed");
     assert_eq!(c.touched_since(c.revision), Some(vec![]), "from after it, it is known again");
 }
+
+#[test]
+fn filters_find_photos_in_no_album() {
+    let mut c = Catalog::new();
+    let a = photo(&mut c, "a.jpg", "2026-05-01T10:00:00");
+    let b = photo(&mut c, "b.jpg", "2026-05-02T10:00:00");
+    let album = c.alloc_album_id();
+    c.apply(Op::AddAlbum { album: Album::new(album, "Best") }).unwrap();
+    c.apply(Op::SetAlbumPhotos { id: album, photos: vec![a] }).unwrap();
+    let f = Filter { no_album: true, ..Default::default() };
+    assert_eq!(c.query(&f, &Sort::default()), vec![b]);
+    // a smart album holds what its rules match: b leaves the "no album" ones once one takes it in
+    let mut m = c.photo(b).unwrap().meta.clone();
+    m.keywords = vec!["perso".into()];
+    c.apply(Op::SetMeta { id: b, meta: Box::new(m) }).unwrap();
+    let sid = c.alloc_album_id();
+    let rules = Filter { keyword: Some("perso".into()), ..Default::default() };
+    c.apply(Op::AddAlbum { album: Album { smart: Some(Box::new(rules)), ..Album::new(sid, "Perso") } }).unwrap();
+    assert!(c.query(&f, &Sort::default()).is_empty());
+    // a smart album saved from the "no album" filter itself must not ask forever
+    let sid2 = c.alloc_album_id();
+    c.apply(Op::AddAlbum { album: Album { smart: Some(Box::new(f.clone())), ..Album::new(sid2, "Loose") } }).unwrap();
+    let _ = c.query(&f, &Sort::default());
+    let back: Filter = serde_json::from_value(serde_json::to_value(&f).unwrap()).unwrap();
+    assert_eq!(back, f);
+    assert!(f.describe().contains("in no album"), "{}", f.describe());
+}

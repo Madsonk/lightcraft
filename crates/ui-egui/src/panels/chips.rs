@@ -91,6 +91,9 @@ pub(crate) fn display_label(chip: &FilterChip, filter: &lightcraft_catalog::Filt
     if chip.clear.get("only").is_some() {
         return format!("{} {}", tr("Only"), crate::i18n::tr_format!("{n} photos", n = if filter.only_none { 0 } else { filter.only.len() }));
     }
+    if chip.clear.get("noAlbum").is_some() {
+        return tr("In no album").to_string();
+    }
     if chip.clear.get("noKeyword").is_some() {
         return tr("No keyword").to_string();
     }

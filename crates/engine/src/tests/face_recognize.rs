@@ -691,3 +691,39 @@ fn rename_person_covers_more_than_the_person_query_and_rejects_bad_input() {
     assert_eq!(s.catalog.photo(a).unwrap().meta.regions[0].name.as_deref(), Some("Bea"));
     assert_eq!(s.catalog.photo(local).unwrap().meta.regions[0].name.as_deref(), Some("Ada"));
 }
+
+#[test]
+fn strangers_and_false_faces_leave_the_unnamed_ones_and_stay_out() {
+    let d = temp("markfaces");
+    let (mut s, _) = setup(&d, 64);
+    let (a, b) = two_photos(&s);
+    let detected = |x: f64| Region { description: Some("Detected by YuNet 2023mar".into()), ..region(x, None) };
+    set_regions(&mut s, a, vec![detected(0.1), detected(0.5)]);
+    set_regions(&mut s, b, vec![detected(0.3)]);
+    let listed = |s: &mut Session| s.execute("faces.unnamed", &json!({})).unwrap()["total"].as_u64().unwrap();
+    assert_eq!(listed(&mut s), 3);
+    let undo = s.undo.len();
+    let r = s.execute("faces.markFaces", &json!({"faces": [{"photo": a.0, "index": 0}], "as": "stranger"})).unwrap();
+    assert_eq!((r["marked"].clone(), r["photos"].clone()), (json!(1), json!(1)));
+    let r = s.execute("faces.markFaces", &json!({"faces": [{"photo": b.0, "index": 0}], "as": "notAFace"})).unwrap();
+    assert_eq!(r["marked"], 1);
+    assert_eq!(s.undo.len(), undo + 2);
+    assert_eq!(listed(&mut s), 1, "only the face still to name is listed");
+    // a stranger is still a face; a false detection is none
+    let regs = &s.catalog.photo(a).unwrap().meta.regions;
+    assert_eq!((regs[0].kind.clone(), regs[0].description.as_deref()), (RegionKind::Face, Some("Stranger")));
+    assert_eq!(s.catalog.photo(b).unwrap().meta.regions[0].kind, RegionKind::Other("Not a face".into()));
+    // the filter finds the photo with a passer-by
+    assert!(lightcraft_catalog::query::faces_match(s.catalog.photo(a).unwrap(), "strangers"));
+    assert!(!lightcraft_catalog::query::faces_match(s.catalog.photo(b).unwrap(), "strangers"));
+    // a named face cannot be marked; bad input is refused
+    s.execute("faces.setName", &json!({"id": a.0, "index": 1, "name": "Ann"})).unwrap();
+    assert!(s.execute("faces.markFaces", &json!({"faces": [{"photo": a.0, "index": 1}], "as": "stranger"})).is_err());
+    assert!(s.execute("faces.markFaces", &json!({"faces": [{"photo": a.0, "index": 0}], "as": "bogus"})).is_err());
+    assert!(s.execute("faces.markFaces", &json!({"as": "stranger"})).is_err());
+    // unmark puts both back; undo of a mark works too
+    s.execute("faces.markFaces", &json!({"faces": [{"photo": a.0, "index": 0}, {"photo": b.0, "index": 0}], "as": "unmark"})).unwrap();
+    assert_eq!(listed(&mut s), 2);
+    assert_eq!(s.catalog.photo(b).unwrap().meta.regions[0].kind, RegionKind::Face);
+    let _ = std::fs::remove_dir_all(&d);
+}

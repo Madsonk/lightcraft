@@ -127,6 +127,7 @@ pub fn naming_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     };
     let mut submit: Option<String> = None;
     let mut clear = false;
+    let mut mark: Option<&str> = None;
     ui.horizontal(|ui| {
         ui.add_space(super::people::PAD - 4.0);
         let n = selected.len();
@@ -151,6 +152,18 @@ pub fn naming_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let c = ui.button(crate::i18n::tr("Clear"));
         register(ui, "unnamed:clear", c.rect);
         clear = c.clicked() || field.cancelled();
+        ui.add_space(12.0);
+        // faces nobody should have to name
+        for (id, label, tip, how) in [
+            ("stranger", "Stranger", "A passer-by: leave these faces out of the ones to name", "stranger"),
+            ("notFace", "Not a face", "A false detection: these are no face", "notAFace"),
+        ] {
+            let b = ui.button(crate::i18n::tr(label)).on_hover_text(crate::i18n::tr(tip));
+            register(ui, format!("unnamed:{id}"), b.rect);
+            if b.clicked() {
+                mark = Some(how);
+            }
+        }
     });
     // the people already named, matching what is typed (a click names the faces)
     let typed = app.ui.unnamed_name.trim().to_lowercase();
@@ -170,7 +183,13 @@ pub fn naming_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             });
         }
     }
-    if let Some(who) = submit {
+    if let Some(how) = mark {
+        let list: Vec<Value> = selected.iter().map(|(photo, index)| json!({"photo": photo, "index": index})).collect();
+        let _ = app.run("faces.markFaces", json!({"faces": list, "as": how}));
+        app.ui.unnamed_selected.clear();
+        app.ui.unnamed_name.clear();
+        app.ui.unnamed_anchor = None;
+    } else if let Some(who) = submit {
         name(app, &selected, &who);
         app.ui.unnamed_selected.clear();
         app.ui.unnamed_name.clear();

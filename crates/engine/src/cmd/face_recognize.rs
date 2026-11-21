@@ -35,24 +35,97 @@ fn apply_name(region: &mut lightcraft_meta::Region, name: &Option<String>) {
     }
 }
 
-/// `faces.nameFaces {faces: [{photo, index}], name}`: name (or clear) many face regions at once, as one undo step: what
-/// naming a group of look-alikes does.
-fn name_faces(s: &mut Session, p: &Value) -> Result<Value> {
-    const C: &str = "faces.nameFaces";
-    let name = name_param(p, C)?;
-    let list = p.get("faces").and_then(Value::as_array).ok_or_else(|| bad(C, "missing `faces`"))?;
+/// The `faces: [{photo, index}]` of the commands that act on many faces, by photo.
+fn face_refs(p: &Value, c: &str) -> Result<std::collections::BTreeMap<u64, Vec<usize>>> {
+    let list = p.get("faces").and_then(Value::as_array).ok_or_else(|| bad(c, "missing `faces`"))?;
     if list.len() > 5000 {
-        return Err(bad(C, "at most 5000 faces at a time"));
+        return Err(bad(c, "at most 5000 faces at a time"));
     }
     let mut by_photo: std::collections::BTreeMap<u64, Vec<usize>> = std::collections::BTreeMap::new();
     for f in list {
         let (Some(photo), Some(index)) =
             (f.get("photo").and_then(Value::as_u64), f.get("index").and_then(Value::as_u64).and_then(|i| usize::try_from(i).ok()))
         else {
-            return Err(bad(C, "each face needs a `photo` and an `index`"));
+            return Err(bad(c, "each face needs a `photo` and an `index`"));
         };
         by_photo.entry(photo).or_default().push(index);
     }
+    Ok(by_photo)
+}
+
+/// Mark an unnamed face region `how` (`stranger`, `notAFace`) or take the mark off (`unmark`); whether it changed.
+fn apply_mark(region: &mut lightcraft_meta::Region, how: &str) -> bool {
+    use lightcraft_meta::{NOT_A_FACE, RegionKind, STRANGER_FACE};
+    let unnamed_face = region.kind == RegionKind::Face && region.name.is_none();
+    match how {
+        "stranger" if unnamed_face => {
+            region.description = Some(STRANGER_FACE.into());
+            true
+        }
+        "notAFace" if unnamed_face => {
+            region.kind = RegionKind::Other(NOT_A_FACE.into());
+            region.description = Some(NOT_A_FACE.into());
+            true
+        }
+        "unmark" if region.kind == RegionKind::Face && region.description.as_deref() == Some(STRANGER_FACE) => {
+            region.description = None;
+            true
+        }
+        "unmark" if region.kind == RegionKind::Other(NOT_A_FACE.into()) => {
+            region.kind = RegionKind::Face;
+            region.description = None;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// `faces.markFaces {faces: [{photo, index}], as}`: say that unnamed faces are passers-by (`stranger`: still faces, but
+/// nobody to name, so they leave the unnamed faces) or no face at all (`notAFace`, a false detection that a later
+/// "Detect Faces" does not bring back), or put them back (`unmark`). One undo step.
+fn mark_faces(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "faces.markFaces";
+    let how = p.get("as").and_then(Value::as_str).ok_or_else(|| bad(C, "missing `as`"))?;
+    if !matches!(how, "stranger" | "notAFace" | "unmark") {
+        return Err(bad(C, "`as` is `stranger`, `notAFace` or `unmark`"));
+    }
+    let (mut ops, mut marked) = (Vec::new(), 0usize);
+    for (photo, indexes) in face_refs(p, C)? {
+        let id = lightcraft_catalog::PhotoId(photo);
+        let Some(ph) = s.catalog.photo(id) else { continue };
+        let mut meta = ph.meta.clone();
+        let before = marked;
+        for i in indexes {
+            if meta.regions.get_mut(i).is_some_and(|r| apply_mark(r, how)) {
+                marked += 1;
+            }
+        }
+        if marked > before {
+            ops.push(Op::SetMeta { id, meta: Box::new(meta) });
+        }
+    }
+    if ops.is_empty() {
+        return Err(bad(C, "none of those faces can be marked that way"));
+    }
+    let photos = ops.len();
+    s.commit(
+        match how {
+            "stranger" => "Mark Faces as Strangers",
+            "notAFace" => "Mark Faces as Not Faces",
+            _ => "Unmark Faces",
+        },
+        Op::Batch { ops },
+    )?;
+    s.skip_auto_write = true;
+    Ok(json!({"marked": marked, "photos": photos, "as": how}))
+}
+
+/// `faces.nameFaces {faces: [{photo, index}], name}`: name (or clear) many face regions at once, as one undo step: what
+/// naming a group of look-alikes does.
+fn name_faces(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "faces.nameFaces";
+    let name = name_param(p, C)?;
+    let by_photo = face_refs(p, C)?;
     let (mut ops, mut named) = (Vec::new(), 0usize);
     for (photo, indexes) in by_photo {
         let id = lightcraft_catalog::PhotoId(photo);
@@ -204,7 +277,7 @@ fn unnamed(s: &mut Session, p: &Value) -> Result<Value> {
     let mut all: Vec<(u64, usize, lightcraft_geom::Rect)> = Vec::new();
     for ph in s.catalog.photos().filter(|ph| ph.in_library()) {
         for (index, r) in ph.meta.regions.iter().enumerate() {
-            if r.kind == lightcraft_meta::RegionKind::Face && r.name.is_none() {
+            if r.kind == lightcraft_meta::RegionKind::Face && r.name.is_none() && r.description.as_deref() != Some(lightcraft_meta::STRANGER_FACE) {
                 all.push((ph.id.0, index, r.rect));
             }
         }
@@ -1190,6 +1263,15 @@ pub fn specs() -> Vec<CommandSpec> {
             "{faces: [{photo, index}], name} → {named, photos} — name (or, with a null or empty name, clear) many face regions as one undoable step; the sidecar is not touched",
             super::always,
             name_faces
+        ),
+        cmd!(
+            "faces.markFaces",
+            "Mark Faces",
+            [],
+            None,
+            "{faces: [{photo, index}], as: \"stranger\"|\"notAFace\"|\"unmark\"} → {marked, photos, as} — say that unnamed faces are passers-by (they leave `faces.unnamed`, still faces) or not faces at all (false detections that Detect Faces does not bring back), or put them back; one undoable step; the sidecar is not touched",
+            super::always,
+            mark_faces
         ),
         cmd!(
             query "faces.person",

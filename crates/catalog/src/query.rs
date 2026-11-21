@@ -62,10 +62,14 @@ pub struct Filter {
     /// Photos with no keyword.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub no_keyword: bool,
+    /// Only photos that are in no album (a smart album holds the photos its rules match).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub no_album: bool,
     /// A person: photos with a named face region of this name (case-insensitive), as read from XMP.
     pub person: Option<String>,
     /// Faces found by Analyze Faces: `any` (at least one face), `none` (analyzed, no face),
-    /// `closedEyes` (a face with a closed eye), `eyesOpen` (faces, all eyes open) or `unanalyzed`.
+    /// `closedEyes` (a face with a closed eye), `eyesOpen` (faces, all eyes open), `strangers` (a face marked as a
+    /// passer-by) or `unanalyzed`.
     pub faces: Option<String>,
     pub camera: Option<String>,
     /// Exclude this camera (case-insensitive).
@@ -285,6 +289,7 @@ pub fn faces_match(p: &Photo, want: &str) -> bool {
         "closedeyes" | "closed" => p.has_closed_eyes(),
         "eyesopen" | "open" => p.has_open_eyes(),
         "unanalyzed" | "unanalysed" => p.faces().is_none(),
+        "strangers" | "stranger" => p.meta.regions.iter().any(|r| r.kind == lightcraft_meta::RegionKind::Face && r.description.as_deref() == Some(lightcraft_meta::STRANGER_FACE)),
         _ => false,
     }
 }
@@ -361,6 +366,9 @@ impl Filter {
         }
         if self.no_keyword {
             v.push("no keyword".into());
+        }
+        if self.no_album {
+            v.push("in no album".into());
         }
         for (name, val) in [
             ("keyword", &self.keyword),
@@ -551,6 +559,9 @@ impl Filter {
             return false;
         }
         if self.no_keyword && !p.meta.keywords.is_empty() {
+            return false;
+        }
+        if self.no_album && !cat.in_no_album(p) {
             return false;
         }
         if let Some(k) = &self.keyword

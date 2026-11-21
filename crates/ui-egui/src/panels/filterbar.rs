@@ -329,6 +329,13 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         }
     }
 
+    // the photos still in no album, to sort them out
+    let na = ui.selectable_label(f.no_album, egui::RichText::new(crate::i18n::tr("In no album")).font(t.font(12.5)));
+    register(ui, "button:noAlbum", na.rect);
+    if na.clicked() {
+        filter(app, json!({"noAlbum": !f.no_album}));
+    }
+
     // save / clear
     ui.add_space(14.0);
     let filtering = app.session.filter != Default::default();

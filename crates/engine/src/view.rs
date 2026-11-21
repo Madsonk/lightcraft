@@ -214,6 +214,9 @@ pub fn filter_chips(f: &Filter, cat: &Catalog) -> Vec<FilterChip> {
     if f.no_keyword {
         add("No keyword".into(), json!({"noKeyword": false, "keyword": Null}));
     }
+    if f.no_album {
+        add("In no album".into(), json!({"noAlbum": false}));
+    }
     for (name, key, val) in [
         ("Camera", "camera", &f.camera),
         ("Camera", "notCamera", &f.not_camera),

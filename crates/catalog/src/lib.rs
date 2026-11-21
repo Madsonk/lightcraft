@@ -499,6 +499,20 @@ impl Catalog {
         self.albums.values().filter(|a| self.album_contains(a.id, p)).map(|a| a.id).collect()
     }
 
+    /// Whether `p` is in no album: no regular album lists it and no smart album's rules match it (folders hold
+    /// albums, not photos). A smart album that itself asks for "in no album" (saved from that filter) would ask
+    /// back forever, so a question asked while this one is being answered finds the photo in no album.
+    pub fn in_no_album(&self, p: &Photo) -> bool {
+        use std::cell::Cell;
+        thread_local!(static ASKING: Cell<bool> = const { Cell::new(false) });
+        if ASKING.replace(true) {
+            return true;
+        }
+        let none = !self.albums.values().any(|a| !a.folder && self.album_contains(a.id, p));
+        ASKING.set(false);
+        none
+    }
+
     /// Whether album `id` contains `p` (a smart album evaluates its rules; deleted photos are in
     /// no smart album).
     pub fn album_contains(&self, id: AlbumId, p: &Photo) -> bool {

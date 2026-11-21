@@ -59,6 +59,12 @@ pub struct Flash {
     pub raw: u16,
 }
 
+/// `Region::description` of a face its owner called a passer-by: still a face, but nobody to name, so it is
+/// left out of the unnamed faces. Not starting with the detector's mark, a later "Detect Faces" keeps it.
+pub const STRANGER_FACE: &str = "Stranger";
+/// What a region that was no face (a false detection) says, with a kind of the same name.
+pub const NOT_A_FACE: &str = "Not a face";
+
 /// A named region of interest on a photo (MWG Region Guidelines, `mwg-rs:Regions`): most often a face,
 /// drawn by Lightroom, digiKam, Picasa or similar tools. Read-only for now — LightCraft does not write
 /// regions yet (see `docs/xmp-interop.md`).
