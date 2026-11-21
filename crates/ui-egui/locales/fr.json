@@ -4308,5 +4308,19 @@
   "Mark Faces as Strangers": "Marquer des visages comme inconnus",
   "Mark Faces as Not Faces": "Marquer comme n'étant pas des visages",
   "Unmark Faces": "Retirer le marquage des visages",
-  "Has strangers": "Avec des inconnus"
+  "Has strangers": "Avec des inconnus",
+  "Needs retouch": "À retoucher",
+  "Retouch score {score:.0}": "Score de retouche {score:.0}",
+  "Retouch score {score:.0} \u00b7 {issues}": "Score de retouche {score:.0} · {issues}",
+  "too warm": "trop chaud",
+  "too cool": "trop froid",
+  "green tint": "dominante verte",
+  "magenta tint": "dominante magenta",
+  "flat colour": "couleurs ternes",
+  "oversaturated": "trop saturé",
+  "too dark": "trop sombre",
+  "too bright": "trop clair",
+  "no deep blacks": "pas de noirs profonds",
+  "no bright whites": "pas de blancs lumineux",
+  "clipped": "tons brûlés ou bouchés"
 }

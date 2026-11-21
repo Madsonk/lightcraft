@@ -174,6 +174,12 @@ fn genre_label(g: &str) -> &'static str {
 fn why(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(id) = app.session.active() else { return };
+    if let Some(r) = app.session.catalog.photo(id).and_then(|p| p.analysis.as_ref()).and_then(|a| a.retouch.clone()) {
+        let issues = r.issues.iter().map(|i| tr(i).to_string()).collect::<Vec<_>>().join(", ");
+        let line = if issues.is_empty() { tr_format!("Retouch score {score:.0}", score = r.score) } else { tr_format!("Retouch score {score:.0} · {issues}", score = r.score, issues = issues) };
+        ui.label(RichText::new(line).size(11.5).color(t.text_dim));
+        register(ui, "region:retouchScore", ui.min_rect());
+    }
     let Some(v) = app.session.catalog.photo(id).and_then(|p| p.analysis.as_ref()).and_then(|a| a.verdict.clone()) else { return };
     ui.add_space(2.0);
     ui.separator();

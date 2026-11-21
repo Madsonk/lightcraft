@@ -28,6 +28,7 @@ pub mod blemish;
 pub mod colorops;
 pub mod crystal;
 pub mod cull;
+pub mod cull_grade;
 pub mod curve;
 pub mod dust;
 pub mod finish;

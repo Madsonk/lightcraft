@@ -407,6 +407,16 @@ pub struct Analysis {
     /// by older builds, like `faces`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<Arc<lightcraft_culler::Verdict>>,
+    /// Retouch score 0..100 (100 = nothing to fix) and what is off, worst first (`photo.analyze`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retouch: Option<Retouch>,
+}
+
+/// How much work a photo's colour and exposure need.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Retouch {
+    pub score: f32,
+    pub issues: Vec<String>,
 }
 
 /// Raw formats whose files carry vendor white-balance multipliers but no colour matrices: their starting

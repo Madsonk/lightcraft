@@ -1542,6 +1542,22 @@ fn assisted_culling_ignores_repeated_ids() {
     assert!(an.group.is_none() && !an.best, "{an:?}");
 }
 
+/// Assisted culling also scores how much retouch a photo needs (0..100, with what is off).
+#[test]
+fn assisted_culling_scores_the_retouch_a_photo_needs() {
+    let mut s = Session::with_demo();
+    let id = s.visible_cloned()[0];
+    let r = s.execute("photo.analyze", &json!({"ids": [id.0]})).unwrap();
+    let score = r["photos"][0]["retouch"]["score"].as_f64().unwrap();
+    assert!((0.0..=100.0).contains(&score), "{r}");
+    let rt = s.catalog.photo(id).unwrap().analysis.clone().unwrap().retouch.unwrap();
+    assert!(rt.score >= 0.0 && rt.score <= 100.0);
+    // the "needs retouch" filter keeps exactly the photos scored under the limit
+    s.execute("library.filter", &json!({"needsRetouch": true})).unwrap();
+    assert_eq!(s.visible_cloned().contains(&id), rt.score < lightcraft_catalog::query::NEEDS_RETOUCH_BELOW);
+    assert!(s.visible_cloned().len() <= 1, "only analysed photos can match");
+}
+
 /// Assisted culling: two look-alike shots one second apart across midnight form a burst at the end of
 /// every month, including those with fewer than 31 days.
 #[test]

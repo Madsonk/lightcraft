@@ -15,6 +15,9 @@ pub enum RatingOp {
     AtMost,
 }
 
+/// A photo scoring under this retouch score (0..100) counts as needing a retouch.
+pub const NEEDS_RETOUCH_BELOW: f32 = 70.0;
+
 /// What the grid shows. Empty/None fields don't filter.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -65,6 +68,9 @@ pub struct Filter {
     /// Only photos that are in no album (a smart album holds the photos its rules match).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub no_album: bool,
+    /// Only photos whose retouch score (`photo.analyze`) is under [`NEEDS_RETOUCH_BELOW`].
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub needs_retouch: bool,
     /// A person: photos with a named face region of this name (case-insensitive), as read from XMP.
     pub person: Option<String>,
     /// Faces found by Analyze Faces: `any` (at least one face), `none` (analyzed, no face),
@@ -370,6 +376,9 @@ impl Filter {
         if self.no_album {
             v.push("in no album".into());
         }
+        if self.needs_retouch {
+            v.push("needs retouch".into());
+        }
         for (name, val) in [
             ("keyword", &self.keyword),
             ("keyword not", &self.not_keyword),
@@ -562,6 +571,9 @@ impl Filter {
             return false;
         }
         if self.no_album && !cat.in_no_album(p) {
+            return false;
+        }
+        if self.needs_retouch && !p.analysis.as_ref().and_then(|a| a.retouch.as_ref()).is_some_and(|r| r.score < NEEDS_RETOUCH_BELOW) {
             return false;
         }
         if let Some(k) = &self.keyword

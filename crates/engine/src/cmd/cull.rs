@@ -48,6 +48,7 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
     }
     // measure (thumbnail-level sources: fast, and enough for focus at 512 px)
     let mut rows: Vec<(PhotoId, Option<i64>, f32, f32, [f32; 64])> = Vec::new();
+    let mut retouch: std::collections::HashMap<PhotoId, lightcraft_catalog::Retouch> = Default::default();
     let mut failed = Vec::new();
     // the sources are read and measured side by side (a burst of a few dozen raws would otherwise keep the
     // window waiting for seconds); what each photo learns from its file is applied afterwards, in order
@@ -60,21 +61,24 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
         })
         .collect();
     use rayon::prelude::*;
-    type Loaded = (PhotoId, Option<i64>, std::result::Result<(crate::media::DecodedSource, f32, f32, [f32; 64]), String>);
+    type Loaded = (PhotoId, Option<i64>, std::result::Result<(crate::media::DecodedSource, f32, f32, [f32; 64], lightcraft_catalog::Retouch), String>);
     let loaded: Vec<Loaded> = jobs
         .into_par_iter()
         .map(|(id, t, source)| {
             let r = source.load_source().map(|r| {
                 use lightcraft_pipeline::cull;
                 let (sharp, clip, sig) = (cull::sharpness(&r.image), cull::clipped(&r.image), cull::signature(&r.image));
-                (r, sharp, clip, sig)
+                let (score, issues) = lightcraft_pipeline::cull_grade::grade(&lightcraft_pipeline::cull_grade::look(&r.image), cull::exposure(&r.image), clip);
+                let retouch = lightcraft_catalog::Retouch { score, issues: issues.into_iter().map(String::from).collect() };
+                (r, sharp, clip, sig, retouch)
             });
             (id, t, r)
         })
         .collect();
     for (id, t, r) in loaded {
         match r {
-            Ok((r, sharp, clip, sig)) => {
+            Ok((r, sharp, clip, sig, rt)) => {
+                retouch.insert(id, rt);
                 if let Some(info) = &r.info {
                     s.learn_as_shot_wb(id, info);
                 }
@@ -146,7 +150,7 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
         let is_best = g.is_some_and(|g| best.get(&g).is_some_and(|b| b.0 == i));
         ops.push(Op::SetAnalysis {
             id: *id,
-            analysis: Some(Analysis { sharpness: *sharp, clipped: *clip, group: g, best: is_best, ..old_analysis(s, *id) }),
+            analysis: Some(Analysis { sharpness: *sharp, clipped: *clip, group: g, best: is_best, retouch: retouch.get(id).cloned(), ..old_analysis(s, *id) }),
         });
         let flag = s.catalog.photo(*id).map(|p| p.flag).unwrap_or_default();
         let closed = summaries[i].is_some_and(|f| f.1);
@@ -158,7 +162,7 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
             ops.push(Op::SetFlag { id: *id, flag: Flag::Pick });
             picked += 1;
         }
-        out.push(json!({"id": id.0, "sharpness": (sharp * 10.0).round() / 10.0, "clipped": clip, "group": g, "best": is_best}));
+        out.push(json!({"id": id.0, "sharpness": (sharp * 10.0).round() / 10.0, "clipped": clip, "group": g, "best": is_best, "retouch": retouch.get(id).map(|r| json!({"score": r.score.round(), "issues": r.issues}))}));
     }
     if !ops.is_empty() {
         s.commit("Assisted Culling", Op::Batch { ops })?;
