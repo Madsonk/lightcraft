@@ -254,6 +254,49 @@ fn lightcraft_sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Keyword that marks a photo a client liked in an online gallery.
+const LIKED: &str = "Client favourite";
+
+/// Brings the clients' likes home: every photo with at least one like gets the keyword `LIKED`, a photo
+/// whose likes were all taken back loses it. Flags, ratings and labels are the photographer's own and
+/// are left alone. Runs in the foreground (one small request); safe to repeat.
+fn pull(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "gallery.pull";
+    let cfg = load_config(s);
+    if cfg.url.is_empty() || cfg.token.is_empty() {
+        return Err(bad(C, "no gallery server set: gallery.configure {url, token}"));
+    }
+    let only = p.get("slug").and_then(Value::as_str);
+    let reply = call(&cfg, "GET", "/api/v1/owner/likes?since=0", &[], &[], &AtomicBool::new(false)).map_err(|e| bad(C, e))?;
+    // (slug, pid) → does anybody still like it
+    let mut liked: std::collections::HashMap<(String, String), bool> = Default::default();
+    for c in reply.get("changes").and_then(Value::as_array).into_iter().flatten() {
+        let (Some(slug), Some(pid)) = (c.get("slug").and_then(Value::as_str), c.get("pid").and_then(Value::as_str)) else { continue };
+        if only.is_some_and(|o| o != slug) {
+            continue;
+        }
+        let on = c.get("removed").and_then(Value::as_i64).unwrap_or(0) == 0;
+        *liked.entry((slug.to_string(), pid.to_string())).or_default() |= on;
+    }
+    let slugs: std::collections::HashSet<&str> = liked.keys().map(|(s, _)| s.as_str()).collect();
+    let (mut add, mut remove, mut found) = (Vec::new(), Vec::new(), 0usize);
+    for ph in s.catalog.photos() {
+        for slug in &slugs {
+            if let Some(&on) = liked.get(&((*slug).to_string(), photo_key(slug, ph.id))) {
+                found += 1;
+                if on { add.push(ph.id.0) } else { remove.push(ph.id.0) }
+            }
+        }
+    }
+    if !add.is_empty() {
+        s.execute("photo.setMeta", &json!({"ids": add, "addKeywords": [LIKED]}))?;
+    }
+    if !remove.is_empty() {
+        s.execute("photo.setMeta", &json!({"ids": remove, "removeKeywords": [LIKED]}))?;
+    }
+    Ok(json!({"liked": add.len(), "unliked": remove.len(), "notInLibrary": liked.len() - found, "keyword": LIKED}))
+}
+
 fn status(s: &mut Session, _p: &Value) -> Result<Value> {
     let base = load_config(s).url;
     Ok(match &s.gallery.job {
@@ -281,6 +324,7 @@ pub fn specs() -> Vec<CommandSpec> {
             publish
         ),
         cmd!(query "gallery.status", "Online Gallery progress", [], None, "{} → {state: idle|running|done|cancelled|failed, slug, url, total, done, sent, unchanged, failed, error}", always, status),
+        cmd!("gallery.pull", "Bring Gallery Likes Home", [], None, "{slug?} → {liked, unliked, notInLibrary, keyword} — reads the clients' likes from the online gallery server and gives each liked photo the keyword \"Client favourite\" (removed again when every like is taken back); flags, ratings and labels are not touched", always, pull),
         cmd!(query "gallery.cancel", "Cancel Gallery Publishing", [], None, "{} — stops between two photos; what was sent stays online", always, cancel),
         cmd!(query "gallery.configure", "Online Gallery Server", [], None, "{url?: https address, token?: owner token, persist?: bool (true)} — saved in the settings folder (gallery.json), else $LIGHTCRAFT_GALLERY_URL / _TOKEN → {url, tokenSet}", always, configure),
         cmd!(query "gallery.settings", "Online Gallery settings", [], None, "{} → {url, tokenSet}", always, config_info),
@@ -359,6 +403,34 @@ mod tests {
         stop.store(true, Ordering::Relaxed);
         let log = srv.join().expect("server");
         assert_eq!(log.iter().filter(|l| l.starts_with("PUT") && l.contains("/photos/")).count(), 2, "{log:?}");
+    }
+
+    /// Likes come back as a keyword on exactly the photos liked; a photo whose likes were all withdrawn loses it.
+    #[test]
+    fn likes_come_home_as_a_keyword() {
+        let mut s = Session::with_demo();
+        let ids: Vec<PhotoId> = s.visible_cloned().iter().take(3).copied().collect();
+        let k = |i: usize| photo_key("g-test", ids[i]);
+        let body = json!({"changes": [
+            {"slug": "g-test", "pid": k(0), "who": "a", "removed": 0, "seq": 1},
+            {"slug": "g-test", "pid": k(1), "who": "a", "removed": 1, "seq": 3},
+            {"slug": "g-test", "pid": "pdead", "who": "a", "removed": 0, "seq": 4}], "cursor": 4})
+        .to_string();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let srv = std::thread::spawn(move || {
+            let (mut c, _) = listener.accept().expect("accept");
+            let mut buf = [0u8; 4096];
+            let _ = c.read(&mut buf);
+            let _ = c.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes());
+        });
+        s.execute("gallery.configure", &json!({"url": format!("http://127.0.0.1:{port}"), "token": "tok", "persist": false})).expect("configure");
+        s.execute("photo.setMeta", &json!({"ids": [ids[1].0], "addKeywords": [LIKED]})).expect("pre-existing");
+        let r = s.execute("gallery.pull", &json!({})).expect("pull");
+        srv.join().expect("server");
+        assert_eq!((r["liked"].as_u64(), r["unliked"].as_u64(), r["notInLibrary"].as_u64()), (Some(1), Some(1), Some(1)), "{r}");
+        let has = |i: usize| s.catalog.photo(ids[i]).is_some_and(|p| p.meta.keywords.iter().any(|x| x == LIKED));
+        assert!(has(0) && !has(1) && !has(2));
     }
 
     #[test]

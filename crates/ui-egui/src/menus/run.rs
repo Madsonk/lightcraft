@@ -1264,7 +1264,7 @@ fn ui_commands_8(app: &mut LightcraftApp, _ctx: &egui::Context, id: &str, p: &Va
 }
 
 /// Part 9 of 12 of the UI commands; `None` means the id is not one of this part's.
-fn ui_commands_9(app: &mut LightcraftApp, _ctx: &egui::Context, id: &str, p: &Value) -> Option<Result<Value, String>> {
+fn ui_commands_9(app: &mut LightcraftApp, ctx: &egui::Context, id: &str, p: &Value) -> Option<Result<Value, String>> {
     let r: Result<Value, String> = match id {
         "dialog.captureTime" => {
             // a time that doesn't fully read isn't offered as the starting point (`10:0` would read as midnight)
@@ -1337,6 +1337,15 @@ fn ui_commands_9(app: &mut LightcraftApp, _ctx: &egui::Context, id: &str, p: &Va
                 token_saved: saved["tokenSet"].as_bool().unwrap_or(false),
             });
             Ok(Value::Null)
+        }
+        "dialog.galleryLikes" => {
+            let r = match app.run("gallery.pull", json!({})) {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            let (n, gone) = (r["liked"].as_u64().unwrap_or(0), r["unliked"].as_u64().unwrap_or(0));
+            app.toast(ctx, crate::i18n::tr_format!("Client favourites: {n} liked · {gone} taken back", n = n, gone = gone));
+            Ok(r)
         }
         "dialog.print" => {
             app.ui.print = Default::default();
