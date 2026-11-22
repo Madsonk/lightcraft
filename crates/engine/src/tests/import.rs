@@ -3586,3 +3586,17 @@ fn a_broken_link_before_dotdot_is_an_error() {
     assert_eq!(crate::import::browse_spelling(&link.join("..")).unwrap(), dir);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn auto_retouch_fixes_only_the_photos_the_analysis_flagged() {
+    let mut s = Session::with_demo();
+    let ids: Vec<u64> = s.visible_cloned().iter().take(3).map(|i| i.0).collect();
+    s.execute("photo.analyze", &json!({"ids": ids})).expect("analyze");
+    let none = s.execute("photo.autoRetouch", &json!({"ids": ids, "below": 0})).expect("nothing below 0");
+    assert_eq!(none["fixed"].as_array().map(Vec::len), Some(0), "{none}");
+    let before = s.execute("develop.get", &json!({"id": ids[0]})).expect("get");
+    let r = s.execute("photo.autoRetouch", &json!({"ids": ids, "all": true})).expect("fix all");
+    assert_eq!(r["fixed"].as_array().map(Vec::len), Some(3), "{r}");
+    s.execute("edit.undo", &json!({})).expect("one undo step");
+    assert_eq!(s.execute("develop.get", &json!({"id": ids[0]})).expect("get"), before);
+}

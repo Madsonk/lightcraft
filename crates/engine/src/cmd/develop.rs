@@ -706,6 +706,61 @@ pub fn specs() -> Vec<CommandSpec> {
             Ok(first.unwrap_or_default())
         }),
         cmd!(
+            "photo.autoRetouch",
+            "Auto Retouch",
+            ["Photo"],
+            None,
+            "{ids?, all?: bool (false), below?: score (70)} — fixes what photo.analyze says is wrong: auto white balance only on photos with a colour cast, auto tone on every photo below the score (all: every photo); one undo step → {fixed, skipped}",
+            has_selection,
+            |s, p| {
+                const C: &str = "photo.autoRetouch";
+                let all = p.get("all").and_then(Value::as_bool).unwrap_or(false);
+                let below = p.get("below").and_then(Value::as_f64).map_or(lightcraft_catalog::query::NEEDS_RETOUCH_BELOW, |b| b as f32);
+                let mut ops: Vec<Op> = Vec::new();
+                let (mut fixed, mut skipped) = (Vec::new(), 0usize);
+                for id in s.targets(p)? {
+                    let Some(ph) = s.catalog.photo(id) else { return Err(bad(C, format!("no such photo: {}", id.0))) };
+                    let rt = ph.analysis.as_ref().and_then(|a| a.retouch.clone());
+                    if !all && rt.as_ref().is_none_or(|r| r.score >= below) {
+                        skipped += 1;
+                        continue;
+                    }
+                    let Ok(src) = s.source_now(id, SourceLevel::Thumb) else {
+                        skipped += 1;
+                        continue;
+                    };
+                    let info = s.source_info(id);
+                    let d = s.develop_of(id).unwrap_or_default();
+                    let a = lightcraft_pipeline::auto::auto_tone(&src, &info, &d);
+                    let cast = rt.as_ref().is_some_and(|r| r.issues.iter().any(|i| matches!(i.as_str(), "too warm" | "too cool" | "green tint" | "magenta tint")));
+                    let mut nd = (*d).clone();
+                    if cast {
+                        let (temp, tint) = lightcraft_pipeline::auto::auto_wb(&src, &info);
+                        lightcraft_pipeline::local::normalize_wb(&mut nd, &info);
+                        nd.wb.mode = WbMode::Auto;
+                        nd.wb.temp = temp.clamp(2000.0, 50000.0);
+                        nd.wb.tint = tint.clamp(-150.0, 150.0);
+                    }
+                    nd.light.exposure = a.exposure;
+                    nd.light.contrast = a.contrast;
+                    nd.light.highlights = a.highlights;
+                    nd.light.shadows = a.shadows;
+                    nd.light.whites = a.whites;
+                    nd.light.blacks = a.blacks;
+                    nd.color.vibrance = a.vibrance;
+                    nd.color.saturation = a.saturation;
+                    if let Some(op) = s.develop_op(id, nd, "Auto Retouch") {
+                        ops.push(op);
+                        fixed.push(json!({"id": id.0, "whiteBalance": cast}));
+                    }
+                }
+                if !ops.is_empty() {
+                    s.commit("Auto Retouch", Op::Batch { ops })?;
+                }
+                Ok(json!({"fixed": fixed, "skipped": skipped}))
+            }
+        ),
+        cmd!(
             "develop.wb",
             "White Balance",
             [],

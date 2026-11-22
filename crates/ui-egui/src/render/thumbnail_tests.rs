@@ -1281,10 +1281,11 @@ fn a_coalesced_thumbnail_promotes_once_for_a_higher_priority_caller() {
     let mut app = crate::LightcraftApp::new(s, crate::Services::default());
     app.renderer.pool = JobPool::new(0); // deterministic: nothing starts
     let slot = Slot::Thumb(PhotoId(1));
-    crate::panels::grid::request_thumb(&mut app, PhotoId(1), 256, 5);
-    assert_eq!(app.renderer.pending[&slot].1, 5);
+    // 8 is the lowest priority that still queues a full render (below it the grid defers one offscreen)
+    crate::panels::grid::request_thumb(&mut app, PhotoId(1), 256, 8);
+    assert_eq!(app.renderer.pending[&slot].1, 8);
     let first = app.renderer.pending[&slot].0;
-    // An on-screen caller at another bucket takes over the off-screen request once...
+    // A higher priority caller at another bucket takes over the request once...
     crate::panels::grid::request_thumb(&mut app, PhotoId(1), 512, 10);
     let promoted = app.renderer.pending[&slot];
     assert_eq!(promoted.1, 10);

@@ -466,7 +466,8 @@ fn dragging_a_header_moves_its_section() {
     let with_local = usual.contains(&"local".to_string());
     let listed = |ids: &[&str]| ids.iter().filter(|s| with_local || **s != "local").map(|s| s.to_string()).collect::<Vec<_>>();
     assert_eq!(usual, listed(&["albums", "local", "byDate", "folders", "keywords"]));
-    assert!(has(&h, "sidebarEmpty:keywords"), "no keywords in this library: the section says so and stays");
+    // no keywords in this library: the section stays, offering only the "No keyword" row
+    assert!(has(&h, "sidebarSection:keywords") && has(&h, "source:keyword:__none__"));
     // Folders, dragged to just above Albums
     let (from, to) = (header(&h, "folders").center(), header(&h, "albums").center() - egui::vec2(0.0, 12.0));
     h.app.synthetic.push(egui::Event::PointerMoved(from));

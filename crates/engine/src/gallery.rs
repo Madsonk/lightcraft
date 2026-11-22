@@ -23,6 +23,8 @@ use crate::export::{ExportOptions, prepare_batch};
 use crate::{Result, Session};
 
 const LONG_EDGE: u64 = 2048;
+/// Photos rendered and sent at the same time.
+const WORKERS: usize = 3;
 const WAIT: Duration = Duration::from_secs(2 * 60 * 60);
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -177,10 +179,15 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(pw) = p.get("password") {
         gallery["password"] = pw.clone();
     }
+    if let Some(days) = p.get("expiresInDays").and_then(Value::as_f64) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        gallery["expires"] = if days > 0.0 { json!(now + (days * 86_400.0) as u64) } else { Value::Null };
+    }
     let edge = p.get("longEdge").and_then(Value::as_u64).unwrap_or(LONG_EDGE).clamp(480, 6000);
     let opts = ExportOptions::from_params(&json!({"format": "jpeg", "quality": 90, "resize": {"mode": "longEdge", "value": edge, "dontEnlarge": true}, "metadata": "copyright", "removeLocation": true}))
         .map_err(|e| bad(C, e.to_string()))?;
     let items = prepare_batch(s, &ids, &opts).map_err(|e| bad(C, e))?;
+    let prints: Vec<String> = ids.iter().map(|id| fingerprint(s, *id, edge)).collect();
     let keys: Vec<(String, String)> = ids.iter().zip(&items).map(|(id, it)| (photo_key(&slug, *id), it.file_name.clone())).collect();
 
     let state = Arc::new(Mutex::new(State { phase: "running", slug: slug.clone(), total: items.len(), ..Default::default() }));
@@ -194,37 +201,63 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
         let guard = guard;
         let run = || -> std::result::Result<(), String> {
             call(&cfg, "PUT", &format!("/api/v1/owner/galleries/{slug}"), gallery.to_string().as_bytes(), &[("Content-Type", "application/json".into())], &c)?;
-            let known: std::collections::HashMap<String, String> = call(&cfg, "GET", &format!("/api/v1/owner/galleries/{slug}/manifest"), &[], &[], &c)?
+            // pid → (sha, fingerprint) of what the server holds
+            let known: std::collections::HashMap<String, (String, Option<String>)> = call(&cfg, "GET", &format!("/api/v1/owner/galleries/{slug}/manifest"), &[], &[], &c)?
                 .get("photos")
                 .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(|p| Some((p.get("pid")?.as_str()?.to_string(), p.get("sha")?.as_str()?.to_string()))).collect())
+                .map(|a| a.iter().filter_map(|p| Some((p.get("pid")?.as_str()?.to_string(), (p.get("sha")?.as_str()?.to_string(), p.get("fp").and_then(Value::as_str).map(String::from))))).collect())
                 .unwrap_or_default();
-            for (pos, (item, (pid, name))) in items.into_iter().zip(keys).enumerate() {
-                if c.load(Ordering::Relaxed) {
-                    return Err("cancelled".into());
+            let queue = Mutex::new(items.into_iter().zip(keys).zip(prints).enumerate());
+            let (cfg, st, c, slug, known, guard) = (&cfg, &st, &c, &slug, &known, &guard);
+            // a few photos at once: one renders while another uploads
+            std::thread::scope(|sc| {
+                for _ in 0..WORKERS {
+                    sc.spawn(|| {
+                        loop {
+                            if c.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let Some((pos, ((item, (pid, name)), fp))) = queue.lock().unwrap_or_else(|e| e.into_inner()).next() else { return };
+                            let held = known.get(&pid);
+                            // same photo, same edits, same settings as what is online: nothing to render
+                            if held.is_some_and(|(_, f)| f.as_deref() == Some(fp.as_str())) {
+                                let mut g = lock(st);
+                                g.unchanged += 1;
+                                g.done += 1;
+                                guard.progress(g.done as u64, g.total as u64);
+                                continue;
+                            }
+                            let out = match item.run() {
+                                Ok(o) => Some(o),
+                                Err(e) => {
+                                    lock(st).failed.push(json!([name, e]));
+                                    None
+                                }
+                            };
+                            let mut sent = None;
+                            if let Some(out) = &out {
+                                if held.is_some_and(|(s, _)| *s == lightcraft_sha256_hex(&out.bytes)) {
+                                    sent = Some(Ok(false));
+                                } else {
+                                    let h = [("Content-Type", "image/jpeg".into()), ("X-Position", pos.to_string()), ("X-Name", name.clone()), ("X-Fingerprint", fp.clone())];
+                                    sent = Some(call(cfg, "PUT", &format!("/api/v1/owner/galleries/{slug}/photos/{pid}"), &out.bytes, &h, c).map(|_| true));
+                                }
+                            }
+                            let mut g = lock(st);
+                            match sent {
+                                Some(Ok(true)) => g.sent += 1,
+                                Some(Ok(false)) => g.unchanged += 1,
+                                Some(Err(e)) => g.failed.push(json!([name, e])),
+                                None => {}
+                            }
+                            g.done += 1;
+                            guard.progress(g.done as u64, g.total as u64);
+                        }
+                    });
                 }
-                let out = match item.run() {
-                    Ok(o) => o,
-                    Err(e) => {
-                        lock(&st).failed.push(json!([name, e]));
-                        continue;
-                    }
-                };
-                let sha = lightcraft_sha256_hex(&out.bytes);
-                let mut g = lock(&st);
-                if known.get(&pid) == Some(&sha) {
-                    g.unchanged += 1;
-                } else {
-                    drop(g);
-                    let r = call(&cfg, "PUT", &format!("/api/v1/owner/galleries/{slug}/photos/{pid}"), &out.bytes, &[("Content-Type", "image/jpeg".into()), ("X-Position", pos.to_string()), ("X-Name", name.clone())], &c);
-                    g = lock(&st);
-                    match r {
-                        Ok(_) => g.sent += 1,
-                        Err(e) => g.failed.push(json!([name, e])),
-                    }
-                }
-                g.done += 1;
-                guard.progress(g.done as u64, g.total as u64);
+            });
+            if c.load(Ordering::Relaxed) {
+                return Err("cancelled".into());
             }
             Ok(())
         };
@@ -246,6 +279,16 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let base = cfg2.url.clone();
     Ok(snapshot(&lock(&state), base.trim_end_matches('/')))
+}
+
+/// What a published photo depends on: the file, its edits and the web settings. The photographer's
+/// keywords are left out (a like adds one) so bringing likes home never triggers a re-render.
+fn fingerprint(s: &Session, id: PhotoId, edge: u64) -> String {
+    let Some(ph) = s.catalog.photo(id) else { return String::new() };
+    let mut meta = ph.meta.clone();
+    meta.keywords.clear();
+    let text = format!("v1|{edge}|{}|{}|{}|{}", ph.content_hash.as_deref().unwrap_or(""), id.0, serde_json::to_string(&*ph.develop).unwrap_or_default(), serde_json::to_string(&meta).unwrap_or_default());
+    lightcraft_sha256_hex(text.as_bytes())
 }
 
 /// The SHA-256 the server computes for the same bytes.
@@ -297,6 +340,49 @@ fn pull(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"liked": add.len(), "unliked": remove.len(), "notInLibrary": liked.len() - found, "keyword": LIKED}))
 }
 
+fn owner_call(s: &Session, c: &str, method: &str, path: &str, body: Option<Value>) -> Result<Value> {
+    let cfg = load_config(s);
+    if cfg.url.is_empty() || cfg.token.is_empty() {
+        return Err(bad(c, "no gallery server set: gallery.configure {url, token}"));
+    }
+    let (bytes, h) = match body {
+        Some(b) => (b.to_string().into_bytes(), vec![("Content-Type", "application/json".to_string())]),
+        None => (Vec::new(), Vec::new()),
+    };
+    call(&cfg, method, path, &bytes, &h, &AtomicBool::new(false)).map_err(|e| bad(c, e))
+}
+
+fn slug_param(p: &Value, c: &str) -> Result<String> {
+    slug_for(p).ok().filter(|_| p.get("slug").is_some()).ok_or_else(|| bad(c, "`slug` is required (a–z 0–9 -)"))
+}
+
+fn list(s: &mut Session, _p: &Value) -> Result<Value> {
+    owner_call(s, "gallery.list", "GET", "/api/v1/owner/galleries", None)
+}
+
+/// Takes a gallery offline for good: its photos and likes on the server are deleted (the originals stay).
+fn delete(s: &mut Session, p: &Value) -> Result<Value> {
+    let slug = slug_param(p, "gallery.delete")?;
+    owner_call(s, "gallery.delete", "DELETE", &format!("/api/v1/owner/galleries/{slug}"), None)
+}
+
+fn guests(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "gallery.guests";
+    let slug = slug_param(p, C)?;
+    let base = format!("/api/v1/owner/galleries/{slug}/guests");
+    if let Some(id) = p.get("revoke").and_then(Value::as_i64) {
+        return owner_call(s, C, "DELETE", &format!("{base}/{id}"), None);
+    }
+    if let Some(name) = p.get("add").and_then(Value::as_str) {
+        let mut b = json!({"name": name, "level": p.get("level").and_then(Value::as_str).unwrap_or("like")});
+        if let Some(code) = p.get("code") {
+            b["code"] = code.clone();
+        }
+        return owner_call(s, C, "POST", &base, Some(b));
+    }
+    owner_call(s, C, "GET", &base, None)
+}
+
 fn status(s: &mut Session, _p: &Value) -> Result<Value> {
     let base = load_config(s).url;
     Ok(match &s.gallery.job {
@@ -319,10 +405,13 @@ pub fn specs() -> Vec<CommandSpec> {
             "Publish to Online Gallery",
             [],
             None,
-            "{id?|ids?, slug?: a–z 0–9 - (random), title?, password?: string (\"\" = none), download?: bool (true), longEdge?: px (2048), wait?: bool} — renders the photos at web size (no location) and sends them to the online gallery server (gallery.configure), only the ones the server does not hold yet; in the background with an activity row (gallery.status, gallery.cancel); wait blocks until done → status {state, slug, url, total, done, sent, unchanged, failed}",
+            "{id?|ids?, slug?: a–z 0–9 - (random), expiresInDays?: n (0 = never), title?, password?: string (\"\" = none), download?: bool (true), longEdge?: px (2048), wait?: bool} — renders the photos at web size (no location) and sends them to the online gallery server (gallery.configure), only the ones the server does not hold yet; in the background with an activity row (gallery.status, gallery.cancel); wait blocks until done → status {state, slug, url, total, done, sent, unchanged, failed}",
             always,
             publish
         ),
+        cmd!(query "gallery.list", "Online Galleries", [], None, "{} → the galleries on the server (slug, title, photos, expiry)", always, list),
+        cmd!("gallery.delete", "Delete Online Gallery", [], None, "{slug} — deletes the gallery, its photos and likes from the server (irreversible; originals stay)", always, delete),
+        cmd!("gallery.guests", "Gallery Guest Codes", [], None, "{slug, add?: name, level?: view|like|download (like), code?: string (random if omitted), revoke?: id} — no add/revoke lists the codes; an added code is shown once", always, guests),
         cmd!(query "gallery.status", "Online Gallery progress", [], None, "{} → {state: idle|running|done|cancelled|failed, slug, url, total, done, sent, unchanged, failed, error}", always, status),
         cmd!("gallery.pull", "Bring Gallery Likes Home", [], None, "{slug?} → {liked, unliked, notInLibrary, keyword} — reads the clients' likes from the online gallery server and gives each liked photo the keyword \"Client favourite\" (removed again when every like is taken back); flags, ratings and labels are not touched", always, pull),
         cmd!(query "gallery.cancel", "Cancel Gallery Publishing", [], None, "{} — stops between two photos; what was sent stays online", always, cancel),
@@ -340,7 +429,7 @@ mod tests {
     /// A stand-in for the gallery server: keeps the photos it is sent, answers the manifest.
     fn server(listener: std::net::TcpListener, stop: Arc<AtomicBool>) -> std::thread::JoinHandle<Vec<String>> {
         std::thread::spawn(move || {
-            let (mut held, mut log): (HashMap<String, String>, Vec<String>) = Default::default();
+            let (mut held, mut log): (HashMap<String, (String, String)>, Vec<String>) = Default::default();
             listener.set_nonblocking(true).ok();
             while !stop.load(Ordering::Relaxed) {
                 let Ok((mut s, _)) = listener.accept() else {
@@ -369,10 +458,11 @@ mod tests {
                 let body = &buf[head_end..head_end + len];
                 assert!(head.contains("Authorization: Bearer tok"), "{head}");
                 let reply = if line.contains("/manifest") {
-                    json!({"photos": held.iter().map(|(k, v)| json!({"pid": k, "sha": v})).collect::<Vec<_>>()}).to_string()
+                    json!({"photos": held.iter().map(|(k, v)| json!({"pid": k, "sha": v.0, "fp": v.1})).collect::<Vec<_>>()}).to_string()
                 } else {
                     if let Some(pid) = line.split("/photos/").nth(1).and_then(|r| r.split(' ').next()) {
-                        held.insert(pid.to_string(), lightcraft_sha256_hex(body));
+                        let fp = head.lines().find_map(|l| l.strip_prefix("X-Fingerprint: ")).unwrap_or_default().to_string();
+                        held.insert(pid.to_string(), (lightcraft_sha256_hex(body), fp));
                     }
                     "{}".into()
                 };
