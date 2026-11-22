@@ -1340,15 +1340,18 @@ fn ui_commands_9(app: &mut LightcraftApp, ctx: &egui::Context, id: &str, p: &Val
                 listed: true,
                 cover: false,
                 chapters: true,
+                add_to: None,
+                album: None,
             });
             Ok(Value::Null)
         }
         "dialog.galleries" => {
-            let (rows, error) = match app.run("gallery.list", json!({})) {
-                Ok(v) => (v["galleries"].as_array().cloned().unwrap_or_default(), None),
-                Err(e) => (Vec::new(), Some(e)),
-            };
-            app.ui.dialog = Some(Dialog::Galleries { rows, open: None, guests: Vec::new(), requests: Vec::new(), confirm: None, name: String::new(), level: 1, code: None, error });
+            let mut st = crate::state::GalleriesState { level: 1, ..Default::default() };
+            match app.run("gallery.list", json!({})) {
+                Ok(v) => st.rows = v["galleries"].as_array().cloned().unwrap_or_default(),
+                Err(e) => st.error = Some(e),
+            }
+            app.ui.dialog = Some(Dialog::Galleries(Box::new(st)));
             Ok(Value::Null)
         }
         "dialog.galleryLikes" => {

@@ -31,6 +31,8 @@ pub mod crs_masks;
 pub mod cull_job;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gallery;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod gallery_ai;
 pub mod demo;
 pub mod denoise;
 pub mod describe;

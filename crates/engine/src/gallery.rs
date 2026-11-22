@@ -166,7 +166,10 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(C, "no gallery server set: gallery.configure {url, token}"));
     }
     let slug = slug_for(p).map_err(|e| bad(C, e))?;
-    let all: Vec<PhotoId> = s.targets(p)?.into_iter().filter(|id| s.catalog.photo(*id).is_some()).collect();
+    let all: Vec<PhotoId> = match p.get("album").and_then(Value::as_u64) {
+        Some(a) => album_photos(s, a).ok_or_else(|| bad(C, format!("no such album: {a}")))?,
+        None => s.targets(p)?.into_iter().filter(|id| s.catalog.photo(*id).is_some()).collect(),
+    };
     if all.is_empty() {
         return Err(bad(C, "no photos to publish (select photos or pass ids)"));
     }
@@ -189,7 +192,15 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(C, "a title is needed to show the gallery on the website"));
     }
     let title = given.unwrap_or(&slug).to_string();
-    let mut gallery = json!({"title": title, "download": p.get("download").and_then(Value::as_bool).unwrap_or(true)});
+    // adding to a gallery that exists: its title and download rule stay unless given
+    let adding = p.get("append").and_then(Value::as_bool).unwrap_or(false);
+    let mut gallery = json!({});
+    if !adding || given.is_some() {
+        gallery["title"] = json!(title);
+    }
+    if !adding || p.get("download").is_some() {
+        gallery["download"] = json!(p.get("download").and_then(Value::as_bool).unwrap_or(true));
+    }
     if let Some(pw) = p.get("password") {
         gallery["password"] = pw.clone();
     }
@@ -219,6 +230,7 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
     } else {
         Default::default()
     };
+    let append = p.get("append").and_then(Value::as_bool).unwrap_or(false);
     let total = items.len() + videos.len();
     let state = Arc::new(Mutex::new(State { phase: "running", slug: slug.clone(), total, ..Default::default() }));
     let cancel = Arc::new(AtomicBool::new(false));
@@ -232,12 +244,17 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
         let run = || -> std::result::Result<(), String> {
             call(&cfg, "PUT", &format!("/api/v1/owner/galleries/{slug}"), gallery.to_string().as_bytes(), &[("Content-Type", "application/json".into())], &c)?;
             // pid → (sha, fingerprint) of what the server holds
-            let known: std::collections::HashMap<String, (String, Option<String>, String)> = call(&cfg, "GET", &format!("/api/v1/owner/galleries/{slug}/manifest"), &[], &[], &c)?
+            let manifest = call(&cfg, "GET", &format!("/api/v1/owner/galleries/{slug}/manifest"), &[], &[], &c)?;
+            // where new photos go when adding: after the last position online
+            let next_pos = manifest["photos"].as_array().into_iter().flatten().filter_map(|p| p["pos"].as_i64()).max().map_or(0, |m| (m + 1).max(0) as usize);
+            let known: std::collections::HashMap<String, (String, Option<String>, String)> = manifest
                 .get("photos")
                 .and_then(Value::as_array)
                 .map(|a| a.iter().filter_map(|p| Some((p.get("pid")?.as_str()?.to_string(), (p.get("sha")?.as_str()?.to_string(), p.get("fp").and_then(Value::as_str).map(String::from), p.get("section").and_then(Value::as_str).unwrap_or_default().to_string())))).collect())
                 .unwrap_or_default();
-            let queue = Mutex::new(positions.iter().copied().zip(items.into_iter().zip(keys).zip(prints)));
+            // adding to a gallery that already holds photos: they go after the ones online
+            let off = if append { next_pos.max(known.len()) } else { 0 };
+            let queue = Mutex::new(positions.iter().map(|p| p + off).zip(items.into_iter().zip(keys).zip(prints)));
             let (cfg, st, c, slug, known, guard, chapters) = (&cfg, &st, &c, &slug, &known, &guard, &chapters);
             // the photo is already online as it is: only its chapter may have moved
             let relabel = |pid: &str, pos: usize| -> std::result::Result<(), String> {
@@ -299,6 +316,7 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
                 }
             });
             for (pos, id, path, fp) in videos {
+                let pos = pos + off;
                 if c.load(Ordering::Relaxed) {
                     break;
                 }
@@ -504,6 +522,227 @@ fn requests(s: &mut Session, p: &Value) -> Result<Value> {
     owner_call(s, C, "GET", &base, None)
 }
 
+/// The photos an album lists (a regular album's, or the ones a smart album's rules match).
+fn album_photos(s: &Session, album: u64) -> Option<Vec<PhotoId>> {
+    let id = lightcraft_catalog::AlbumId(album);
+    let a = s.catalog.albums().find(|a| a.id == id)?;
+    if a.folder {
+        return None;
+    }
+    Some(if a.smart.is_none() {
+        a.photos.iter().copied().filter(|p| s.catalog.photo(*p).is_some()).collect()
+    } else {
+        s.catalog.photos().filter(|p| p.in_library() && s.catalog.album_contains(id, p)).map(|p| p.id).collect()
+    })
+}
+
+/// The server's photo key → the library photo it was made from (the same key `publish` derives).
+fn key_map(s: &Session, slug: &str) -> std::collections::HashMap<String, PhotoId> {
+    s.catalog.photos().map(|p| (photo_key(slug, p.id), p.id)).collect()
+}
+
+fn gallery_row(s: &Session, c: &str, slug: &str) -> Result<Value> {
+    owner_call(s, c, "GET", "/api/v1/owner/galleries", None)?
+        .get("galleries")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().find(|g| g["slug"] == slug).cloned())
+        .ok_or_else(|| bad(c, format!("no gallery `{slug}` on the server")))
+}
+
+/// A gallery as the server holds it: its settings and its photos in display order, each with the library
+/// photo it comes from (`id`, null when it was published from another library).
+fn open(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "gallery.open";
+    let slug = slug_param(p, C)?;
+    let gallery = gallery_row(s, C, &slug)?;
+    let manifest = owner_call(s, C, "GET", &format!("/api/v1/owner/galleries/{slug}/manifest"), None)?;
+    let map = key_map(s, &slug);
+    let photos: Vec<Value> = manifest["photos"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|m| {
+            let pid = m["pid"].as_str().unwrap_or_default();
+            json!({"pid": pid, "id": map.get(pid).map(|i| i.0), "name": m["name"], "section": m["section"], "position": m["pos"], "kind": m["kind"], "hidden": m["hidden"]})
+        })
+        .collect();
+    Ok(json!({"gallery": gallery, "photos": photos}))
+}
+
+/// Changes a gallery's settings without sending a photo. Only the keys given change.
+fn update(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "gallery.update";
+    let slug = slug_param(p, C)?;
+    let row = gallery_row(s, C, &slug)?;
+    // the server resets what a PUT leaves out on older versions: the current title and download rule always go along
+    let mut body = json!({"title": p.get("title").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty()).or(row["title"].as_str()).unwrap_or(&slug), "download": p.get("download").and_then(Value::as_bool).unwrap_or_else(|| row["download"].as_bool().or_else(|| row["download"].as_i64().map(|n| n != 0)).unwrap_or(true))});
+    for k in ["password", "listed", "sections_order"] {
+        if let Some(v) = p.get(k) {
+            body[k] = v.clone();
+        }
+    }
+    if let Some(days) = p.get("expiresInDays").and_then(Value::as_f64) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        body["expires"] = if days > 0.0 { json!(now + (days * 86_400.0) as u64) } else { Value::Null };
+    }
+    if let Some(c) = p.get("cover") {
+        // a library photo id (or null to remove the cover)
+        body["cover"] = c.as_u64().map_or(Value::Null, |id| json!(photo_key(&slug, PhotoId(id))));
+    }
+    owner_call(s, C, "PUT", &format!("/api/v1/owner/galleries/{slug}"), Some(body))
+}
+
+/// Takes photos out of a gallery (`hide: true` keeps them on the server but out of the page).
+fn remove(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "gallery.remove";
+    let slug = slug_param(p, C)?;
+    let ids: Vec<u64> = p.get("ids").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
+    if ids.is_empty() {
+        return Err(bad(C, "`ids`: the library photos to take out"));
+    }
+    let hide = p.get("hide").and_then(Value::as_bool).unwrap_or(false);
+    let mut done = 0;
+    for id in ids {
+        let pid = photo_key(&slug, PhotoId(id));
+        if hide {
+            owner_call(s, C, "POST", &format!("/api/v1/owner/galleries/{slug}/hide"), Some(json!({"pid": pid, "hidden": p.get("hidden").and_then(Value::as_bool).unwrap_or(true)})))?;
+        } else {
+            owner_call(s, C, "DELETE", &format!("/api/v1/owner/galleries/{slug}/photos/{pid}"), None)?;
+        }
+        done += 1;
+    }
+    Ok(json!({"removed": done, "hidden": hide}))
+}
+
+/// Puts a gallery's photos in order and in chapters: `ids` in display order, `sections` = {"<id>": chapter}.
+fn arrange(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "gallery.arrange";
+    let slug = slug_param(p, C)?;
+    let ids: Vec<u64> = p.get("ids").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
+    if ids.is_empty() {
+        return Err(bad(C, "`ids`: the library photos in display order"));
+    }
+    let empty = json!({});
+    let sections = p.get("sections").unwrap_or(&empty);
+    let mut done = 0;
+    for (pos, id) in ids.iter().enumerate() {
+        let mut body = json!({"position": pos});
+        if let Some(name) = sections.get(id.to_string()).and_then(Value::as_str) {
+            body["section"] = json!(name);
+        }
+        owner_call(s, C, "PATCH", &format!("/api/v1/owner/galleries/{slug}/photos/{}", photo_key(&slug, PhotoId(*id))), Some(body))?;
+        done += 1;
+    }
+    if let Some(order) = p.get("chapters") {
+        update(s, &json!({"slug": slug, "sections_order": order}))?;
+    }
+    Ok(json!({"arranged": done}))
+}
+
+/// "YYYY-MM-DDTHH:MM:SS…" → seconds since 1970 (the clock as written, no time zone: only differences matter).
+fn capture_seconds(s: &str) -> Option<i64> {
+    let n = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
+    let (y, m, d) = (n(0..4)?, n(5..7)?, n(8..10)?);
+    let (hh, mm, ss) = (n(11..13).unwrap_or(0), n(14..16).unwrap_or(0), n(17..19).unwrap_or(0));
+    // days from civil (Howard Hinnant)
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some((era * 146_097 + doe - 719_468) * 86_400 + hh * 3600 + mm * 60 + ss)
+}
+
+/// What the library knows about each photo, as the organiser reads it.
+fn candidates(s: &Session, ids: &[PhotoId]) -> Vec<crate::gallery_ai::Candidate> {
+    let mut manual: Vec<&lightcraft_catalog::Album> = s.catalog.albums().filter(|a| !a.folder && a.smart.is_none()).collect();
+    manual.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    ids.iter()
+        .filter_map(|id| {
+            let ph = s.catalog.photo(*id)?;
+            let an = ph.analysis.as_ref();
+            Some(crate::gallery_ai::Candidate {
+                id: *id,
+                captured: ph.captured.as_deref().and_then(capture_seconds),
+                sharpness: an.map(|a| a.sharpness),
+                verdict_score: an.and_then(|a| a.verdict.as_ref()).map(|v| v.score),
+                retouch_score: an.and_then(|a| a.retouch.as_ref()).map(|r| r.score),
+                burst: an.and_then(|a| a.group),
+                best_of_burst: an.is_some_and(|a| a.best),
+                faces: an.and_then(|a| a.faces.as_ref()).map(|f| f.len() as u32),
+                people: Vec::new(),
+                scene: None,
+                width: ph.width,
+                height: ph.height,
+                rating: ph.rating,
+                flag_pick: ph.flag == lightcraft_catalog::Flag::Pick,
+                flag_reject: ph.flag == lightcraft_catalog::Flag::Reject,
+                album: manual.iter().find(|a| a.photos.contains(id)).map(|a| a.name.clone()),
+            })
+        })
+        .collect()
+}
+
+/// Proposes how to organise a gallery — chapters, order, a cover, the photos to leave out — from what
+/// LightCraft knows about the photos (sharpness, bursts, faces, capture time…). Nothing leaves the machine
+/// and nothing changes: `gallery.applyPlan` applies a plan.
+fn organise(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "gallery.organise";
+    let ids: Vec<PhotoId> = if let Some(slug) = p.get("slug").and_then(Value::as_str) {
+        let manifest = owner_call(s, C, "GET", &format!("/api/v1/owner/galleries/{slug}/manifest"), None)?;
+        let map = key_map(s, slug);
+        manifest["photos"].as_array().into_iter().flatten().filter_map(|m| map.get(m["pid"].as_str()?).copied()).collect()
+    } else {
+        s.targets(p)?
+    };
+    if ids.is_empty() {
+        return Err(bad(C, "no photos to organise (`slug` of a gallery, or select photos)"));
+    }
+    let opts = crate::gallery_ai::Options {
+        lang: if p.get("lang").and_then(Value::as_str) == Some("en") { crate::gallery_ai::Lang::En } else { crate::gallery_ai::Lang::Fr },
+        gap_minutes: p.get("gapMinutes").and_then(Value::as_i64).unwrap_or(45).clamp(5, 24 * 60),
+        drop_weak: p.get("dropWeak").and_then(Value::as_bool).unwrap_or(true),
+        target_cover_landscape: p.get("landscapeCover").and_then(Value::as_bool).unwrap_or(false),
+    };
+    let plan = crate::gallery_ai::organise(&candidates(s, &ids), &opts);
+    Ok(json!({
+        "chapters": plan.chapters.iter().map(|c| json!({"name": c.name, "ids": c.ids.iter().map(|i| i.0).collect::<Vec<_>>()})).collect::<Vec<_>>(),
+        "cover": plan.cover.map(|i| i.0),
+        "dropped": plan.dropped.iter().map(|d| json!({"id": d.id.0, "reason": d.reason})).collect::<Vec<_>>(),
+        "notes": plan.notes,
+    }))
+}
+
+/// Applies a plan from `gallery.organise`: the order and chapters, the cover, and the dropped photos hidden
+/// (not deleted: they can be shown again).
+fn apply_plan(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "gallery.applyPlan";
+    let slug = slug_param(p, C)?;
+    let plan = p.get("plan").ok_or_else(|| bad(C, "`plan`: the result of gallery.organise"))?;
+    let (mut ids, mut sections, mut names) = (Vec::new(), serde_json::Map::new(), Vec::new());
+    for ch in plan["chapters"].as_array().into_iter().flatten() {
+        let name = ch["name"].as_str().unwrap_or_default().to_string();
+        for id in ch["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64) {
+            ids.push(id);
+            sections.insert(id.to_string(), json!(name));
+        }
+        names.push(json!(name));
+    }
+    let dropped: Vec<u64> = plan["dropped"].as_array().into_iter().flatten().filter_map(|d| d["id"].as_u64()).collect();
+    if !ids.is_empty() {
+        arrange(s, &json!({"slug": slug, "ids": ids, "sections": sections, "chapters": names}))?;
+        // what the plan keeps is shown, in case an earlier plan had hidden it
+        remove(s, &json!({"slug": slug, "ids": ids, "hide": true, "hidden": false}))?;
+    }
+    if !dropped.is_empty() {
+        remove(s, &json!({"slug": slug, "ids": dropped, "hide": true}))?;
+    }
+    if let Some(cover) = plan["cover"].as_u64() {
+        update(s, &json!({"slug": slug, "cover": cover}))?;
+    }
+    Ok(json!({"arranged": ids.len(), "hidden": dropped.len(), "cover": plan["cover"]}))
+}
+
 fn status(s: &mut Session, _p: &Value) -> Result<Value> {
     let base = load_config(s).url;
     Ok(match &s.gallery.job {
@@ -526,7 +765,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Publish to Online Gallery",
             [],
             None,
-            "{id?|ids?, slug?: a–z 0–9 - (random), chapters?: \"albums\" (each photo's first regular album, by name, becomes its chapter), expiresInDays?: n (0 = never), listed?: bool (show in the website menu), cover?: bool (first photo as public thumbnail), title?, password?: string (\"\" = none), download?: bool (true), longEdge?: px (2048), wait?: bool} — renders the photos at web size (no location) and sends them to the online gallery server (gallery.configure), only the ones the server does not hold yet; in the background with an activity row (gallery.status, gallery.cancel); wait blocks until done → status {state, slug, url, total, done, sent, unchanged, failed}",
+            "{id?|ids?, slug?: a–z 0–9 - (random), album?: album id (publish that album's photos), append?: bool (add after the photos already online), chapters?: \"albums\" (each photo's first regular album, by name, becomes its chapter), expiresInDays?: n (0 = never), listed?: bool (show in the website menu), cover?: bool (first photo as public thumbnail), title?, password?: string (\"\" = none), download?: bool (true), longEdge?: px (2048), wait?: bool} — renders the photos at web size (no location) and sends them to the online gallery server (gallery.configure), only the ones the server does not hold yet; in the background with an activity row (gallery.status, gallery.cancel); wait blocks until done → status {state, slug, url, total, done, sent, unchanged, failed}",
             always,
             publish
         ),
@@ -534,6 +773,12 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("gallery.delete", "Delete Online Gallery", [], None, "{slug} — deletes the gallery, its photos and likes from the server (irreversible; originals stay)", always, delete),
         cmd!("gallery.guests", "Gallery Guest Codes", [], None, "{slug, add?: name, level?: view|like|download (like), code?: string (random if omitted), revoke?: id} — no add/revoke lists the codes; an added code is shown once", always, guests),
         cmd!("gallery.requests", "Gallery Access Requests", [], None, "{slug, decide?: request id, decision?: approve|deny, level?: like|download (like)} — no decide lists the requests (id, name, email, message, status); approving emails the visitor their personal link", always, requests),
+        cmd!(query "gallery.open", "Open Online Gallery", [], None, "{slug} → {gallery: settings, photos: [{pid, id (library photo or null), name, section, position, kind, hidden}]} in display order", always, open),
+        cmd!("gallery.update", "Edit Online Gallery", [], None, "{slug, title?, password?: string (\"\" removes it), expiresInDays?: n (0 = never), listed?: bool, cover?: library photo id (null removes), download?: bool, sections_order?: [chapter names]} — only the keys given change", always, update),
+        cmd!("gallery.remove", "Remove From Online Gallery", [], None, "{slug, ids: library photo ids, hide?: bool (keep on the server, out of the page), hidden?: bool (true; false shows them again)} — deletes the web copies from the server; the originals are untouched", always, remove),
+        cmd!("gallery.arrange", "Arrange Online Gallery", [], None, "{slug, ids: library photo ids in display order, sections?: {\"<id>\": chapter name}, chapters?: [chapter order]} — order and chapters only, nothing is sent again", always, arrange),
+        cmd!(query "gallery.organise", "Organise Gallery With AI", [], None, "{slug? | ids?, lang?: fr|en, dropWeak?: bool (true), gapMinutes?: n (45), landscapeCover?: bool} → {chapters: [{name, ids}], cover, dropped: [{id, reason}], notes} — a proposal made on this machine from sharpness, bursts, faces and capture time; nothing is sent or changed", always, organise),
+        cmd!("gallery.applyPlan", "Apply Gallery Plan", [], None, "{slug, plan: gallery.organise's result} — order and chapters, the cover, the dropped photos hidden (not deleted)", always, apply_plan),
         cmd!(query "gallery.status", "Online Gallery progress", [], None, "{} → {state: idle|running|done|cancelled|failed, slug, url, total, done, sent, unchanged, failed, error}", always, status),
         cmd!("gallery.pull", "Bring Gallery Likes Home", [], None, "{slug?} → {liked, unliked, notInLibrary, keyword} — reads the clients' likes from the online gallery server and gives each liked photo the keyword \"Client favourite\" (removed again when every like is taken back); flags, ratings and labels are not touched", always, pull),
         cmd!(query "gallery.cancel", "Cancel Gallery Publishing", [], None, "{} — stops between two photos; what was sent stays online", always, cancel),
@@ -661,6 +906,28 @@ mod tests {
         let ids: Vec<u64> = s.visible_cloned().iter().take(1).map(|i| i.0).collect();
         let e = s.execute("gallery.publish", &json!({"ids": ids, "listed": true})).expect_err("no title").to_string();
         assert!(e.contains("title is needed"), "{e}");
+    }
+
+    #[test]
+    fn capture_times_read_as_seconds() {
+        assert_eq!(capture_seconds("1970-01-02T00:00:00"), Some(86_400));
+        assert_eq!(capture_seconds("2026-01-17T12:39:04.810").map(|s| s % 86_400), Some(12 * 3600 + 39 * 60 + 4));
+        assert_eq!(capture_seconds("2026-03-01T00:00:00").zip(capture_seconds("2026-02-28T00:00:00")).map(|(a, b)| a - b), Some(86_400)); // 2026 is no leap year
+        assert_eq!(capture_seconds("garbage"), None);
+    }
+
+    #[test]
+    fn management_commands_need_a_gallery() {
+        let mut s = Session::with_demo();
+        s.execute("gallery.configure", &json!({"url": "http://127.0.0.1:9", "token": "tok", "persist": false})).expect("configure");
+        for c in ["gallery.open", "gallery.update", "gallery.remove", "gallery.arrange", "gallery.applyPlan"] {
+            assert!(s.execute(c, &json!({})).is_err(), "{c} without a slug");
+        }
+        assert!(s.execute("gallery.remove", &json!({"slug": "essai-1", "ids": []})).is_err(), "nothing to remove");
+        let ids: Vec<u64> = s.visible_cloned().iter().take(3).map(|i| i.0).collect();
+        let plan = s.execute("gallery.organise", &json!({"ids": ids, "lang": "en"})).expect("organise needs no server");
+        let kept: usize = plan["chapters"].as_array().map_or(0, |c| c.iter().map(|c| c["ids"].as_array().map_or(0, Vec::len)).sum());
+        assert_eq!(kept + plan["dropped"].as_array().map_or(0, Vec::len), 3, "{plan}");
     }
 
     #[test]

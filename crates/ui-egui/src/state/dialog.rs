@@ -56,23 +56,14 @@ pub enum Dialog {
         cover: bool,
         /// Each photo's album becomes its chapter in the gallery.
         chapters: bool,
+        /// Adding to this gallery (its slug) instead of making a new one.
+        add_to: Option<String>,
+        /// Publish this album's photos (id, name) instead of the selection.
+        album: Option<(u64, String)>,
     },
-    /// File ▸ Online Galleries…: what is published, with its guest codes; delete a gallery.
-    Galleries {
-        rows: Vec<serde_json::Value>,
-        /// The gallery whose guest codes are shown.
-        open: Option<String>,
-        guests: Vec<serde_json::Value>,
-        /// A gallery waiting for its deletion to be confirmed.
-        confirm: Option<String>,
-        name: String,
-        level: usize,
-        /// The visitors' requests for the open gallery.
-        requests: Vec<serde_json::Value>,
-        /// The code just made: shown once.
-        code: Option<String>,
-        error: Option<String>,
-    },
+    /// File ▸ Online Galleries…: what is published, a gallery's photos, cover and guests, and the
+    /// local organiser.
+    Galleries(Box<GalleriesState>),
     /// View ▸ Export Slideshow…: format, size, quality, frame rate, container.
     SlideshowExport {
         settings: lightcraft_engine::slideshow_export::ExportSettings,
@@ -424,4 +415,24 @@ impl SyncCounts {
     pub fn up_to_date(&self) -> bool {
         !self.offline && self.new + self.moved + self.missing + self.metadata == 0
     }
+}
+
+/// The Online Galleries manager's state.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct GalleriesState {
+    pub rows: Vec<serde_json::Value>,
+    /// The gallery shown on the right (its slug) and what the server holds for it (`gallery.open`).
+    pub open: Option<String>,
+    pub detail: Option<serde_json::Value>,
+    pub guests: Vec<serde_json::Value>,
+    pub requests: Vec<serde_json::Value>,
+    pub confirm: Option<String>,
+    pub name: String,
+    pub level: usize,
+    pub code: Option<String>,
+    pub title: String,
+    pub days: String,
+    /// A proposal from `gallery.organise`, waiting to be applied or dismissed.
+    pub plan: Option<serde_json::Value>,
+    pub error: Option<String>,
 }
