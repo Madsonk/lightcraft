@@ -54,6 +54,8 @@ pub enum Dialog {
         listed: bool,
         /// With `listed`: the first photo is the public thumbnail.
         cover: bool,
+        /// Each photo's album becomes its chapter in the gallery.
+        chapters: bool,
     },
     /// File ▸ Online Galleries…: what is published, with its guest codes; delete a gallery.
     Galleries {

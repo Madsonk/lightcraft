@@ -1338,6 +1338,7 @@ fn ui_commands_9(app: &mut LightcraftApp, ctx: &egui::Context, id: &str, p: &Val
                 expires_days: "90".into(),
                 listed: false,
                 cover: false,
+                chapters: true,
             });
             Ok(Value::Null)
         }

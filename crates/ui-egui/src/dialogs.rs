@@ -1394,13 +1394,14 @@ fn contact_sheet_body(app: &mut LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dial
 
 /// The body of the Gallery dialog.
 fn gallery_body(app: &mut LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dialog) {
-    let Dialog::Gallery { title, password, url, token, token_saved, expires_days, listed, cover } = dlg else { return };
+    let Dialog::Gallery { title, password, url, token, token_saved, expires_days, listed, cover, chapters } = dlg else { return };
     let n = app.session.selected().len();
     ui.label(crate::i18n::tr_format!("{n} selected photo{}", crate::i18n::plural_s(n), n = n));
     dialog_field(ui, "field:galleryTitle", title, "Gallery title");
     let pw = crate::text_field::TextField::singleline("field:galleryPassword", password).hint(crate::i18n::tr("Password (optional)")).width(f32::INFINITY).password(true).show(ui);
     crate::widgets::register(ui, "field:galleryPassword", pw.response.rect);
     crate::text_field::TextField::singleline("field:galleryExpires", expires_days).hint(crate::i18n::tr("Days before it closes (0 = never)")).width(f32::INFINITY).show(ui);
+    ui.checkbox(chapters, crate::i18n::tr("Albums become chapters of the gallery"));
     ui.checkbox(listed, crate::i18n::tr("Show in the website's gallery menu"));
     if *listed {
         ui.checkbox(cover, crate::i18n::tr("Use the first photo as the public thumbnail"));

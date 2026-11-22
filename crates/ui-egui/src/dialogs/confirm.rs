@@ -208,7 +208,7 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
             }),
         ),
         Dialog::ContactSheet { options } => app.run("app.contactSheet", json!(options)),
-        Dialog::Gallery { title, password, url, token, expires_days, listed, cover, .. } => {
+        Dialog::Gallery { title, password, url, token, expires_days, listed, cover, chapters, .. } => {
             // the server is saved first, so a refused address is told before anything is rendered
             if !url.trim().is_empty() || !token.trim().is_empty() {
                 let mut p = json!({});
@@ -221,6 +221,9 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
                 app.run("gallery.configure", p)?;
             }
             let mut p = json!({"title": title, "listed": *listed, "cover": *listed && *cover});
+            if *chapters {
+                p["chapters"] = json!("albums");
+            }
             if let Ok(days) = expires_days.trim().parse::<f64>() {
                 p["expiresInDays"] = json!(days.max(0.0));
             }

@@ -204,6 +204,16 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
     let prints: Vec<String> = ids.iter().map(|id| fingerprint(s, *id, edge)).collect();
     let keys: Vec<(String, String)> = ids.iter().zip(&items).map(|(id, it)| (photo_key(&slug, *id), it.file_name.clone())).collect();
 
+    // chapter of each photo: the first regular album (by name) that lists it
+    let chapters: std::collections::HashMap<String, String> = if p.get("chapters").and_then(Value::as_str) == Some("albums") {
+        let mut albums: Vec<&lightcraft_catalog::Album> = s.catalog.albums().filter(|a| !a.folder && a.smart.is_none()).collect();
+        albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        all.iter()
+            .filter_map(|id| Some((photo_key(&slug, *id), albums.iter().find(|a| a.photos.contains(id))?.name.clone())))
+            .collect()
+    } else {
+        Default::default()
+    };
     let total = items.len() + videos.len();
     let state = Arc::new(Mutex::new(State { phase: "running", slug: slug.clone(), total, ..Default::default() }));
     let cancel = Arc::new(AtomicBool::new(false));
@@ -217,13 +227,21 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
         let run = || -> std::result::Result<(), String> {
             call(&cfg, "PUT", &format!("/api/v1/owner/galleries/{slug}"), gallery.to_string().as_bytes(), &[("Content-Type", "application/json".into())], &c)?;
             // pid → (sha, fingerprint) of what the server holds
-            let known: std::collections::HashMap<String, (String, Option<String>)> = call(&cfg, "GET", &format!("/api/v1/owner/galleries/{slug}/manifest"), &[], &[], &c)?
+            let known: std::collections::HashMap<String, (String, Option<String>, String)> = call(&cfg, "GET", &format!("/api/v1/owner/galleries/{slug}/manifest"), &[], &[], &c)?
                 .get("photos")
                 .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(|p| Some((p.get("pid")?.as_str()?.to_string(), (p.get("sha")?.as_str()?.to_string(), p.get("fp").and_then(Value::as_str).map(String::from))))).collect())
+                .map(|a| a.iter().filter_map(|p| Some((p.get("pid")?.as_str()?.to_string(), (p.get("sha")?.as_str()?.to_string(), p.get("fp").and_then(Value::as_str).map(String::from), p.get("section").and_then(Value::as_str).unwrap_or_default().to_string())))).collect())
                 .unwrap_or_default();
             let queue = Mutex::new(positions.iter().copied().zip(items.into_iter().zip(keys).zip(prints)));
-            let (cfg, st, c, slug, known, guard) = (&cfg, &st, &c, &slug, &known, &guard);
+            let (cfg, st, c, slug, known, guard, chapters) = (&cfg, &st, &c, &slug, &known, &guard, &chapters);
+            // the photo is already online as it is: only its chapter may have moved
+            let relabel = |pid: &str, pos: usize| -> std::result::Result<(), String> {
+                let want = chapters.get(pid).map_or("", String::as_str);
+                match known.get(pid) {
+                    Some((_, _, have)) if have != want => call(cfg, "PATCH", &format!("/api/v1/owner/galleries/{slug}/photos/{pid}"), json!({"section": want, "position": pos}).to_string().as_bytes(), &[("Content-Type", "application/json".into())], c).map(|_| ()),
+                    _ => Ok(()),
+                }
+            };
             // a few photos at once: one renders while another uploads
             std::thread::scope(|sc| {
                 for _ in 0..WORKERS {
@@ -235,8 +253,12 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
                             let Some((pos, ((item, (pid, name)), fp))) = queue.lock().unwrap_or_else(|e| e.into_inner()).next() else { return };
                             let held = known.get(&pid);
                             // same photo, same edits, same settings as what is online: nothing to render
-                            if held.is_some_and(|(_, f)| f.as_deref() == Some(fp.as_str())) {
+                            if held.is_some_and(|(_, f, _)| f.as_deref() == Some(fp.as_str())) {
+                                let r = relabel(&pid, pos);
                                 let mut g = lock(st);
+                                if let Err(e) = r {
+                                    g.failed.push(json!([name, e]));
+                                }
                                 g.unchanged += 1;
                                 g.done += 1;
                                 guard.progress(g.done as u64, g.total as u64);
@@ -251,10 +273,10 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
                             };
                             let mut sent = None;
                             if let Some(out) = &out {
-                                if held.is_some_and(|(s, _)| *s == lightcraft_sha256_hex(&out.bytes)) {
-                                    sent = Some(Ok(false));
+                                if held.is_some_and(|(s, _, _)| *s == lightcraft_sha256_hex(&out.bytes)) {
+                                    sent = Some(relabel(&pid, pos).map(|()| false));
                                 } else {
-                                    let h = [("Content-Type", "image/jpeg".into()), ("X-Position", pos.to_string()), ("X-Name", name.clone()), ("X-Fingerprint", fp.clone())];
+                                    let h = [("Content-Type", "image/jpeg".into()), ("X-Position", pos.to_string()), ("X-Name", name.clone()), ("X-Fingerprint", fp.clone()), ("X-Section", pct_encode(chapters.get(&pid).map_or("", String::as_str)))];
                                     sent = Some(call(cfg, "PUT", &format!("/api/v1/owner/galleries/{slug}/photos/{pid}"), &out.bytes, &h, c).map(|_| true));
                                 }
                             }
@@ -277,14 +299,18 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
                 }
                 let (pid, name) = (photo_key(slug, id), std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
                 let held = known.get(&pid);
-                if held.is_some_and(|(_, f)| f.as_deref() == Some(fp.as_str())) {
+                if held.is_some_and(|(_, f, _)| f.as_deref() == Some(fp.as_str())) {
+                    let r = relabel(&pid, pos);
                     let mut g = lock(st);
+                    if let Err(e) = r {
+                        g.failed.push(json!([name, e]));
+                    }
                     g.unchanged += 1;
                     g.done += 1;
                     guard.progress(g.done as u64, g.total as u64);
                     continue;
                 }
-                let r = send_video(cfg, slug, &pid, &path, pos, &name, &fp, c);
+                let r = send_video(cfg, slug, &pid, &path, pos, &name, &fp, &pct_encode(chapters.get(&pid).map_or("", String::as_str)), c);
                 let mut g = lock(st);
                 match r {
                     Ok(()) => g.sent += 1,
@@ -318,6 +344,11 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(snapshot(&lock(&state), base.trim_end_matches('/')))
 }
 
+/// Header-safe text: every byte outside `A-Za-z0-9-_.~` as `%XX` (UTF-8), what the server decodes.
+fn pct_encode(s: &str) -> String {
+    s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
+}
+
 /// Longest video a gallery takes (the web copy of a longer one would pass the server's size limit).
 const VIDEO_MAX_SECONDS: f64 = 180.0;
 const VIDEO_MAX_BYTES: u64 = 30 << 20;
@@ -325,7 +356,7 @@ const VIDEO_MAX_BYTES: u64 = 30 << 20;
 /// A video's web copy (540 lines, H.264 + AAC, `+faststart`) and its poster frame, sent to the server:
 /// the clip first (`X-Kind: video`), then the picture it shows before it plays.
 #[allow(clippy::too_many_arguments)]
-fn send_video(cfg: &Config, slug: &str, pid: &str, path: &str, pos: usize, name: &str, fp: &str, cancel: &AtomicBool) -> std::result::Result<(), String> {
+fn send_video(cfg: &Config, slug: &str, pid: &str, path: &str, pos: usize, name: &str, fp: &str, section: &str, cancel: &AtomicBool) -> std::result::Result<(), String> {
     use crate::video::ffmpeg as ff;
     let src = std::path::Path::new(path);
     let info = ff::probe(src)?;
@@ -343,7 +374,7 @@ fn send_video(cfg: &Config, slug: &str, pid: &str, path: &str, pos: usize, name:
         if video.len() as u64 > VIDEO_MAX_BYTES {
             return Err(format!("the web copy is {} MB, over the {} MB limit: trim it first", video.len() >> 20, VIDEO_MAX_BYTES >> 20));
         }
-        let h = [("Content-Type", "video/mp4".into()), ("X-Kind", "video".into()), ("X-Position", pos.to_string()), ("X-Name", name.to_string()), ("X-Fingerprint", fp.to_string())];
+        let h = [("Content-Type", "video/mp4".into()), ("X-Kind", "video".into()), ("X-Position", pos.to_string()), ("X-Name", name.to_string()), ("X-Fingerprint", fp.to_string()), ("X-Section", section.to_string())];
         call(cfg, "PUT", &format!("/api/v1/owner/galleries/{slug}/photos/{pid}"), &video, &h, cancel)?;
         call(cfg, "PUT", &format!("/api/v1/owner/galleries/{slug}/photos/{pid}/poster"), &still, &[("Content-Type", "image/jpeg".into())], cancel)?;
         Ok(())
@@ -476,7 +507,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Publish to Online Gallery",
             [],
             None,
-            "{id?|ids?, slug?: a–z 0–9 - (random), expiresInDays?: n (0 = never), listed?: bool (show in the website menu), cover?: bool (first photo as public thumbnail), title?, password?: string (\"\" = none), download?: bool (true), longEdge?: px (2048), wait?: bool} — renders the photos at web size (no location) and sends them to the online gallery server (gallery.configure), only the ones the server does not hold yet; in the background with an activity row (gallery.status, gallery.cancel); wait blocks until done → status {state, slug, url, total, done, sent, unchanged, failed}",
+            "{id?|ids?, slug?: a–z 0–9 - (random), chapters?: \"albums\" (each photo's first regular album, by name, becomes its chapter), expiresInDays?: n (0 = never), listed?: bool (show in the website menu), cover?: bool (first photo as public thumbnail), title?, password?: string (\"\" = none), download?: bool (true), longEdge?: px (2048), wait?: bool} — renders the photos at web size (no location) and sends them to the online gallery server (gallery.configure), only the ones the server does not hold yet; in the background with an activity row (gallery.status, gallery.cancel); wait blocks until done → status {state, slug, url, total, done, sent, unchanged, failed}",
             always,
             publish
         ),
@@ -592,6 +623,13 @@ mod tests {
         assert_eq!((r["liked"].as_u64(), r["unliked"].as_u64(), r["notInLibrary"].as_u64()), (Some(1), Some(1), Some(1)), "{r}");
         let has = |i: usize| s.catalog.photo(ids[i]).is_some_and(|p| p.meta.keywords.iter().any(|x| x == LIKED));
         assert!(has(0) && !has(1) && !has(2));
+    }
+
+    #[test]
+    fn chapter_names_travel_as_ascii_headers() {
+        assert_eq!(pct_encode("Cérémonie 1"), "C%C3%A9r%C3%A9monie%201");
+        assert_eq!(pct_encode("abc-_.~"), "abc-_.~");
+        assert_eq!(pct_encode(""), "");
     }
 
     #[test]
