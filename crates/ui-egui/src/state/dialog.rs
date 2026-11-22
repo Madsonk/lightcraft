@@ -48,6 +48,26 @@ pub enum Dialog {
         token: String,
         /// An owner token is already saved: the field may stay empty.
         token_saved: bool,
+        /// Days before the gallery closes (0 = never).
+        expires_days: String,
+        /// Shown in the website's gallery menu.
+        listed: bool,
+        /// With `listed`: the first photo is the public thumbnail.
+        cover: bool,
+    },
+    /// File ▸ Online Galleries…: what is published, with its guest codes; delete a gallery.
+    Galleries {
+        rows: Vec<serde_json::Value>,
+        /// The gallery whose guest codes are shown.
+        open: Option<String>,
+        guests: Vec<serde_json::Value>,
+        /// A gallery waiting for its deletion to be confirmed.
+        confirm: Option<String>,
+        name: String,
+        level: usize,
+        /// The code just made: shown once.
+        code: Option<String>,
+        error: Option<String>,
     },
     /// View ▸ Export Slideshow…: format, size, quality, frame rate, container.
     SlideshowExport {

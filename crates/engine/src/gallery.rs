@@ -166,18 +166,32 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(C, "no gallery server set: gallery.configure {url, token}"));
     }
     let slug = slug_for(p).map_err(|e| bad(C, e))?;
-    let ids: Vec<PhotoId> = s
-        .targets(p)?
-        .into_iter()
-        .filter(|id| s.catalog.photo(*id).is_some_and(|p| matches!(p.kind, lightcraft_catalog::MediaKind::Image | lightcraft_catalog::MediaKind::Raw)))
-        .collect();
-    if ids.is_empty() {
+    let all: Vec<PhotoId> = s.targets(p)?.into_iter().filter(|id| s.catalog.photo(*id).is_some()).collect();
+    if all.is_empty() {
         return Err(bad(C, "no photos to publish (select photos or pass ids)"));
     }
+    // (position in the selection, id): the gallery keeps the selection's order, videos among the photos
+    let is_video = |id: &PhotoId| s.catalog.photo(*id).is_some_and(|p| p.kind == lightcraft_catalog::MediaKind::Video);
+    let positions: Vec<usize> = (0..all.len()).filter(|i| !is_video(&all[*i])).collect();
+    let ids: Vec<PhotoId> = positions.iter().map(|i| all[*i]).collect();
+    let videos: Vec<(usize, PhotoId, String, String)> = (0..all.len())
+        .filter(|i| is_video(&all[*i]))
+        .filter_map(|i| {
+            let ph = s.catalog.photo(all[i])?;
+            let lightcraft_catalog::Source::File { path } = &ph.source else { return None };
+            let fp = format!("v1video|{path}|{}", std::fs::metadata(path).map(|m| format!("{}-{:?}", m.len(), m.modified().ok())).unwrap_or_default());
+            Some((i, all[i], path.clone(), lightcraft_sha256_hex(fp.as_bytes())))
+        })
+        .collect();
     let title = p.get("title").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty()).unwrap_or(&slug).to_string();
     let mut gallery = json!({"title": title, "download": p.get("download").and_then(Value::as_bool).unwrap_or(true)});
     if let Some(pw) = p.get("password") {
         gallery["password"] = pw.clone();
+    }
+    if let Some(l) = p.get("listed").and_then(Value::as_bool) {
+        gallery["listed"] = json!(l);
+        // the public thumbnail is the first photo, only when asked for
+        gallery["cover"] = if l && p.get("cover").and_then(Value::as_bool).unwrap_or(false) { json!(photo_key(&slug, all[0])) } else { Value::Null };
     }
     if let Some(days) = p.get("expiresInDays").and_then(Value::as_f64) {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
@@ -186,14 +200,15 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
     let edge = p.get("longEdge").and_then(Value::as_u64).unwrap_or(LONG_EDGE).clamp(480, 6000);
     let opts = ExportOptions::from_params(&json!({"format": "jpeg", "quality": 90, "resize": {"mode": "longEdge", "value": edge, "dontEnlarge": true}, "metadata": "copyright", "removeLocation": true}))
         .map_err(|e| bad(C, e.to_string()))?;
-    let items = prepare_batch(s, &ids, &opts).map_err(|e| bad(C, e))?;
+    let items = if ids.is_empty() { Vec::new() } else { prepare_batch(s, &ids, &opts).map_err(|e| bad(C, e))? };
     let prints: Vec<String> = ids.iter().map(|id| fingerprint(s, *id, edge)).collect();
     let keys: Vec<(String, String)> = ids.iter().zip(&items).map(|(id, it)| (photo_key(&slug, *id), it.file_name.clone())).collect();
 
-    let state = Arc::new(Mutex::new(State { phase: "running", slug: slug.clone(), total: items.len(), ..Default::default() }));
+    let total = items.len() + videos.len();
+    let state = Arc::new(Mutex::new(State { phase: "running", slug: slug.clone(), total, ..Default::default() }));
     let cancel = Arc::new(AtomicBool::new(false));
     let guard = s.activity.start("gallery", "Publishing gallery", Cancel::Flag(cancel.clone()));
-    guard.progress(0, items.len() as u64);
+    guard.progress(0, total as u64);
     s.gallery.job = Some((state.clone(), cancel.clone()));
     let (st, c) = (state.clone(), cancel.clone());
     let cfg2 = cfg.clone();
@@ -207,7 +222,7 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
                 .and_then(Value::as_array)
                 .map(|a| a.iter().filter_map(|p| Some((p.get("pid")?.as_str()?.to_string(), (p.get("sha")?.as_str()?.to_string(), p.get("fp").and_then(Value::as_str).map(String::from))))).collect())
                 .unwrap_or_default();
-            let queue = Mutex::new(items.into_iter().zip(keys).zip(prints).enumerate());
+            let queue = Mutex::new(positions.iter().copied().zip(items.into_iter().zip(keys).zip(prints)));
             let (cfg, st, c, slug, known, guard) = (&cfg, &st, &c, &slug, &known, &guard);
             // a few photos at once: one renders while another uploads
             std::thread::scope(|sc| {
@@ -256,6 +271,28 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
                     });
                 }
             });
+            for (pos, id, path, fp) in videos {
+                if c.load(Ordering::Relaxed) {
+                    break;
+                }
+                let (pid, name) = (photo_key(slug, id), std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+                let held = known.get(&pid);
+                if held.is_some_and(|(_, f)| f.as_deref() == Some(fp.as_str())) {
+                    let mut g = lock(st);
+                    g.unchanged += 1;
+                    g.done += 1;
+                    guard.progress(g.done as u64, g.total as u64);
+                    continue;
+                }
+                let r = send_video(cfg, slug, &pid, &path, pos, &name, &fp, c);
+                let mut g = lock(st);
+                match r {
+                    Ok(()) => g.sent += 1,
+                    Err(e) => g.failed.push(json!([name, e])),
+                }
+                g.done += 1;
+                guard.progress(g.done as u64, g.total as u64);
+            }
             if c.load(Ordering::Relaxed) {
                 return Err("cancelled".into());
             }
@@ -279,6 +316,40 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let base = cfg2.url.clone();
     Ok(snapshot(&lock(&state), base.trim_end_matches('/')))
+}
+
+/// Longest video a gallery takes (the web copy of a longer one would pass the server's size limit).
+const VIDEO_MAX_SECONDS: f64 = 180.0;
+const VIDEO_MAX_BYTES: u64 = 30 << 20;
+
+/// A video's web copy (540 lines, H.264 + AAC, `+faststart`) and its poster frame, sent to the server:
+/// the clip first (`X-Kind: video`), then the picture it shows before it plays.
+#[allow(clippy::too_many_arguments)]
+fn send_video(cfg: &Config, slug: &str, pid: &str, path: &str, pos: usize, name: &str, fp: &str, cancel: &AtomicBool) -> std::result::Result<(), String> {
+    use crate::video::ffmpeg as ff;
+    let src = std::path::Path::new(path);
+    let info = ff::probe(src)?;
+    let secs = info.duration.unwrap_or(0.0);
+    if secs > VIDEO_MAX_SECONDS {
+        return Err(format!("{secs:.0} s is longer than the {VIDEO_MAX_SECONDS:.0} s a gallery takes: trim it first"));
+    }
+    let dir = std::env::temp_dir().join(format!("lightcraft-gallery-{pid}"));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let (clip, poster) = (dir.join("clip.mp4"), dir.join("poster.jpg"));
+    let result = (|| {
+        ff::extract_clip(src, 0, (secs.max(1.0) * 1000.0) as u64, &clip)?;
+        ff::extract_frame(src, ((secs * 0.1) * 1000.0) as u64, 1600, &poster)?;
+        let (video, still) = (std::fs::read(&clip).map_err(|e| e.to_string())?, std::fs::read(&poster).map_err(|e| e.to_string())?);
+        if video.len() as u64 > VIDEO_MAX_BYTES {
+            return Err(format!("the web copy is {} MB, over the {} MB limit: trim it first", video.len() >> 20, VIDEO_MAX_BYTES >> 20));
+        }
+        let h = [("Content-Type", "video/mp4".into()), ("X-Kind", "video".into()), ("X-Position", pos.to_string()), ("X-Name", name.to_string()), ("X-Fingerprint", fp.to_string())];
+        call(cfg, "PUT", &format!("/api/v1/owner/galleries/{slug}/photos/{pid}"), &video, &h, cancel)?;
+        call(cfg, "PUT", &format!("/api/v1/owner/galleries/{slug}/photos/{pid}/poster"), &still, &[("Content-Type", "image/jpeg".into())], cancel)?;
+        Ok(())
+    })();
+    let _ = std::fs::remove_dir_all(&dir);
+    result
 }
 
 /// What a published photo depends on: the file, its edits and the web settings. The photographer's
@@ -405,7 +476,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Publish to Online Gallery",
             [],
             None,
-            "{id?|ids?, slug?: a–z 0–9 - (random), expiresInDays?: n (0 = never), title?, password?: string (\"\" = none), download?: bool (true), longEdge?: px (2048), wait?: bool} — renders the photos at web size (no location) and sends them to the online gallery server (gallery.configure), only the ones the server does not hold yet; in the background with an activity row (gallery.status, gallery.cancel); wait blocks until done → status {state, slug, url, total, done, sent, unchanged, failed}",
+            "{id?|ids?, slug?: a–z 0–9 - (random), expiresInDays?: n (0 = never), listed?: bool (show in the website menu), cover?: bool (first photo as public thumbnail), title?, password?: string (\"\" = none), download?: bool (true), longEdge?: px (2048), wait?: bool} — renders the photos at web size (no location) and sends them to the online gallery server (gallery.configure), only the ones the server does not hold yet; in the background with an activity row (gallery.status, gallery.cancel); wait blocks until done → status {state, slug, url, total, done, sent, unchanged, failed}",
             always,
             publish
         ),

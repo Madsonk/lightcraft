@@ -179,6 +179,11 @@ fn why(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let line = if issues.is_empty() { tr_format!("Retouch score {score:.0}", score = r.score) } else { tr_format!("Retouch score {score:.0} · {issues}", score = r.score, issues = issues) };
         ui.label(RichText::new(line).size(11.5).color(t.text_dim));
         register(ui, "region:retouchScore", ui.min_rect());
+        let fix = ui.small_button(tr("Fix automatically")).on_hover_text(tr("White balance (if there is a cast) and tone, in one undo step"));
+        register(ui, "button:autoRetouch", fix.rect);
+        if fix.clicked() {
+            let _ = app.run("photo.autoRetouch", serde_json::json!({"ids": [id.0], "all": true}));
+        }
     }
     let Some(v) = app.session.catalog.photo(id).and_then(|p| p.analysis.as_ref()).and_then(|a| a.verdict.clone()) else { return };
     ui.add_space(2.0);

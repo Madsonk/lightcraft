@@ -208,7 +208,7 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
             }),
         ),
         Dialog::ContactSheet { options } => app.run("app.contactSheet", json!(options)),
-        Dialog::Gallery { title, password, url, token, .. } => {
+        Dialog::Gallery { title, password, url, token, expires_days, listed, cover, .. } => {
             // the server is saved first, so a refused address is told before anything is rendered
             if !url.trim().is_empty() || !token.trim().is_empty() {
                 let mut p = json!({});
@@ -220,7 +220,10 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
                 }
                 app.run("gallery.configure", p)?;
             }
-            let mut p = json!({"title": title});
+            let mut p = json!({"title": title, "listed": *listed, "cover": *listed && *cover});
+            if let Ok(days) = expires_days.trim().parse::<f64>() {
+                p["expiresInDays"] = json!(days.max(0.0));
+            }
             if !password.is_empty() {
                 p["password"] = json!(password);
             }
@@ -267,7 +270,7 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
         Dialog::DeleteEffects { names } => app.run("mask.deleteEffect", json!({"names": names})),
         Dialog::RemoveFolder { path, disk, .. } => app.run("library.removeFolder", json!({"path": path, "disk": disk})),
         d @ Dialog::SynchronizeFolder { .. } => crate::sync::confirm(app, d),
-        Dialog::About | Dialog::Shortcuts | Dialog::Settings { .. } | Dialog::ManageEffects { .. } | Dialog::ViewOptions => {
+        Dialog::About | Dialog::Galleries { .. } | Dialog::Shortcuts | Dialog::Settings { .. } | Dialog::ManageEffects { .. } | Dialog::ViewOptions => {
             Ok(serde_json::Value::Null)
         }
     }

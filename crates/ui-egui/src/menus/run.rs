@@ -1335,7 +1335,18 @@ fn ui_commands_9(app: &mut LightcraftApp, ctx: &egui::Context, id: &str, p: &Val
                 url: saved["url"].as_str().unwrap_or_default().to_string(),
                 token: String::new(),
                 token_saved: saved["tokenSet"].as_bool().unwrap_or(false),
+                expires_days: "90".into(),
+                listed: false,
+                cover: false,
             });
+            Ok(Value::Null)
+        }
+        "dialog.galleries" => {
+            let (rows, error) = match app.run("gallery.list", json!({})) {
+                Ok(v) => (v["galleries"].as_array().cloned().unwrap_or_default(), None),
+                Err(e) => (Vec::new(), Some(e)),
+            };
+            app.ui.dialog = Some(Dialog::Galleries { rows, open: None, guests: Vec::new(), confirm: None, name: String::new(), level: 1, code: None, error });
             Ok(Value::Null)
         }
         "dialog.galleryLikes" => {

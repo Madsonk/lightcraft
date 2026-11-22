@@ -471,6 +471,7 @@ pub(crate) fn dialog_title(app: &LightcraftApp, dlg: &Dialog) -> String {
         Dialog::Export { .. } => "Export",
         Dialog::ContactSheet { .. } => "Contact Sheet PDF",
         Dialog::Gallery { .. } => "Publish to Online Gallery",
+        Dialog::Galleries { .. } => "Online Galleries",
         Dialog::SlideshowExport { .. } => "Export Slideshow",
         Dialog::Print => "Print",
         Dialog::Merge { opts } => opts.title(),
@@ -617,6 +618,7 @@ fn fixed_ok_label(app: &LightcraftApp, dlg: &Dialog, informational: bool) -> &'s
         Dialog::RenamePerson { .. } => "Rename",
         // the dialogs that only show something, or a model file that can't be used
         Dialog::About
+        | Dialog::Galleries { .. }
         | Dialog::Shortcuts
         | Dialog::Settings { .. }
         | Dialog::SystemInfo { .. }
@@ -1392,18 +1394,140 @@ fn contact_sheet_body(app: &mut LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dial
 
 /// The body of the Gallery dialog.
 fn gallery_body(app: &mut LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dialog) {
-    let Dialog::Gallery { title, password, url, token, token_saved } = dlg else { return };
+    let Dialog::Gallery { title, password, url, token, token_saved, expires_days, listed, cover } = dlg else { return };
     let n = app.session.selected().len();
     ui.label(crate::i18n::tr_format!("{n} selected photo{}", crate::i18n::plural_s(n), n = n));
     dialog_field(ui, "field:galleryTitle", title, "Gallery title");
     let pw = crate::text_field::TextField::singleline("field:galleryPassword", password).hint(crate::i18n::tr("Password (optional)")).width(f32::INFINITY).password(true).show(ui);
     crate::widgets::register(ui, "field:galleryPassword", pw.response.rect);
+    crate::text_field::TextField::singleline("field:galleryExpires", expires_days).hint(crate::i18n::tr("Days before it closes (0 = never)")).width(f32::INFINITY).show(ui);
+    ui.checkbox(listed, crate::i18n::tr("Show in the website's gallery menu"));
+    if *listed {
+        ui.checkbox(cover, crate::i18n::tr("Use the first photo as the public thumbnail"));
+    }
     ui.add_space(4.0);
     ui.label(crate::i18n::tr("Server"));
     crate::text_field::TextField::singleline("field:galleryUrl", url).hint(crate::i18n::tr("https://galleries.example.com")).width(f32::INFINITY).show(ui);
     let hint = if *token_saved { "Owner token (saved: leave empty to keep it)" } else { "Owner token" };
     crate::text_field::TextField::singleline("field:galleryToken", token).hint(crate::i18n::tr(hint)).width(f32::INFINITY).password(true).show(ui);
     ui.label(crate::i18n::tr("Web-size copies without location are sent; photos already online are not sent again. Without a password, the link alone opens the gallery."));
+}
+
+/// The body of the Online Galleries dialog.
+fn galleries_body(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, dlg: &mut Dialog) {
+    let Dialog::Galleries { rows, open, guests, confirm, name, level, code, error } = dlg else { return };
+    ui.set_min_width(560.0);
+    let base = app.run("gallery.settings", json!({})).ok().and_then(|v| v["url"].as_str().map(|u| u.trim_end_matches('/').to_string())).unwrap_or_default();
+    if let Some(e) = error.as_ref() {
+        ui.colored_label(egui::Color32::LIGHT_RED, e);
+    }
+    if rows.is_empty() {
+        ui.label(crate::i18n::tr("No gallery online."));
+    }
+    let mut reload = false;
+    for g in rows.clone() {
+        let slug = g["slug"].as_str().unwrap_or_default().to_string();
+        let n = g["photos"].as_u64().unwrap_or(0);
+        ui.horizontal(|ui| {
+            ui.strong(g["title"].as_str().filter(|t| !t.is_empty()).unwrap_or(&slug));
+            ui.label(crate::i18n::tr_format!("{n} photo{}", crate::i18n::plural_s(n as usize), n = n));
+            if g["listed"].as_bool().unwrap_or(false) {
+                ui.label(crate::i18n::tr("on the website"));
+            }
+            if let Some(ts) = g["expires"].as_u64().filter(|t| *t > 0) {
+                let days = (ts as i64 - std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)) / 86_400;
+                ui.label(crate::i18n::tr_format!("closes in {d} d", d = days.max(0)));
+            }
+            let (guests_n, req) = (g["guests"].as_u64().unwrap_or(0), g["requests"].as_u64().unwrap_or(0));
+            if req > 0 {
+                ui.label(crate::i18n::tr_format!("{r} request(s) waiting", r = req));
+            }
+            if ui.button(crate::i18n::tr_format!("Guests ({g})", g = guests_n)).clicked() {
+                *code = None;
+                if open.as_deref() == Some(slug.as_str()) {
+                    *open = None;
+                } else {
+                    *open = Some(slug.clone());
+                    *guests = app.run("gallery.guests", json!({"slug": slug})).ok().and_then(|v| v["guests"].as_array().cloned()).unwrap_or_default();
+                }
+            }
+            if ui.button(crate::i18n::tr("Copy link")).clicked() {
+                ctx.copy_text(format!("{base}/g/{slug}"));
+                app.toast(ctx, crate::i18n::tr("Link copied"));
+            }
+            if confirm.as_deref() == Some(slug.as_str()) {
+                if ui.button(crate::i18n::tr("Delete for good")).clicked() {
+                    match app.run("gallery.delete", json!({"slug": slug})) {
+                        Ok(_) => {
+                            *confirm = None;
+                            *open = None;
+                            reload = true;
+                        }
+                        Err(e) => *error = Some(e),
+                    }
+                }
+                if ui.button(crate::i18n::tr("Cancel")).clicked() {
+                    *confirm = None;
+                }
+            } else if ui.button(crate::i18n::tr("Delete…")).clicked() {
+                *confirm = Some(slug.clone());
+            }
+        });
+        if open.as_deref() == Some(slug.as_str()) {
+            ui.indent(("guests", slug.clone()), |ui| {
+                for gu in guests.clone() {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} · {}", gu["name"].as_str().unwrap_or_default(), gu["level"].as_str().unwrap_or_default()));
+                        if let Some(id) = gu["id"].as_i64()
+                            && ui.button(crate::i18n::tr("Revoke")).clicked()
+                        {
+                            match app.run("gallery.guests", json!({"slug": slug, "revoke": id})) {
+                                Ok(_) => guests.retain(|x| x["id"].as_i64() != Some(id)),
+                                Err(e) => *error = Some(e),
+                            }
+                            reload = true;
+                        }
+                    });
+                }
+                ui.horizontal(|ui| {
+                    crate::text_field::TextField::singleline("field:galleryGuestName", name).hint(crate::i18n::tr("Guest name")).width(160.0).show(ui);
+                    let labels = ["view", "like", "download"];
+                    egui::ComboBox::from_id_salt("galleryGuestLevel").selected_text(labels[(*level).min(2)]).show_ui(ui, |ui| {
+                        for (i, l) in labels.iter().enumerate() {
+                            ui.selectable_value(level, i, *l);
+                        }
+                    });
+                    if ui.button(crate::i18n::tr("Add a code")).clicked() && !name.trim().is_empty() {
+                        match app.run("gallery.guests", json!({"slug": slug, "add": name.trim(), "level": labels[(*level).min(2)]})) {
+                            Ok(r) => {
+                                *code = r["code"].as_str().map(String::from);
+                                *name = String::new();
+                                *guests = app.run("gallery.guests", json!({"slug": slug})).ok().and_then(|v| v["guests"].as_array().cloned()).unwrap_or_default();
+                                reload = true;
+                            }
+                            Err(e) => *error = Some(e),
+                        }
+                    }
+                });
+                if let Some(c) = code.clone() {
+                    ui.horizontal(|ui| {
+                        ui.label(crate::i18n::tr("Code (shown once):"));
+                        ui.monospace(&c);
+                        if ui.button(crate::i18n::tr("Copy")).clicked() {
+                            ctx.copy_text(c);
+                        }
+                    });
+                }
+            });
+        }
+        ui.separator();
+    }
+    if reload {
+        match app.run("gallery.list", json!({})) {
+            Ok(v) => *rows = v["galleries"].as_array().cloned().unwrap_or_default(),
+            Err(e) => *error = Some(e),
+        }
+    }
 }
 
 /// "N selected photos · M pages".
@@ -2164,6 +2288,7 @@ fn dialog_content(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, body_m
         Dialog::SlideshowExport { settings } => slideshow_export_body(app, ui, settings),
         Dialog::ContactSheet { .. } => contact_sheet_body(app, ui, dlg),
         Dialog::Gallery { .. } => gallery_body(app, ui, dlg),
+        Dialog::Galleries { .. } => { let ctx = ui.ctx().clone(); galleries_body(app, ui, &ctx, dlg) },
         Dialog::Export { .. } => export_body(app, ui, t, dlg),
         Dialog::Merge { opts } => crate::merge::body(app, ui, opts),
         Dialog::Import { opts } => crate::import::body(app, ui, opts),
