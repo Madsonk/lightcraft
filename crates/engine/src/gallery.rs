@@ -183,7 +183,12 @@ fn publish(s: &mut Session, p: &Value) -> Result<Value> {
             Some((i, all[i], path.clone(), lightcraft_sha256_hex(fp.as_bytes())))
         })
         .collect();
-    let title = p.get("title").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty()).unwrap_or(&slug).to_string();
+    let given = p.get("title").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty());
+    // the website lists galleries by title: the random link is never shown in its place
+    if given.is_none() && p.get("listed").and_then(Value::as_bool).unwrap_or(false) {
+        return Err(bad(C, "a title is needed to show the gallery on the website"));
+    }
+    let title = given.unwrap_or(&slug).to_string();
     let mut gallery = json!({"title": title, "download": p.get("download").and_then(Value::as_bool).unwrap_or(true)});
     if let Some(pw) = p.get("password") {
         gallery["password"] = pw.clone();
@@ -485,6 +490,20 @@ fn guests(s: &mut Session, p: &Value) -> Result<Value> {
     owner_call(s, C, "GET", &base, None)
 }
 
+/// The access requests of a gallery, and the owner's decision on one: approving makes the server email the
+/// visitor their personal link.
+fn requests(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "gallery.requests";
+    let slug = slug_param(p, C)?;
+    let base = format!("/api/v1/owner/galleries/{slug}/requests");
+    if let Some(id) = p.get("decide").and_then(Value::as_i64) {
+        let decision = p.get("decision").and_then(Value::as_str).filter(|d| matches!(*d, "approve" | "deny")).ok_or_else(|| bad(C, "`decision` is approve or deny"))?;
+        let level = p.get("level").and_then(Value::as_str).filter(|l| matches!(*l, "like" | "download")).unwrap_or("like");
+        return owner_call(s, C, "POST", &format!("{base}/{id}"), Some(json!({"decision": decision, "level": level})));
+    }
+    owner_call(s, C, "GET", &base, None)
+}
+
 fn status(s: &mut Session, _p: &Value) -> Result<Value> {
     let base = load_config(s).url;
     Ok(match &s.gallery.job {
@@ -514,6 +533,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(query "gallery.list", "Online Galleries", [], None, "{} → the galleries on the server (slug, title, photos, expiry)", always, list),
         cmd!("gallery.delete", "Delete Online Gallery", [], None, "{slug} — deletes the gallery, its photos and likes from the server (irreversible; originals stay)", always, delete),
         cmd!("gallery.guests", "Gallery Guest Codes", [], None, "{slug, add?: name, level?: view|like|download (like), code?: string (random if omitted), revoke?: id} — no add/revoke lists the codes; an added code is shown once", always, guests),
+        cmd!("gallery.requests", "Gallery Access Requests", [], None, "{slug, decide?: request id, decision?: approve|deny, level?: like|download (like)} — no decide lists the requests (id, name, email, message, status); approving emails the visitor their personal link", always, requests),
         cmd!(query "gallery.status", "Online Gallery progress", [], None, "{} → {state: idle|running|done|cancelled|failed, slug, url, total, done, sent, unchanged, failed, error}", always, status),
         cmd!("gallery.pull", "Bring Gallery Likes Home", [], None, "{slug?} → {liked, unliked, notInLibrary, keyword} — reads the clients' likes from the online gallery server and gives each liked photo the keyword \"Client favourite\" (removed again when every like is taken back); flags, ratings and labels are not touched", always, pull),
         cmd!(query "gallery.cancel", "Cancel Gallery Publishing", [], None, "{} — stops between two photos; what was sent stays online", always, cancel),
@@ -623,6 +643,24 @@ mod tests {
         assert_eq!((r["liked"].as_u64(), r["unliked"].as_u64(), r["notInLibrary"].as_u64()), (Some(1), Some(1), Some(1)), "{r}");
         let has = |i: usize| s.catalog.photo(ids[i]).is_some_and(|p| p.meta.keywords.iter().any(|x| x == LIKED));
         assert!(has(0) && !has(1) && !has(2));
+    }
+
+    #[test]
+    fn a_request_decision_is_checked_before_anything_is_sent() {
+        let mut s = Session::with_demo();
+        s.execute("gallery.configure", &json!({"url": "http://127.0.0.1:9", "token": "tok", "persist": false})).expect("configure");
+        assert!(s.execute("gallery.requests", &json!({"decide": 1, "decision": "approve"})).is_err(), "a slug is required");
+        let e = s.execute("gallery.requests", &json!({"slug": "essai-1", "decide": 1, "decision": "maybe"})).expect_err("bad decision").to_string();
+        assert!(e.contains("approve or deny"), "{e}");
+    }
+
+    #[test]
+    fn a_listed_gallery_needs_a_title() {
+        let mut s = Session::with_demo();
+        s.execute("gallery.configure", &json!({"url": "http://127.0.0.1:9", "token": "tok", "persist": false})).expect("configure");
+        let ids: Vec<u64> = s.visible_cloned().iter().take(1).map(|i| i.0).collect();
+        let e = s.execute("gallery.publish", &json!({"ids": ids, "listed": true})).expect_err("no title").to_string();
+        assert!(e.contains("title is needed"), "{e}");
     }
 
     #[test]

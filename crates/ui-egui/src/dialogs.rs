@@ -1400,7 +1400,8 @@ fn gallery_body(app: &mut LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dialog) {
     dialog_field(ui, "field:galleryTitle", title, "Gallery title");
     let pw = crate::text_field::TextField::singleline("field:galleryPassword", password).hint(crate::i18n::tr("Password (optional)")).width(f32::INFINITY).password(true).show(ui);
     crate::widgets::register(ui, "field:galleryPassword", pw.response.rect);
-    crate::text_field::TextField::singleline("field:galleryExpires", expires_days).hint(crate::i18n::tr("Days before it closes (0 = never)")).width(f32::INFINITY).show(ui);
+    ui.label(crate::i18n::tr("Days before it closes (0 = never)"));
+    crate::text_field::TextField::singleline("field:galleryExpires", expires_days).hint(crate::i18n::tr("90")).width(f32::INFINITY).show(ui);
     ui.checkbox(chapters, crate::i18n::tr("Albums become chapters of the gallery"));
     ui.checkbox(listed, crate::i18n::tr("Show in the website's gallery menu"));
     if *listed {
@@ -1416,7 +1417,7 @@ fn gallery_body(app: &mut LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dialog) {
 
 /// The body of the Online Galleries dialog.
 fn galleries_body(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, dlg: &mut Dialog) {
-    let Dialog::Galleries { rows, open, guests, confirm, name, level, code, error } = dlg else { return };
+    let Dialog::Galleries { rows, open, guests, requests, confirm, name, level, code, error } = dlg else { return };
     ui.set_min_width(560.0);
     let base = app.run("gallery.settings", json!({})).ok().and_then(|v| v["url"].as_str().map(|u| u.trim_end_matches('/').to_string())).unwrap_or_default();
     if let Some(e) = error.as_ref() {
@@ -1450,6 +1451,7 @@ fn galleries_body(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Contex
                 } else {
                     *open = Some(slug.clone());
                     *guests = app.run("gallery.guests", json!({"slug": slug})).ok().and_then(|v| v["guests"].as_array().cloned()).unwrap_or_default();
+                    *requests = app.run("gallery.requests", json!({"slug": slug})).ok().and_then(|v| v["requests"].as_array().cloned()).unwrap_or_default();
                 }
             }
             if ui.button(crate::i18n::tr("Copy link")).clicked() {
@@ -1476,6 +1478,23 @@ fn galleries_body(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Contex
         });
         if open.as_deref() == Some(slug.as_str()) {
             ui.indent(("guests", slug.clone()), |ui| {
+                for rq in requests.clone().into_iter().filter(|r| r["status"].as_str() == Some("pending")) {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} <{}>", rq["name"].as_str().unwrap_or_default(), rq["email"].as_str().unwrap_or_default()));
+                        let Some(id) = rq["id"].as_i64() else { return };
+                        for (label, decision, level) in [("Approve (like)", "approve", "like"), ("Approve + download", "approve", "download"), ("Deny", "deny", "like")] {
+                            if ui.button(crate::i18n::tr(label)).clicked() {
+                                match app.run("gallery.requests", json!({"slug": slug, "decide": id, "decision": decision, "level": level})) {
+                                    Ok(_) => {
+                                        requests.retain(|x| x["id"].as_i64() != Some(id));
+                                        reload = true;
+                                    }
+                                    Err(e) => *error = Some(e),
+                                }
+                            }
+                        }
+                    });
+                }
                 for gu in guests.clone() {
                     ui.horizontal(|ui| {
                         ui.label(format!("{} · {}", gu["name"].as_str().unwrap_or_default(), gu["level"].as_str().unwrap_or_default()));

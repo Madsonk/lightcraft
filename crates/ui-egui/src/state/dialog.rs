@@ -67,6 +67,8 @@ pub enum Dialog {
         confirm: Option<String>,
         name: String,
         level: usize,
+        /// The visitors' requests for the open gallery.
+        requests: Vec<serde_json::Value>,
         /// The code just made: shown once.
         code: Option<String>,
         error: Option<String>,

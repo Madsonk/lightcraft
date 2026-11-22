@@ -1336,7 +1336,8 @@ fn ui_commands_9(app: &mut LightcraftApp, ctx: &egui::Context, id: &str, p: &Val
                 token: String::new(),
                 token_saved: saved["tokenSet"].as_bool().unwrap_or(false),
                 expires_days: "90".into(),
-                listed: false,
+                // a published gallery shows in the website's "Galeries" page (its name, never a photo unless asked)
+                listed: true,
                 cover: false,
                 chapters: true,
             });
@@ -1347,7 +1348,7 @@ fn ui_commands_9(app: &mut LightcraftApp, ctx: &egui::Context, id: &str, p: &Val
                 Ok(v) => (v["galleries"].as_array().cloned().unwrap_or_default(), None),
                 Err(e) => (Vec::new(), Some(e)),
             };
-            app.ui.dialog = Some(Dialog::Galleries { rows, open: None, guests: Vec::new(), confirm: None, name: String::new(), level: 1, code: None, error });
+            app.ui.dialog = Some(Dialog::Galleries { rows, open: None, guests: Vec::new(), requests: Vec::new(), confirm: None, name: String::new(), level: 1, code: None, error });
             Ok(Value::Null)
         }
         "dialog.galleryLikes" => {
