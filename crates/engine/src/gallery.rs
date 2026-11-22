@@ -671,7 +671,8 @@ fn candidates(s: &Session, ids: &[PhotoId]) -> Vec<crate::gallery_ai::Candidate>
                 best_of_burst: an.is_some_and(|a| a.best),
                 faces: an.and_then(|a| a.faces.as_ref()).map(|f| f.len() as u32),
                 people: Vec::new(),
-                scene: None,
+                // place read from the IPTC fields: a chapter shared by most photos takes its name
+                scene: Some(ph.meta.location.trim()).filter(|l| !l.is_empty()).or_else(|| Some(ph.meta.city.trim()).filter(|c| !c.is_empty())).map(str::to_owned),
                 width: ph.width,
                 height: ph.height,
                 rating: ph.rating,

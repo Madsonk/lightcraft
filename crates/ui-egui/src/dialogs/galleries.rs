@@ -377,9 +377,23 @@ fn photos(app: &mut LightcraftApp, ui: &mut egui::Ui, _ctx: &egui::Context, st: 
     }
     let mut action: Option<(String, Value)> = None;
     egui::ScrollArea::vertical().id_salt("galleryPhotos").auto_shrink([false, false]).max_height(330.0).show(ui, |ui| {
+        // chapter names in page order: what a move swaps (`sections_order` ignores the unnamed group)
+        let named: Vec<&String> = chapters.iter().map(|(n, _)| n).filter(|n| !n.is_empty()).collect();
         for (name, items) in &chapters {
             if chapters.len() > 1 || !name.is_empty() {
-                ui.label(egui::RichText::new(format!("{} · {}", if name.is_empty() { tr("Without chapter") } else { name.clone() }, items.len())).strong());
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(format!("{} · {}", if name.is_empty() { tr("Without chapter") } else { name.clone() }, items.len())).strong());
+                    if let Some(i) = named.iter().position(|n| *n == name) {
+                        for (up, glyph, tip) in [(true, "▲", "Move chapter earlier"), (false, "▼", "Move chapter later")] {
+                            let ok = if up { i > 0 } else { i + 1 < named.len() };
+                            if ui.add_enabled(ok, egui::Button::new(glyph).small()).on_hover_text(tr(tip)).clicked() {
+                                let mut o: Vec<&String> = named.clone();
+                                o.swap(i, if up { i - 1 } else { i + 1 });
+                                action = Some(("gallery.update".into(), json!({"sections_order": o})));
+                            }
+                        }
+                    }
+                });
             }
             ui.horizontal_wrapped(|ui| {
                 for p in items {
