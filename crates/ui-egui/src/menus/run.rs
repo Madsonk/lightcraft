@@ -1327,6 +1327,17 @@ fn ui_commands_9(app: &mut LightcraftApp, _ctx: &egui::Context, id: &str, p: &Va
             app.ui.dialog = Some(Dialog::ContactSheet { options: lightcraft_engine::contact_sheet::Options::default() });
             Ok(Value::Null)
         }
+        "dialog.gallery" => {
+            let saved = app.run("gallery.settings", json!({})).unwrap_or(Value::Null);
+            app.ui.dialog = Some(Dialog::Gallery {
+                title: String::new(),
+                password: String::new(),
+                url: saved["url"].as_str().unwrap_or_default().to_string(),
+                token: String::new(),
+                token_saved: saved["tokenSet"].as_bool().unwrap_or(false),
+            });
+            Ok(Value::Null)
+        }
         "dialog.print" => {
             app.ui.print = Default::default();
             app.ui.dialog = Some(Dialog::Print);

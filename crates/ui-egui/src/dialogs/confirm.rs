@@ -208,6 +208,24 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
             }),
         ),
         Dialog::ContactSheet { options } => app.run("app.contactSheet", json!(options)),
+        Dialog::Gallery { title, password, url, token, .. } => {
+            // the server is saved first, so a refused address is told before anything is rendered
+            if !url.trim().is_empty() || !token.trim().is_empty() {
+                let mut p = json!({});
+                if !url.trim().is_empty() {
+                    p["url"] = json!(url);
+                }
+                if !token.trim().is_empty() {
+                    p["token"] = json!(token);
+                }
+                app.run("gallery.configure", p)?;
+            }
+            let mut p = json!({"title": title});
+            if !password.is_empty() {
+                p["password"] = json!(password);
+            }
+            app.run("gallery.publish", p)
+        }
         Dialog::SlideshowExport { settings } => app.run("app.slideshowExport", json!(settings)),
         Dialog::Print => app.run("app.print", json!({})),
         Dialog::CopySettings { groups } => app.run("develop.copy", json!({"groups": groups})),

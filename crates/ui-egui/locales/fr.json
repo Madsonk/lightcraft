@@ -4322,5 +4322,16 @@
   "too bright": "trop clair",
   "no deep blacks": "pas de noirs profonds",
   "no bright whites": "pas de blancs lumineux",
-  "clipped": "tons brûlés ou bouchés"
+  "clipped": "tons brûlés ou bouchés",
+  "Publish to Online Gallery": "Publier dans une galerie en ligne",
+  "Publish to Online Gallery\u2026": "Publier dans une galerie en ligne…",
+  "Publish": "Publier",
+  "Gallery title": "Titre de la galerie",
+  "Password (optional)": "Mot de passe (facultatif)",
+  "Server": "Serveur",
+  "https://galleries.example.com": "https://galeries.exemple.com",
+  "Owner token": "Jeton propriétaire",
+  "Owner token (saved: leave empty to keep it)": "Jeton propriétaire (enregistré : laisser vide pour le garder)",
+  "Web-size copies without location are sent; photos already online are not sent again. Without a password, the link alone opens the gallery.": "Des copies web sans localisation sont envoyées ; les photos déjà en ligne ne sont pas renvoyées. Sans mot de passe, le lien seul ouvre la galerie.",
+  "Publishing\u2026 the link is copied: {url}": "Publication en cours… le lien est copié : {url}"
 }

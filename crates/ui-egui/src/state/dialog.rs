@@ -39,6 +39,16 @@ pub enum Dialog {
     ContactSheet {
         options: lightcraft_engine::contact_sheet::Options,
     },
+    /// File ▸ Publish to Online Gallery…: the gallery's title and optional password; the server's
+    /// address and token (kept in the settings folder) are asked for until they are set.
+    Gallery {
+        title: String,
+        password: String,
+        url: String,
+        token: String,
+        /// An owner token is already saved: the field may stay empty.
+        token_saved: bool,
+    },
     /// View ▸ Export Slideshow…: format, size, quality, frame rate, container.
     SlideshowExport {
         settings: lightcraft_engine::slideshow_export::ExportSettings,

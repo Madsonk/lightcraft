@@ -62,6 +62,8 @@ lightcraft-taste = { workspace = true, optional = true }
 # model downloads run natively only (the web build fetches no models)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 lightcraft-fetch = { workspace = true }
+# the digest a gallery server keeps of each photo, to skip what it already holds
+sha2 = { workspace = true }
 # capture-time parsing for face recognition (native only)
 chrono = { workspace = true }
 # free space of the drive holding the preview cache (the low-disk alert; pure Rust: rustix / windows-sys)

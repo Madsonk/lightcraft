@@ -470,6 +470,7 @@ pub(crate) fn dialog_title(app: &LightcraftApp, dlg: &Dialog) -> String {
         Dialog::PasteSettings { .. } => "Paste Selected Settings",
         Dialog::Export { .. } => "Export",
         Dialog::ContactSheet { .. } => "Contact Sheet PDF",
+        Dialog::Gallery { .. } => "Publish to Online Gallery",
         Dialog::SlideshowExport { .. } => "Export Slideshow",
         Dialog::Print => "Print",
         Dialog::Merge { opts } => opts.title(),
@@ -573,6 +574,7 @@ fn fixed_ok_label(app: &LightcraftApp, dlg: &Dialog, informational: bool) -> &'s
         Dialog::Import { .. } | Dialog::Export { .. } | Dialog::SamModel { .. } => "",
         Dialog::LightroomResult { first: Some(_), .. } => "Show in Library",
         Dialog::ContactSheet { .. } => "Choose PDF…",
+        Dialog::Gallery { .. } => "Publish",
         Dialog::SlideshowExport { .. } => "Export…",
         Dialog::Print => "Print to PDF…",
         Dialog::Merge { .. } => "Merge",
@@ -725,6 +727,7 @@ fn confirmed(app: &mut LightcraftApp, ctx: &egui::Context, dlg: &mut Dialog) -> 
                 Dialog::Import { .. }
                     | Dialog::Export { .. }
                     | Dialog::ContactSheet { .. }
+                    | Dialog::Gallery { .. }
                     | Dialog::SlideshowExport { .. }
                     | Dialog::Print
                     | Dialog::NewAlbum { .. }
@@ -756,6 +759,14 @@ fn confirmed(app: &mut LightcraftApp, ctx: &egui::Context, dlg: &mut Dialog) -> 
         Ok(r) if matches!(dlg, Dialog::NewAlbum { .. }) && r.get("skipped").and_then(serde_json::Value::as_u64).is_some_and(|n| n > 0) => {
             // albums hold library photos (issue #684): say which part of the selection stayed out
             crate::panels::grid::toast_skipped(app, ctx, &r);
+            closed = true;
+        }
+        // a publication that started: its link is copied (the activity row shows the progress)
+        Ok(r) if matches!(dlg, Dialog::Gallery { .. }) => {
+            if let Some(url) = r.get("url").and_then(serde_json::Value::as_str) {
+                ctx.copy_text(url.to_string());
+                app.toast(ctx, crate::i18n::tr_format!("Publishing… the link is copied: {url}", url = url));
+            }
             closed = true;
         }
         // a move says how it went, or why nothing moved
@@ -1377,6 +1388,22 @@ fn contact_sheet_body(app: &mut LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dial
     ui.checkbox(&mut options.captions, crate::i18n::tr("Filename captions"));
     ui.label(crate::i18n::tr("150 dpi · sRGB · current edits · fit without cropping"));
     ui.label(crate::i18n::tr("Choose a PDF destination after confirming. Print the PDF from your viewer."));
+}
+
+/// The body of the Gallery dialog.
+fn gallery_body(app: &mut LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dialog) {
+    let Dialog::Gallery { title, password, url, token, token_saved } = dlg else { return };
+    let n = app.session.selected().len();
+    ui.label(crate::i18n::tr_format!("{n} selected photo{}", crate::i18n::plural_s(n), n = n));
+    dialog_field(ui, "field:galleryTitle", title, "Gallery title");
+    let pw = crate::text_field::TextField::singleline("field:galleryPassword", password).hint(crate::i18n::tr("Password (optional)")).width(f32::INFINITY).password(true).show(ui);
+    crate::widgets::register(ui, "field:galleryPassword", pw.response.rect);
+    ui.add_space(4.0);
+    ui.label(crate::i18n::tr("Server"));
+    crate::text_field::TextField::singleline("field:galleryUrl", url).hint(crate::i18n::tr("https://galleries.example.com")).width(f32::INFINITY).show(ui);
+    let hint = if *token_saved { "Owner token (saved: leave empty to keep it)" } else { "Owner token" };
+    crate::text_field::TextField::singleline("field:galleryToken", token).hint(crate::i18n::tr(hint)).width(f32::INFINITY).password(true).show(ui);
+    ui.label(crate::i18n::tr("Web-size copies without location are sent; photos already online are not sent again. Without a password, the link alone opens the gallery."));
 }
 
 /// "N selected photos · M pages".
@@ -2136,6 +2163,7 @@ fn dialog_content(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, body_m
         Dialog::PasteSettings { .. } => paste_settings_body(app, ui, t, dlg),
         Dialog::SlideshowExport { settings } => slideshow_export_body(app, ui, settings),
         Dialog::ContactSheet { .. } => contact_sheet_body(app, ui, dlg),
+        Dialog::Gallery { .. } => gallery_body(app, ui, dlg),
         Dialog::Export { .. } => export_body(app, ui, t, dlg),
         Dialog::Merge { opts } => crate::merge::body(app, ui, opts),
         Dialog::Import { opts } => crate::import::body(app, ui, opts),

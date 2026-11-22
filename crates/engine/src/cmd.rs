@@ -177,6 +177,8 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(crate::video::faces::specs());
         v.extend(describe::specs());
         v.extend(crate::cull_job::specs());
+        #[cfg(not(target_arch = "wasm32"))]
+        v.extend(crate::gallery::specs());
         v.extend(crate::style_job::specs());
         v.extend(facemesh::specs());
         v.extend(search::specs());

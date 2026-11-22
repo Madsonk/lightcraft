@@ -29,6 +29,8 @@ pub mod contact_sheet;
 pub mod crs;
 pub mod crs_masks;
 pub mod cull_job;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod gallery;
 pub mod demo;
 pub mod denoise;
 pub mod describe;
@@ -321,6 +323,9 @@ pub struct Session {
     pub(crate) faces: faces_index::FacesState,
     /// AI culling (`cull.*`): the job in progress or the last one, and the user's settings.
     pub cull: cull_job::Culler,
+    /// Online gallery publishing (`gallery.*`): the run in progress or the last one.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub gallery: gallery::Publisher,
     /// "My style" and automatic framing (`style.*`, `autocrop.*`, `autostraighten.*`): jobs and profiles.
     pub style: style_job::StyleLab,
     /// Face analysis (eyes open / closed, eye sharpness): the model and the run in progress.
@@ -537,6 +542,8 @@ impl Session {
             #[cfg(not(target_arch = "wasm32"))]
             faces: Default::default(),
             cull: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            gallery: Default::default(),
             style: Default::default(),
             facemesh: facemesh::Faces::default(),
             searcher: search::Searcher::default(),

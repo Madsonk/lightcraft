@@ -553,12 +553,43 @@ impl Response {
 
 /// Send `GET url` with extra `headers` and read the status line and headers.
 pub fn get(url: &Url, headers: &[(&str, String)], limits: &Limits) -> Result<Response, HttpError> {
+    request("GET", url, headers, &[], limits)
+}
+
+/// Longest response body [`send`] reads: an API answer, never a file.
+const MAX_REPLY: usize = 1024 * 1024;
+
+/// `method url` with a `body`, whole (short) response read: `(status, body)`. For talking to an
+/// API the user pointed LightCraft at (gallery publishing), not for downloads.
+pub fn send(method: &str, url: &Url, headers: &[(&str, String)], body: &[u8], limits: &Limits) -> Result<(u16, Vec<u8>), HttpError> {
+    let mut r = request(method, url, headers, body, limits)?;
+    let (mut out, mut buf) = (Vec::new(), [0u8; 8192]);
+    loop {
+        let n = r.read(&mut buf, limits)?;
+        if n == 0 {
+            return Ok((r.status, out));
+        }
+        out.extend_from_slice(buf.get(..n).unwrap_or_default());
+        if out.len() > MAX_REPLY {
+            return Err(HttpError::Protocol("the reply is too large".into()));
+        }
+    }
+}
+
+/// Send `method url` with extra `headers` and a `body`, read the status line and headers.
+pub fn request(method: &str, url: &Url, headers: &[(&str, String)], body: &[u8], limits: &Limits) -> Result<Response, HttpError> {
+    if !method.bytes().all(|b| b.is_ascii_uppercase()) || method.is_empty() {
+        return Err(HttpError::BadUrl("bad method".into()));
+    }
     let mut req = format!(
-        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: LightCraft/{}\r\nAccept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\n",
+        "{method} {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: LightCraft/{}\r\nAccept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\n",
         url.path,
         url.host_header(),
         env!("CARGO_PKG_VERSION")
     );
+    if !body.is_empty() {
+        req.push_str(&format!("Content-Length: {}\r\n", body.len()));
+    }
     for (k, v) in headers {
         if v.chars().any(|c| c == '\r' || c == '\n') || k.chars().any(|c| c == '\r' || c == '\n' || c == ':') {
             return Err(HttpError::BadUrl("header with a line break".into()));
@@ -568,6 +599,9 @@ pub fn get(url: &Url, headers: &[(&str, String)], limits: &Limits) -> Result<Res
     req.push_str("\r\n");
     let mut stream = Stream::connect(url, limits)?;
     stream.write_all(req.as_bytes(), limits)?;
+    if !body.is_empty() {
+        stream.write_all(body, limits)?;
+    }
     let mut conn = Conn { stream, buf: Vec::new(), pos: 0 };
     let status_line = conn.line(MAX_HEAD, limits)?;
     let mut parts = status_line.split_whitespace();
@@ -779,5 +813,37 @@ mod tests {
     #[test]
     fn the_tls_config_builds_with_the_pure_rust_provider() {
         assert!(tls_config().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod tests_send {
+    use super::*;
+    use std::io::{Read, Write};
+
+    /// `send` puts a body with its length and reads a short reply (gallery publishing).
+    #[test]
+    fn send_puts_a_body_and_reads_the_reply() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let server = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().expect("accept");
+            let mut got = Vec::new();
+            let mut buf = [0u8; 4096];
+            while !got.windows(4).any(|w| w == b"\r\n\r\n") || !got.ends_with(b"payload") {
+                let n = s.read(&mut buf).expect("read");
+                got.extend_from_slice(&buf[..n]);
+            }
+            s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok").expect("write");
+            String::from_utf8_lossy(&got).into_owned()
+        });
+        let cancel = AtomicBool::new(false);
+        let limits = Limits { connect: Duration::from_secs(2), stall: Duration::from_secs(5), cancel: &cancel };
+        let url = Url::parse(&format!("http://127.0.0.1:{port}/api/x")).expect("url");
+        let (status, body) = send("PUT", &url, &[("Authorization", "Bearer t".into())], b"payload", &limits).expect("send");
+        assert_eq!((status, body.as_slice()), (200, b"ok".as_slice()));
+        let seen = server.join().expect("server");
+        assert!(seen.starts_with("PUT /api/x HTTP/1.1") && seen.contains("Content-Length: 7") && seen.contains("Authorization: Bearer t"), "{seen}");
+        assert!(send("put", &url, &[], &[], &limits).is_err(), "a method is upper case letters");
     }
 }
