@@ -349,8 +349,21 @@ impl Stream {
                 Ok(())
             }
             Stream::Tls(conn, sock) => {
-                // buffered by rustls, then sent as TLS records
-                conn.writer().write_all(data).map_err(|e| HttpError::Tls(e.to_string()))?;
+                // rustls buffers a bounded amount of plaintext: hand it a piece, send the TLS records it
+                // made, and go on (a photo is far larger than the buffer)
+                let mut rest = data;
+                while !rest.is_empty() {
+                    let piece = rest.get(..rest.len().min(16 * 1024)).unwrap_or_default();
+                    let n = conn.writer().write(piece).map_err(|e| HttpError::Tls(e.to_string()))?;
+                    rest = rest.get(n..).unwrap_or_default();
+                    let had_output = conn.wants_write();
+                    while conn.wants_write() {
+                        Self::retry(limits, || conn.write_tls(sock))?;
+                    }
+                    if n == 0 && !had_output {
+                        return Err(HttpError::Io("the TLS connection took no more data".into()));
+                    }
+                }
                 while conn.wants_write() {
                     Self::retry(limits, || conn.write_tls(sock))?;
                 }
