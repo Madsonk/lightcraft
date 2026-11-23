@@ -663,7 +663,8 @@ fn remove(s: &mut Session, p: &Value) -> Result<Value> {
     let ops: Vec<Value> = photos.iter().map(|(pid, _)| if hide { json!({"pid": pid, "hidden": hidden}) } else { json!({"pid": pid, "delete": true}) }).collect();
     let n = ops.len();
     batch(s, C, &slug, ops, None)?;
-    Ok(json!({"removed": n, "hidden": hide}))
+    // the state the photos are in now: showing them again is `hidden: false`
+    Ok(json!({"removed": n, "hidden": hide && hidden}))
 }
 
 /// Puts a gallery's photos in order and in chapters, in ONE request: `ids` (or `pids`) in display order,
@@ -707,6 +708,50 @@ fn capture_seconds(s: &str) -> Option<i64> {
     Some((era * 146_097 + doe - 719_468) * 86_400 + hh * 3600 + mm * 60 + ss)
 }
 
+/// The focus measured on a photo, or `None` when its analysis never measured it: a verdict- or faces-only analysis
+/// made by an older build carries the default 0 / 0, which would read as "totally blurred".
+fn measured_sharpness(a: &lightcraft_catalog::Analysis) -> Option<f32> {
+    (a.sharpness != 0.0 || a.clipped != 0.0).then_some(a.sharpness)
+}
+
+/// Measures the focus of the photos whose analysis lacks it (the same measurement as Assisted Culling, on the
+/// photo's thumbnail-level source) and keeps it in their analysis, so they are judged on a number and the next
+/// call measures nothing. Returns (measured, could not be read).
+fn measure_missing(s: &mut Session, ids: &[PhotoId]) -> (usize, usize) {
+    use lightcraft_catalog::{Analysis, Op};
+    use rayon::prelude::*;
+    let todo: Vec<(PhotoId, crate::media::SourceRef)> = ids
+        .iter()
+        .filter_map(|id| {
+            let p = s.catalog.photo(*id).filter(|p| !p.is_video() && p.analysis.as_ref().and_then(measured_sharpness).is_none())?;
+            Some((*id, s.media.source_ref(p, crate::media::SourceLevel::Thumb)))
+        })
+        .collect();
+    let done: Vec<(PhotoId, Option<(f32, f32)>)> = todo
+        .into_par_iter()
+        .map(|(id, src)| {
+            let m = src.load_source().ok().map(|r| (lightcraft_pipeline::cull::sharpness(&r.image), lightcraft_pipeline::cull::clipped(&r.image)));
+            (id, m)
+        })
+        .collect();
+    let (mut ok, mut failed) = (0, 0);
+    for (id, m) in done {
+        let Some((sharpness, clipped)) = m else {
+            failed += 1;
+            continue;
+        };
+        let Some(p) = s.catalog.photo(id) else { continue };
+        let analysis = Analysis { sharpness, clipped, ..p.analysis.clone().unwrap_or_default() };
+        // a measurement, not an undo step (as the faces and the verdicts)
+        let op = Op::SetAnalysis { id, analysis: Some(analysis) };
+        if s.catalog.apply(op.clone()).is_ok() {
+            s.pending_log.push(op);
+            ok += 1;
+        }
+    }
+    (ok, failed)
+}
+
 /// What the library knows about each photo, as the organiser reads it.
 fn candidates(s: &Session, ids: &[PhotoId]) -> Vec<crate::gallery_ai::Candidate> {
     let mut manual: Vec<&lightcraft_catalog::Album> = s.catalog.albums().filter(|a| !a.folder && a.smart.is_none()).collect();
@@ -718,7 +763,7 @@ fn candidates(s: &Session, ids: &[PhotoId]) -> Vec<crate::gallery_ai::Candidate>
             Some(crate::gallery_ai::Candidate {
                 id: *id,
                 captured: ph.captured.as_deref().and_then(capture_seconds),
-                sharpness: an.map(|a| a.sharpness),
+                sharpness: an.and_then(measured_sharpness),
                 verdict_score: an.and_then(|a| a.verdict.as_ref()).map(|v| v.score),
                 retouch_score: an.and_then(|a| a.retouch.as_ref()).map(|r| r.score),
                 burst: an.and_then(|a| a.group),
@@ -759,8 +804,12 @@ fn organise(s: &mut Session, p: &Value) -> Result<Value> {
         drop_weak: p.get("dropWeak").and_then(Value::as_bool).unwrap_or(true),
         target_cover_landscape: p.get("landscapeCover").and_then(Value::as_bool).unwrap_or(false),
     };
-    let plan = crate::gallery_ai::organise(&candidates(s, &ids), &opts);
+    let (measured, unreadable) = measure_missing(s, &ids);
+    let cands = candidates(s, &ids);
+    let plan = crate::gallery_ai::organise(&cands, &opts);
     Ok(json!({
+        "measured": measured, "unreadable": unreadable,
+        "sharpness": cands.iter().map(|c| json!({"id": c.id.0, "value": c.sharpness.map(|v| (v * 10.0).round() / 10.0)})).collect::<Vec<_>>(),
         "chapters": plan.chapters.iter().map(|c| json!({"name": c.name, "ids": c.ids.iter().map(|i| i.0).collect::<Vec<_>>()})).collect::<Vec<_>>(),
         "cover": plan.cover.map(|i| i.0),
         "dropped": plan.dropped.iter().map(|d| json!({"id": d.id.0, "reason": d.reason})).collect::<Vec<_>>(),
@@ -785,7 +834,22 @@ fn apply_plan(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let dropped: Vec<u64> = plan["dropped"].as_array().into_iter().flatten().filter_map(|d| d["id"].as_u64()).collect();
     if !ids.is_empty() {
-        arrange(s, &json!({"slug": slug, "ids": ids, "sections": sections, "chapters": names}))?;
+        // every photo of the gallery gets a position of its own: the kept ones first, then the photos the plan leaves
+        // out (hidden, but numbered), then any other photo. Hidden photos left on their old numbers collide with the
+        // renumbered ones as soon as they are shown again.
+        let manifest = owner_call(s, C, "GET", &format!("/api/v1/owner/galleries/{slug}/manifest"), None)?;
+        let mut pids: Vec<String> = ids.iter().map(|id| photo_key(&slug, PhotoId(*id))).collect();
+        let mut sections_by_pid = serde_json::Map::new();
+        for (id, name) in &sections {
+            if let Ok(id) = id.parse::<u64>() {
+                sections_by_pid.insert(photo_key(&slug, PhotoId(id)), name.clone());
+            }
+        }
+        let mut rest: Vec<(i64, String)> = manifest["photos"].as_array().into_iter().flatten().filter_map(|m| Some((m["pos"].as_i64().unwrap_or(0), m["pid"].as_str()?.to_string()))).filter(|(_, pid)| !pids.contains(pid)).collect();
+        rest.sort();
+        let (left_out, others): (Vec<_>, Vec<_>) = rest.into_iter().partition(|(_, pid)| dropped.iter().any(|d| &photo_key(&slug, PhotoId(*d)) == pid));
+        pids.extend(left_out.into_iter().chain(others).map(|(_, pid)| pid));
+        arrange(s, &json!({"slug": slug, "pids": pids, "sections": sections_by_pid, "chapters": names}))?;
         // what the plan keeps is shown, in case an earlier plan had hidden it
         remove(s, &json!({"slug": slug, "ids": ids, "hide": true, "hidden": false}))?;
     }
@@ -997,6 +1061,11 @@ mod tests {
     /// A stand-in that answers every request with the first reply whose key the request line contains, and
     /// keeps (request line, body) of each. Join the handle after `stop`.
     fn recorder(replies: Vec<(&'static str, String)>) -> (u16, Arc<AtomicBool>, std::thread::JoinHandle<Vec<(String, String)>>) {
+        serve(move |line, _| replies.iter().find(|(k, _)| line.contains(k)).map_or("{}".to_string(), |(_, r)| r.clone()))
+    }
+
+    /// The same stand-in with its own logic: `answer(request line, body)` gives the reply.
+    fn serve(mut answer: impl FnMut(&str, &str) -> String + Send + 'static) -> (u16, Arc<AtomicBool>, std::thread::JoinHandle<Vec<(String, String)>>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
         let port = listener.local_addr().expect("addr").port();
         let stop = Arc::new(AtomicBool::new(false));
@@ -1028,7 +1097,7 @@ mod tests {
                 };
                 let line = String::from_utf8_lossy(&buf[..head_end]).lines().next().unwrap_or_default().to_string();
                 let body = String::from_utf8_lossy(&buf[head_end..head_end + len]).into_owned();
-                let reply = replies.iter().find(|(k, _)| line.contains(k)).map_or("{}".to_string(), |(_, r)| r.clone());
+                let reply = answer(&line, &body);
                 log.push((line, body));
                 let _ = c.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len()).as_bytes());
             }
@@ -1119,6 +1188,86 @@ mod tests {
         assert!(log[0].0.starts_with("PATCH /api/v1/owner/galleries/essai-1/guests/mab12"), "{log:?}");
         assert_eq!(serde_json::from_str::<Value>(&log[0].1).expect("body"), json!({"level": "download"}));
         assert!(log[1].0.starts_with("DELETE /api/v1/owner/galleries/essai-1/guests/0a1b2c"), "{log:?}");
+    }
+
+    /// A gallery server that keeps what the batch endpoint is told, as the real one does.
+    fn stateful(slug: &'static str, photos: Vec<(String, i64, String)>) -> (u16, Arc<AtomicBool>, std::thread::JoinHandle<Vec<(String, String)>>, Arc<Mutex<Vec<(String, i64, String, bool)>>>) {
+        let held: Arc<Mutex<Vec<(String, i64, String, bool)>>> = Arc::new(Mutex::new(photos.into_iter().map(|(p, pos, sec)| (p, pos, sec, false)).collect()));
+        let state = held.clone();
+        let (port, stop, h) = serve(move |line, body| {
+            let mut st = state.lock().expect("state");
+            if line.contains("/manifest") {
+                let mut v = st.clone();
+                v.sort_by_key(|p| p.1);
+                return json!({"photos": v.iter().map(|(pid, pos, sec, hidden)| json!({"pid": pid, "pos": pos, "section": sec, "hidden": hidden, "name": pid, "kind": "image"})).collect::<Vec<_>>()}).to_string();
+            }
+            if line.starts_with("POST") && line.contains("/photos/batch") {
+                let b: Value = serde_json::from_str(body).expect("batch body");
+                for op in b["ops"].as_array().into_iter().flatten() {
+                    let Some(row) = st.iter_mut().find(|r| Some(r.0.as_str()) == op["pid"].as_str()) else { continue };
+                    if let Some(p) = op["position"].as_i64() {
+                        row.1 = p;
+                    }
+                    if let Some(sec) = op["section"].as_str() {
+                        row.2 = sec.to_string();
+                    }
+                    if let Some(h) = op["hidden"].as_bool() {
+                        row.3 = h;
+                    }
+                }
+                return "{}".into();
+            }
+            if line.starts_with("GET /api/v1/owner/galleries ") {
+                return json!({"galleries": [{"slug": slug, "title": "T", "download": 1}]}).to_string();
+            }
+            "{}".into()
+        });
+        (port, stop, h, held)
+    }
+
+    /// Hiding the photos the organiser leaves out, then showing them again, must never leave two photos on the
+    /// same position (they used to keep their old numbers while the kept ones were renumbered).
+    #[test]
+    fn showing_the_left_out_photos_again_keeps_positions_unique() {
+        let mut s = Session::with_demo();
+        let ids: Vec<PhotoId> = s.visible_cloned().iter().take(5).copied().collect();
+        let key = |i: usize| photo_key("essai-1", ids[i]);
+        // photo 5 is "from another library" (not in the plan at all): it must get a position of its own too
+        let mut rows: Vec<(String, i64, String)> = (0..5).map(|i| (key(i), i as i64, String::new())).collect();
+        rows.push(("pforeign".into(), 5, String::new()));
+        let (port, stop, srv, held) = stateful("essai-1", rows);
+        s.execute("gallery.configure", &json!({"url": format!("http://127.0.0.1:{port}"), "token": "tok", "persist": false})).expect("configure");
+        let plan = json!({"chapters": [{"name": "A", "ids": [ids[3].0, ids[0].0, ids[1].0]}], "cover": null, "dropped": [{"id": ids[2].0, "reason": "blurry"}, {"id": ids[4].0, "reason": "blurry"}]});
+        s.execute("gallery.applyPlan", &json!({"slug": "essai-1", "plan": plan})).expect("apply");
+        {
+            let st = held.lock().expect("state");
+            let hidden: Vec<&str> = st.iter().filter(|r| r.3).map(|r| r.0.as_str()).collect();
+            assert_eq!(hidden.len(), 2, "the two left out are hidden: {st:?}");
+        }
+        let shown = s.execute("gallery.remove", &json!({"slug": "essai-1", "ids": [ids[2].0, ids[4].0], "hide": true, "hidden": false})).expect("show again");
+        assert_eq!((shown["hidden"].as_bool(), shown["removed"].as_u64()), (Some(false), Some(2)), "the reply says what is true now: {shown}");
+        let hid = s.execute("gallery.remove", &json!({"slug": "essai-1", "ids": [ids[2].0], "hide": true})).expect("hide");
+        assert_eq!(hid["hidden"], true);
+        stop.store(true, Ordering::Relaxed);
+        srv.join().expect("server");
+        let st = held.lock().expect("state");
+        let mut pos: Vec<i64> = st.iter().map(|r| r.1).collect();
+        pos.sort_unstable();
+        pos.dedup();
+        assert_eq!(pos.len(), st.len(), "every photo has its own position: {st:?}");
+        let order: Vec<&str> = { let mut v: Vec<&(String, i64, String, bool)> = st.iter().collect(); v.sort_by_key(|r| r.1); v.iter().map(|r| r.0.as_str()).collect() };
+        assert_eq!(&order[..3], [key(3).as_str(), key(0).as_str(), key(1).as_str()], "kept photos first, in the plan's order: {order:?}");
+        assert_eq!(order[5], "pforeign", "a photo outside the plan comes last");
+    }
+
+    /// Photos whose analysis never measured the focus are measured (and told apart from blurred ones) before the
+    /// organiser judges: a default analysis of 0 / 0 is "unknown", not "totally blurred".
+    #[test]
+    fn an_analysis_that_never_measured_the_focus_is_unknown() {
+        use lightcraft_catalog::Analysis;
+        assert_eq!(measured_sharpness(&Analysis::default()), None);
+        assert_eq!(measured_sharpness(&Analysis { sharpness: 0.0, clipped: 0.2, ..Default::default() }), Some(0.0));
+        assert_eq!(measured_sharpness(&Analysis { sharpness: 42.0, ..Default::default() }), Some(42.0));
     }
 
     #[test]

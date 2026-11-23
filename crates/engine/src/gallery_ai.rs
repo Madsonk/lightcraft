@@ -196,9 +196,21 @@ fn find_dropped(cs: &[Candidate], q: &[f32], drop_weak: bool) -> (Vec<Option<Why
     let mut idx: Vec<usize> = (0..cs.len()).filter(|&i| why[i].is_some()).collect();
     let capped = idx.len() > cap;
     if capped {
+        let blurry: Vec<usize> = idx.iter().copied().filter(|&i| why[i] == Some(Why::Blurry)).collect();
         idx.sort_by(|&a, &b| q[a].total_cmp(&q[b]).then(cs[a].id.cmp(&cs[b].id)));
         for &i in &idx[cap..] {
             why[i] = None;
+        }
+        // the overall quality also weighs the verdict and the retouch score: among the photos dropped as blurry,
+        // it must still be the blurriest that go, never a sharper one while a blurrier one stays
+        let going = blurry.iter().filter(|&&i| why[i].is_some()).count();
+        let mut by_blur = blurry;
+        by_blur.sort_by(|&a, &b| {
+            let s = |i: usize| cs[i].sharpness.unwrap_or(f32::INFINITY);
+            s(a).total_cmp(&s(b)).then(q[a].total_cmp(&q[b])).then(cs[a].id.cmp(&cs[b].id))
+        });
+        for (rank, &i) in by_blur.iter().enumerate() {
+            why[i] = (rank < going).then_some(Why::Blurry);
         }
     }
     (why, capped)
@@ -648,6 +660,24 @@ mod tests {
         assert_eq!(ids, [1, 2, 3, 4], "the worst four go, the least bad stay");
         assert_eq!(p.chapters[0].ids.len(), 6);
         assert!(p.notes.iter().any(|n| n.contains("40 %")));
+    }
+
+    /// A sharper photo is never dropped as blurry while a blurrier one is kept, whatever the verdict or retouch
+    /// score say (the 40 % ceiling used to keep the "least bad" by overall quality).
+    #[test]
+    fn the_blurriest_go_first_under_the_ceiling() {
+        let mut v = run(1, 5, 9.0);
+        for (c, sharp) in v.iter_mut().zip([14.0, 6.0, 1.0, 80.0, 80.0]) {
+            c.sharpness = Some(sharp);
+        }
+        v[0].verdict_score = Some(0.0); // the least blurry has the worst verdict ...
+        v[2].verdict_score = Some(100.0); // ... the blurriest the best one
+        let p = organise(&v, &Options { drop_weak: true, ..opts(Lang::En) });
+        let mut ids: Vec<u64> = p.dropped.iter().map(|d| d.id.0).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, [2, 3], "ceiling of 2 of 5: the two blurriest, not the two worst by verdict");
+        assert!(p.dropped.iter().all(|d| d.reason == "blurry"));
+        assert!(p.notes.iter().any(|n| n.contains("ceiling")));
     }
 
     #[test]

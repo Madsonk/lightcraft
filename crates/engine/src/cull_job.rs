@@ -272,10 +272,13 @@ impl Session {
             if !verdict.basis.is_empty() && measurement_key(self, id).as_deref() != Some(verdict.basis.as_str()) {
                 continue;
             }
+            // a photo with no analysis yet gets the focus and clipping this run just measured: a default analysis
+            // would read as "sharpness 0" (blurred), which is not what was measured
+            let (sharpness, clipped) = (verdict.sharpness, verdict.clipped);
             let verdict = Some(Arc::new(verdict));
             let analysis = match &p.analysis {
                 Some(a) => Analysis { verdict, ..a.clone() },
-                None => Analysis { verdict, ..Default::default() },
+                None => Analysis { verdict, sharpness, clipped, ..Default::default() },
             };
             let op = Op::SetAnalysis { id, analysis: Some(analysis) };
             if self.catalog.apply(op.clone()).is_ok() {
