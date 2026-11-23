@@ -495,7 +495,7 @@ fn guests(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "gallery.guests";
     let slug = slug_param(p, C)?;
     let base = format!("/api/v1/owner/galleries/{slug}/guests");
-    if let Some(id) = p.get("revoke").and_then(Value::as_i64) {
+    if let Some(id) = p.get("revoke").and_then(access_id) {
         return owner_call(s, C, "DELETE", &format!("{base}/{id}"), None);
     }
     if let Some(name) = p.get("add").and_then(Value::as_str) {
@@ -506,6 +506,45 @@ fn guests(s: &mut Session, p: &Value) -> Result<Value> {
         return owner_call(s, C, "POST", &base, Some(b));
     }
     owner_call(s, C, "GET", &base, None)
+}
+
+/// An access id as the server hands it out (a code's hex id, or `m…` for an access by email): letters and
+/// digits only, so it can never change the path it is put in.
+fn access_id(v: &Value) -> Option<String> {
+    let id = v.as_str().map(str::to_owned).or_else(|| v.as_i64().map(|n| n.to_string()))?;
+    (!id.is_empty() && id.len() <= 40 && id.bytes().all(|b| b.is_ascii_alphanumeric())).then_some(id)
+}
+
+/// Changes what a person already let in may do (`view` sees, `like` also hearts, `download` also downloads)
+/// without making them a new code or link: their open session takes the new level at once.
+fn set_access(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "gallery.setAccess";
+    let slug = slug_param(p, C)?;
+    let id = p.get("id").and_then(access_id).ok_or_else(|| bad(C, "`id`: the access to change (from gallery.guests)"))?;
+    let level = p.get("level").and_then(Value::as_str).filter(|l| matches!(*l, "view" | "like" | "download")).ok_or_else(|| bad(C, "`level` is view, like or download"))?;
+    owner_call(s, C, "PATCH", &format!("/api/v1/owner/galleries/{slug}/guests/{id}"), Some(json!({"level": level})))
+}
+
+/// The hearts of a gallery: per photo (most loved first) and per person. Names are the visitors' own words and
+/// are returned, never logged.
+fn likes(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "gallery.likes";
+    let slug = slug_param(p, C)?;
+    let reply = owner_call(s, C, "GET", &format!("/api/v1/owner/galleries/{slug}/likes"), None)?;
+    let map = key_map(s, &slug);
+    let mut per_photo: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    let mut per_person: std::collections::BTreeMap<String, usize> = Default::default();
+    let all = reply["likes"].as_array().cloned().unwrap_or_default();
+    for l in &all {
+        let (Some(pid), Some(who)) = (l["pid"].as_str(), l["who"].as_str()) else { continue };
+        per_photo.entry(pid.to_string()).or_default().push(who.to_string());
+        *per_person.entry(who.to_string()).or_default() += 1;
+    }
+    let mut photos: Vec<Value> = per_photo.into_iter().map(|(pid, who)| json!({"id": map.get(&pid).map(|i| i.0), "count": who.len(), "who": who, "pid": pid})).collect();
+    photos.sort_by(|a, b| b["count"].as_u64().cmp(&a["count"].as_u64()));
+    let mut people: Vec<(String, usize)> = per_person.into_iter().collect();
+    people.sort_by(|a, b| b.1.cmp(&a.1));
+    Ok(json!({"total": all.len(), "top": photos.first().cloned(), "photos": photos, "people": people.into_iter().map(|(who, count)| json!({"who": who, "count": count})).collect::<Vec<_>>()}))
 }
 
 /// The access requests of a gallery, and the owner's decision on one: approving makes the server email the
@@ -592,51 +631,66 @@ fn update(s: &mut Session, p: &Value) -> Result<Value> {
     owner_call(s, C, "PUT", &format!("/api/v1/owner/galleries/{slug}"), Some(body))
 }
 
-/// Takes photos out of a gallery (`hide: true` keeps them on the server but out of the page).
+/// The photos a command names, as (server key, key in `sections`): `pids` (any photo of the gallery, also one
+/// published from another library) or `ids` (library photos; the key is the id).
+fn named_photos(p: &Value, slug: &str) -> Vec<(String, String)> {
+    if let Some(a) = p.get("pids").and_then(Value::as_array) {
+        return a.iter().filter_map(Value::as_str).map(|k| (k.to_string(), k.to_string())).collect();
+    }
+    p.get("ids").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_u64).map(|id| (photo_key(slug, PhotoId(id)), id.to_string())).collect()
+}
+
+/// Several photos of a gallery changed in ONE request (one transaction on the server).
+fn batch(s: &Session, c: &str, slug: &str, ops: Vec<Value>, sections_order: Option<&Value>) -> Result<Value> {
+    let mut body = json!({"ops": ops});
+    if let Some(o) = sections_order {
+        body["sections_order"] = o.clone();
+    }
+    owner_call(s, c, "POST", &format!("/api/v1/owner/galleries/{slug}/photos/batch"), Some(body))
+}
+
+/// Takes photos out of a gallery (`hide: true` keeps them on the server but out of the page). One request
+/// whatever the number of photos. `ids` (library photos) or `pids`.
 fn remove(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "gallery.remove";
     let slug = slug_param(p, C)?;
-    let ids: Vec<u64> = p.get("ids").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
-    if ids.is_empty() {
-        return Err(bad(C, "`ids`: the library photos to take out"));
+    let photos = named_photos(p, &slug);
+    if photos.is_empty() {
+        return Err(bad(C, "`ids`: the library photos to take out (or `pids`)"));
     }
     let hide = p.get("hide").and_then(Value::as_bool).unwrap_or(false);
-    let mut done = 0;
-    for id in ids {
-        let pid = photo_key(&slug, PhotoId(id));
-        if hide {
-            owner_call(s, C, "POST", &format!("/api/v1/owner/galleries/{slug}/hide"), Some(json!({"pid": pid, "hidden": p.get("hidden").and_then(Value::as_bool).unwrap_or(true)})))?;
-        } else {
-            owner_call(s, C, "DELETE", &format!("/api/v1/owner/galleries/{slug}/photos/{pid}"), None)?;
-        }
-        done += 1;
-    }
-    Ok(json!({"removed": done, "hidden": hide}))
+    let hidden = p.get("hidden").and_then(Value::as_bool).unwrap_or(true);
+    let ops: Vec<Value> = photos.iter().map(|(pid, _)| if hide { json!({"pid": pid, "hidden": hidden}) } else { json!({"pid": pid, "delete": true}) }).collect();
+    let n = ops.len();
+    batch(s, C, &slug, ops, None)?;
+    Ok(json!({"removed": n, "hidden": hide}))
 }
 
-/// Puts a gallery's photos in order and in chapters: `ids` in display order, `sections` = {"<id>": chapter}.
+/// Puts a gallery's photos in order and in chapters, in ONE request: `ids` (or `pids`) in display order,
+/// `sections` = {"<id or pid>": chapter}, `chapters` = the chapters' order.
 fn arrange(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "gallery.arrange";
     let slug = slug_param(p, C)?;
-    let ids: Vec<u64> = p.get("ids").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
-    if ids.is_empty() {
-        return Err(bad(C, "`ids`: the library photos in display order"));
+    let photos = named_photos(p, &slug);
+    if photos.is_empty() {
+        return Err(bad(C, "`ids`: the library photos in display order (or `pids`)"));
     }
     let empty = json!({});
     let sections = p.get("sections").unwrap_or(&empty);
-    let mut done = 0;
-    for (pos, id) in ids.iter().enumerate() {
-        let mut body = json!({"position": pos});
-        if let Some(name) = sections.get(id.to_string()).and_then(Value::as_str) {
-            body["section"] = json!(name);
-        }
-        owner_call(s, C, "PATCH", &format!("/api/v1/owner/galleries/{slug}/photos/{}", photo_key(&slug, PhotoId(*id))), Some(body))?;
-        done += 1;
-    }
-    if let Some(order) = p.get("chapters") {
-        update(s, &json!({"slug": slug, "sections_order": order}))?;
-    }
-    Ok(json!({"arranged": done}))
+    let ops: Vec<Value> = photos
+        .iter()
+        .enumerate()
+        .map(|(pos, (pid, key))| {
+            let mut op = json!({"pid": pid, "position": pos});
+            if let Some(name) = sections.get(key).and_then(Value::as_str) {
+                op["section"] = json!(name);
+            }
+            op
+        })
+        .collect();
+    let n = ops.len();
+    batch(s, C, &slug, ops, p.get("chapters"))?;
+    Ok(json!({"arranged": n}))
 }
 
 /// "YYYY-MM-DDTHH:MM:SS…" → seconds since 1970 (the clock as written, no time zone: only differences matter).
@@ -772,12 +826,14 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!(query "gallery.list", "Online Galleries", [], None, "{} → the galleries on the server (slug, title, photos, expiry)", always, list),
         cmd!("gallery.delete", "Delete Online Gallery", [], None, "{slug} — deletes the gallery, its photos and likes from the server (irreversible; originals stay)", always, delete),
-        cmd!("gallery.guests", "Gallery Guest Codes", [], None, "{slug, add?: name, level?: view|like|download (like), code?: string (random if omitted), revoke?: id} — no add/revoke lists the codes; an added code is shown once", always, guests),
+        cmd!("gallery.guests", "Gallery Guest Codes", [], None, "{slug, add?: name, level?: view|like|download (like), code?: string (random if omitted), revoke?: id (as listed: a code's id, or m… for an access by email)} — no add/revoke lists every access (codes and people let in by email: id, name, level, created, email?); an added code is shown once", always, guests),
+        cmd!("gallery.setAccess", "Change Gallery Access Level", [], None, "{slug, id: access id (gallery.guests), level: view|like|download} — what that person may do, without recreating the code or link; their open session follows at once", always, set_access),
+        cmd!(query "gallery.likes", "Gallery Hearts", [], None, "{slug} → {total, top: {pid, id, count, who}|null, photos: [{pid, id (library photo or null), count, who: [names]}] (most loved first), people: [{who, count}]} — who hearted what; personal data: shown, never logged", always, likes),
         cmd!("gallery.requests", "Gallery Access Requests", [], None, "{slug, decide?: request id, decision?: approve|deny, level?: like|download (like)} — no decide lists the requests (id, name, email, message, status); approving emails the visitor their personal link", always, requests),
         cmd!(query "gallery.open", "Open Online Gallery", [], None, "{slug} → {gallery: settings, photos: [{pid, id (library photo or null), name, section, position, kind, hidden}]} in display order", always, open),
         cmd!("gallery.update", "Edit Online Gallery", [], None, "{slug, title?, password?: string (\"\" removes it), expiresInDays?: n (0 = never), listed?: bool, cover?: library photo id (null removes), download?: bool, sections_order?: [chapter names]} — only the keys given change", always, update),
-        cmd!("gallery.remove", "Remove From Online Gallery", [], None, "{slug, ids: library photo ids, hide?: bool (keep on the server, out of the page), hidden?: bool (true; false shows them again)} — deletes the web copies from the server; the originals are untouched", always, remove),
-        cmd!("gallery.arrange", "Arrange Online Gallery", [], None, "{slug, ids: library photo ids in display order, sections?: {\"<id>\": chapter name}, chapters?: [chapter order]} — order and chapters only, nothing is sent again", always, arrange),
+        cmd!("gallery.remove", "Remove From Online Gallery", [], None, "{slug, ids: library photo ids | pids: server keys, hide?: bool (keep on the server, out of the page), hidden?: bool (true; false shows them again)} — one request; deletes the web copies from the server; the originals and the library are untouched", always, remove),
+        cmd!("gallery.arrange", "Arrange Online Gallery", [], None, "{slug, ids: library photo ids in display order | pids: server keys, sections?: {\"<id or pid>\": chapter name}, chapters?: [chapter order]} — one request; order and chapters only, nothing is sent again", always, arrange),
         cmd!(query "gallery.organise", "Organise Gallery With AI", [], None, "{slug? | ids?, lang?: fr|en, dropWeak?: bool (true), gapMinutes?: n (45), landscapeCover?: bool} → {chapters: [{name, ids}], cover, dropped: [{id, reason}], notes} — a proposal made on this machine from sharpness, bursts, faces and capture time; nothing is sent or changed", always, organise),
         cmd!("gallery.applyPlan", "Apply Gallery Plan", [], None, "{slug, plan: gallery.organise's result} — order and chapters, the cover, the dropped photos hidden (not deleted)", always, apply_plan),
         cmd!(query "gallery.status", "Online Gallery progress", [], None, "{} → {state: idle|running|done|cancelled|failed, slug, url, total, done, sent, unchanged, failed, error}", always, status),
@@ -936,6 +992,133 @@ mod tests {
         assert_eq!(pct_encode("Cérémonie 1"), "C%C3%A9r%C3%A9monie%201");
         assert_eq!(pct_encode("abc-_.~"), "abc-_.~");
         assert_eq!(pct_encode(""), "");
+    }
+
+    /// A stand-in that answers every request with the first reply whose key the request line contains, and
+    /// keeps (request line, body) of each. Join the handle after `stop`.
+    fn recorder(replies: Vec<(&'static str, String)>) -> (u16, Arc<AtomicBool>, std::thread::JoinHandle<Vec<(String, String)>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = stop.clone();
+        let handle = std::thread::spawn(move || {
+            let mut log = Vec::new();
+            listener.set_nonblocking(true).ok();
+            while !flag.load(Ordering::Relaxed) {
+                let Ok((mut c, _)) = listener.accept() else {
+                    std::thread::sleep(Duration::from_millis(5));
+                    continue;
+                };
+                c.set_nonblocking(false).ok();
+                let mut buf = Vec::new();
+                let mut tmp = [0u8; 8192];
+                let (head_end, len) = loop {
+                    let n = c.read(&mut tmp).unwrap_or(0);
+                    buf.extend_from_slice(&tmp[..n]);
+                    if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&buf[..i]).to_lowercase();
+                        let len = head.lines().find_map(|l| l.strip_prefix("content-length: ")?.trim().parse::<usize>().ok()).unwrap_or(0);
+                        if buf.len() >= i + 4 + len {
+                            break (i + 4, len);
+                        }
+                    }
+                    if n == 0 {
+                        break (buf.len(), 0);
+                    }
+                };
+                let line = String::from_utf8_lossy(&buf[..head_end]).lines().next().unwrap_or_default().to_string();
+                let body = String::from_utf8_lossy(&buf[head_end..head_end + len]).into_owned();
+                let reply = replies.iter().find(|(k, _)| line.contains(k)).map_or("{}".to_string(), |(_, r)| r.clone());
+                log.push((line, body));
+                let _ = c.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len()).as_bytes());
+            }
+            log
+        });
+        (port, stop, handle)
+    }
+
+    fn session_on(port: u16) -> (Session, Vec<PhotoId>) {
+        let mut s = Session::with_demo();
+        s.execute("gallery.configure", &json!({"url": format!("http://127.0.0.1:{port}"), "token": "tok", "persist": false})).expect("configure");
+        let ids = s.visible_cloned().iter().take(3).copied().collect();
+        (s, ids)
+    }
+
+    /// Moving, re-chaptering, hiding and removing photos are each ONE request, whatever the number of photos.
+    #[test]
+    fn arranging_hiding_and_removing_are_one_request_each() {
+        let (port, stop, srv) = recorder(vec![]);
+        let (mut s, ids) = session_on(port);
+        let n: Vec<u64> = ids.iter().map(|i| i.0).collect();
+        let r = s.execute("gallery.arrange", &json!({"slug": "essai-1", "ids": [n[2], n[0], n[1]], "sections": {n[0].to_string(): "Fête"}, "chapters": ["Fête", "Messe"]})).expect("arrange");
+        assert_eq!(r["arranged"], 3);
+        // a photo published from another library has no library id: it is named by its key
+        s.execute("gallery.arrange", &json!({"slug": "essai-1", "pids": ["pa", "pb"], "sections": {"pb": "Messe"}})).expect("arrange by key");
+        s.execute("gallery.remove", &json!({"slug": "essai-1", "ids": n, "hide": true})).expect("hide");
+        s.execute("gallery.remove", &json!({"slug": "essai-1", "ids": [n[1]], "hide": true, "hidden": false})).expect("show");
+        let r = s.execute("gallery.remove", &json!({"slug": "essai-1", "pids": ["pa", "pb"]})).expect("remove");
+        assert_eq!((r["removed"].as_u64(), r["hidden"].as_bool()), (Some(2), Some(false)));
+        stop.store(true, Ordering::Relaxed);
+        let log = srv.join().expect("server");
+        assert_eq!(log.len(), 5, "one request per action: {log:?}");
+        assert!(log.iter().all(|(l, _)| l.starts_with("POST /api/v1/owner/galleries/essai-1/photos/batch")), "{log:?}");
+        let body = |i: usize| serde_json::from_str::<Value>(&log[i].1).expect("json body");
+        let key = |i: usize| photo_key("essai-1", PhotoId(n[i]));
+        let first = body(0);
+        assert_eq!(first["ops"], json!([{"pid": key(2), "position": 0}, {"pid": key(0), "position": 1, "section": "Fête"}, {"pid": key(1), "position": 2}]));
+        assert_eq!(first["sections_order"], json!(["Fête", "Messe"]));
+        assert_eq!(body(1)["ops"], json!([{"pid": "pa", "position": 0}, {"pid": "pb", "position": 1, "section": "Messe"}]));
+        assert!(body(1).get("sections_order").is_none());
+        assert_eq!(body(2)["ops"].as_array().map(Vec::len), Some(3));
+        assert_eq!(body(2)["ops"][0]["hidden"], true);
+        assert_eq!(body(3)["ops"], json!([{"pid": key(1), "hidden": false}]));
+        assert_eq!(body(4)["ops"], json!([{"pid": "pa", "delete": true}, {"pid": "pb", "delete": true}]));
+    }
+
+    /// Hearts: per photo (most loved first) and per person, the library photo each key belongs to.
+    #[test]
+    fn hearts_are_listed_by_photo_and_by_person() {
+        let mut s = Session::with_demo();
+        let ids: Vec<PhotoId> = s.visible_cloned().iter().take(2).copied().collect();
+        let k = |i: usize| photo_key("essai-1", ids[i]);
+        let reply = json!({"likes": [
+            {"pid": k(1), "who": "Awa", "ts": 1.0}, {"pid": k(0), "who": "Awa", "ts": 2.0},
+            {"pid": k(0), "who": "Bintou", "ts": 3.0}, {"pid": "pgone", "who": "Awa", "ts": 4.0}]})
+        .to_string();
+        let (port, stop, srv) = recorder(vec![("/likes", reply)]);
+        s.execute("gallery.configure", &json!({"url": format!("http://127.0.0.1:{port}"), "token": "tok", "persist": false})).expect("configure");
+        let r = s.execute("gallery.likes", &json!({"slug": "essai-1"})).expect("likes");
+        assert!(s.execute("gallery.likes", &json!({})).is_err(), "a slug is required");
+        stop.store(true, Ordering::Relaxed);
+        let log = srv.join().expect("server");
+        assert_eq!(log.len(), 1);
+        assert!(log[0].0.starts_with("GET /api/v1/owner/galleries/essai-1/likes"), "{log:?}");
+        assert_eq!(r["total"], 4);
+        assert_eq!((r["top"]["id"].as_u64(), r["top"]["count"].as_u64()), (Some(ids[0].0), Some(2)), "{r}");
+        assert_eq!(r["top"]["who"], json!(["Awa", "Bintou"]));
+        assert_eq!(r["photos"].as_array().map(Vec::len), Some(3));
+        assert_eq!(r["photos"][2]["id"], Value::Null, "a photo of another library has no library id");
+        assert_eq!((r["people"][0]["who"].as_str(), r["people"][0]["count"].as_u64()), (Some("Awa"), Some(3)));
+    }
+
+    /// A level change goes to the person's own access; a wrong level or an id that could change the path is refused
+    /// before anything is sent; a code's hex id revokes (it used to be read as a number and never did).
+    #[test]
+    fn access_levels_change_in_place_and_ids_are_safe() {
+        let (port, stop, srv) = recorder(vec![]);
+        let (mut s, _) = session_on(port);
+        s.execute("gallery.setAccess", &json!({"slug": "essai-1", "id": "mab12", "level": "download"})).expect("set");
+        s.execute("gallery.guests", &json!({"slug": "essai-1", "revoke": "0a1b2c"})).expect("revoke");
+        for bad_call in [json!({"slug": "essai-1", "id": "mab12", "level": "root"}), json!({"slug": "essai-1", "id": "../x", "level": "like"}), json!({"slug": "essai-1", "level": "like"})] {
+            assert!(s.execute("gallery.setAccess", &bad_call).is_err(), "{bad_call}");
+        }
+        assert!(s.execute("gallery.setAccess", &json!({"id": "a1", "level": "like"})).is_err(), "a slug is required");
+        stop.store(true, Ordering::Relaxed);
+        let log = srv.join().expect("server");
+        assert_eq!(log.len(), 2, "{log:?}");
+        assert!(log[0].0.starts_with("PATCH /api/v1/owner/galleries/essai-1/guests/mab12"), "{log:?}");
+        assert_eq!(serde_json::from_str::<Value>(&log[0].1).expect("body"), json!({"level": "download"}));
+        assert!(log[1].0.starts_with("DELETE /api/v1/owner/galleries/essai-1/guests/0a1b2c"), "{log:?}");
     }
 
     #[test]
