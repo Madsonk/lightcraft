@@ -669,6 +669,8 @@ fn photos(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, st: &
         _ => {}
     }
     let visible: Vec<String> = shown.iter().map(|i| i.pid.clone()).collect();
+    // what is not on screen (another view) is not picked: no action may reach a photo that cannot be seen
+    st.picked.retain(|p| visible.contains(p));
     let hidden_count = list.iter().filter(|i| i.hidden).count();
     let mut out = Out::default();
 
