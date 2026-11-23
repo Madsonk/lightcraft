@@ -419,6 +419,7 @@ impl SyncCounts {
 
 /// The Online Galleries manager's state.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct GalleriesState {
     pub rows: Vec<serde_json::Value>,
     /// The gallery shown on the right (its slug) and what the server holds for it (`gallery.open`).
@@ -435,4 +436,29 @@ pub struct GalleriesState {
     /// A proposal from `gallery.organise`, waiting to be applied or dismissed.
     pub plan: Option<serde_json::Value>,
     pub error: Option<String>,
+    /// No gallery server is set yet: the dialog asks for its address and owner token first.
+    pub setup: bool,
+    pub url: String,
+    /// Never written to a saved state.
+    #[serde(skip)]
+    pub token: String,
+    /// The open gallery's tab: 0 photos, 1 access.
+    pub tab: usize,
+    /// The hearts of the open gallery (`gallery.likes`).
+    pub likes: Option<serde_json::Value>,
+    /// What the photo grid shows: 0 all, 1 the most loved, 2 the hidden ones.
+    pub view: usize,
+    /// The photos picked in the grid (server keys) and the last one clicked.
+    pub picked: Vec<String>,
+    pub anchor: Option<String>,
+    /// The photos being dragged (server keys).
+    pub drag: Vec<String>,
+    /// Photos waiting for a "take out of the gallery" confirmation.
+    pub confirm_remove: Vec<String>,
+    /// How to take back the last move or hide: the commands to run, and what to call the button.
+    pub undo: Vec<(String, serde_json::Value)>,
+    /// A chapter being named for the picked photos.
+    pub new_chapter: String,
+    /// The access (its id) waiting for a "revoke" confirmation.
+    pub revoke: Option<String>,
 }

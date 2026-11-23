@@ -1347,9 +1347,15 @@ fn ui_commands_9(app: &mut LightcraftApp, ctx: &egui::Context, id: &str, p: &Val
         }
         "dialog.galleries" => {
             let mut st = crate::state::GalleriesState { level: 1, ..Default::default() };
-            match app.run("gallery.list", json!({})) {
-                Ok(v) => st.rows = v["galleries"].as_array().cloned().unwrap_or_default(),
-                Err(e) => st.error = Some(e),
+            let cfg = app.run("gallery.settings", json!({})).unwrap_or(Value::Null);
+            let url = cfg["url"].as_str().unwrap_or_default();
+            st.setup = url.is_empty() || cfg["tokenSet"].as_bool() != Some(true);
+            st.url = if url.is_empty() { "https://galeries.uzuriportrait.com".to_string() } else { url.to_string() };
+            if !st.setup {
+                match app.run("gallery.list", json!({})) {
+                    Ok(v) => st.rows = v["galleries"].as_array().cloned().unwrap_or_default(),
+                    Err(e) => st.error = Some(e),
+                }
             }
             app.ui.dialog = Some(Dialog::Galleries(Box::new(st)));
             Ok(Value::Null)

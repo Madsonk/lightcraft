@@ -3,9 +3,14 @@
 //! or a whole album, and the local organiser ("Organise with AI": chapters, order, cover and the photos
 //! to leave out, proposed from what LightCraft knows about the photos and applied only on a click).
 
+use std::collections::HashMap;
+
 use egui::{Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use lightcraft_catalog::PhotoId;
 use serde_json::{Value, json};
+
+mod layout;
+use layout::Drop;
 
 use crate::LightcraftApp;
 use crate::state::{Dialog, GalleriesState};
@@ -21,7 +26,7 @@ fn tr(s: &str) -> String {
 pub(super) fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dialog) {
     let Dialog::Galleries(st) = dlg else { return };
     let ctx = ui.ctx().clone();
-    ui.set_min_size(vec2(960.0, 580.0));
+    ui.set_min_size(vec2(960.0, 640.0));
     if let Some(e) = st.error.clone() {
         ui.horizontal(|ui| {
             ui.colored_label(Color32::LIGHT_RED, e);
@@ -29,6 +34,10 @@ pub(super) fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dialog)
                 st.error = None;
             }
         });
+    }
+    if st.setup {
+        setup(app, ui, st);
+        return;
     }
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
@@ -38,6 +47,37 @@ pub(super) fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dialog)
         ui.separator();
         ui.vertical(|ui| right(app, ui, &ctx, st));
     });
+}
+
+/// First use: the gallery server's address and the owner token. Tried before it is saved.
+fn setup(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &mut GalleriesState) {
+    ui.add_space(8.0);
+    ui.strong(tr("Connect to your gallery server"));
+    ui.label(tr("Galleries are hosted on your own server. Enter its address and your owner token once: they stay on this computer."));
+    ui.add_space(8.0);
+    crate::text_field::TextField::singleline("field:galleryUrl", &mut st.url).hint(tr("https://…")).width(420.0).show(ui);
+    crate::text_field::TextField::singleline("field:galleryOwnerToken", &mut st.token).hint(tr("Owner token")).width(420.0).password(true).show(ui);
+    ui.add_space(6.0);
+    let ready = !st.url.trim().is_empty() && !st.token.trim().is_empty();
+    if ui.add_enabled(ready, egui::Button::new(tr("Connect"))).clicked() {
+        let try_cfg = app.run("gallery.configure", json!({"url": st.url, "token": st.token, "persist": false}));
+        let listed = try_cfg.and_then(|_| app.run("gallery.list", json!({})));
+        match listed {
+            Ok(v) => {
+                // it works: keep it for next time
+                match app.run("gallery.configure", json!({"url": st.url, "token": st.token, "persist": true})) {
+                    Ok(_) => {
+                        st.rows = v["galleries"].as_array().cloned().unwrap_or_default();
+                        st.setup = false;
+                        st.token.clear();
+                        st.error = None;
+                    }
+                    Err(e) => st.error = Some(e),
+                }
+            }
+            Err(e) => st.error = Some(e),
+        }
+    }
 }
 
 /// Every album a gallery can be made from (folders hold albums, not photos).
@@ -59,6 +99,11 @@ fn load(app: &mut LightcraftApp, st: &mut GalleriesState, slug: &str) {
     st.code = None;
     match app.run("gallery.open", json!({"slug": slug})) {
         Ok(v) => {
+            if st.open.as_deref() != Some(slug) {
+                // another gallery: nothing of the last one carries over
+                (st.picked, st.anchor, st.drag, st.confirm_remove, st.undo, st.revoke) = Default::default();
+                st.view = 0;
+            }
             st.title = v["gallery"]["title"].as_str().unwrap_or_default().to_string();
             st.days = match v["gallery"]["expires"].as_f64().filter(|e| *e > 0.0) {
                 Some(ts) => {
@@ -67,26 +112,51 @@ fn load(app: &mut LightcraftApp, st: &mut GalleriesState, slug: &str) {
                 }
                 None => "0".into(),
             };
+            let here: Vec<&str> = v["photos"].as_array().into_iter().flatten().filter_map(|p| p["pid"].as_str()).collect();
+            st.picked.retain(|p| here.contains(&p.as_str()));
             st.detail = Some(v);
             st.open = Some(slug.to_string());
             st.guests = app.run("gallery.guests", json!({"slug": slug})).ok().and_then(|v| v["guests"].as_array().cloned()).unwrap_or_default();
             st.requests = app.run("gallery.requests", json!({"slug": slug})).ok().and_then(|v| v["requests"].as_array().cloned()).unwrap_or_default();
+            st.likes = app.run("gallery.likes", json!({"slug": slug})).ok();
         }
         Err(e) => st.error = Some(e),
     }
 }
 
-/// Runs a command on the open gallery, then reloads it and the list.
-fn act(app: &mut LightcraftApp, st: &mut GalleriesState, command: &str, mut p: Value) {
+/// Runs commands on the open gallery in turn, then reloads it and the list. `undo` is what takes the change back
+/// (kept for the Undo button; empty when it cannot be taken back).
+fn act_many(app: &mut LightcraftApp, st: &mut GalleriesState, commands: Vec<(String, Value)>, undo: Vec<(String, Value)>) {
     let Some(slug) = st.open.clone() else { return };
-    p["slug"] = json!(slug);
-    match app.run(command, p) {
-        Ok(_) => {
-            reload_rows(app, st);
-            load(app, st, &slug);
+    let photos_only = commands.iter().all(|(c, _)| matches!(c.as_str(), "gallery.arrange" | "gallery.remove"));
+    for (command, mut p) in commands {
+        p["slug"] = json!(slug);
+        if let Err(e) = app.run(&command, p) {
+            st.error = Some(e);
+            break;
+        }
+        st.undo = undo.clone();
+    }
+    reload_rows(app, st);
+    // moving, hiding or removing photos changes nothing about the people or the hearts: the photos only
+    if photos_only { load_photos(app, st, &slug) } else { load(app, st, &slug) }
+}
+
+/// Reloads the open gallery's photos and hearts only (what a move, a hide or a removal changes).
+fn load_photos(app: &mut LightcraftApp, st: &mut GalleriesState, slug: &str) {
+    match app.run("gallery.open", json!({"slug": slug})) {
+        Ok(v) => {
+            let here: Vec<&str> = v["photos"].as_array().into_iter().flatten().filter_map(|p| p["pid"].as_str()).collect();
+            st.picked.retain(|p| here.contains(&p.as_str()));
+            st.detail = Some(v);
+            st.likes = app.run("gallery.likes", json!({"slug": slug})).ok(); // a removed photo's hearts stop counting
         }
         Err(e) => st.error = Some(e),
     }
+}
+
+fn act(app: &mut LightcraftApp, st: &mut GalleriesState, command: &str, p: Value) {
+    act_many(app, st, vec![(command.to_string(), p)], Vec::new());
 }
 
 /// Opens the Publish dialog for this library's photos (the selection, or `album`), as a new gallery or
@@ -139,6 +209,9 @@ fn left(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &mut GalleriesState) {
             let count = g["photos"].as_u64().unwrap_or(0);
             let req = g["requests"].as_u64().unwrap_or(0);
             let mut text = format!("{title} · {count}");
+            if let Some(n) = g["likes"].as_u64().filter(|n| *n > 0) {
+                text.push_str(&format!(" · ♥ {n}"));
+            }
             if req > 0 {
                 text.push_str(&format!(" · ✉ {req}"));
             }
@@ -158,7 +231,6 @@ fn right(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, st: &m
     };
     let Some(detail) = st.detail.clone() else { return };
     let g = &detail["gallery"];
-    let base = app.run("gallery.settings", json!({})).ok().and_then(|v| v["url"].as_str().map(|u| u.trim_end_matches('/').to_string())).unwrap_or_default();
 
     // settings
     ui.horizontal(|ui| {
@@ -180,7 +252,14 @@ fn right(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, st: &m
         if ui.checkbox(&mut listed, tr("Shown on the website")).changed() {
             act(app, st, "gallery.update", json!({"listed": listed}));
         }
+        let mut download = g["download"].as_bool().or_else(|| g["download"].as_i64().map(|n| n != 0)).unwrap_or(true);
+        let dl = ui.checkbox(&mut download, tr("Downloads allowed")).on_hover_text(tr("Off: nobody can download, whatever their access level."));
+        crate::widgets::register(ui, "checkbox:galleryDownload", dl.rect);
+        if dl.changed() {
+            act(app, st, "gallery.update", json!({"download": download}));
+        }
         if ui.button(tr("Copy link")).clicked() {
+            let base = app.run("gallery.settings", json!({})).ok().and_then(|v| v["url"].as_str().map(|u| u.trim_end_matches('/').to_string())).unwrap_or_default();
             ctx.copy_text(format!("{base}/g/{slug}"));
             app.toast(ctx, tr("Link copied"));
         }
@@ -209,6 +288,7 @@ fn right(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, st: &m
                         st.confirm = None;
                         st.open = None;
                         st.detail = None;
+                        st.likes = None;
                         reload_rows(app, st);
                     }
                     Err(e) => st.error = Some(e),
@@ -225,13 +305,62 @@ fn right(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, st: &m
     if st.plan.is_some() {
         plan_panel(app, ui, st);
     }
-    access_panel(app, ui, ctx, st, &slug);
+    hearts_row(app, ui, ctx, st, &slug);
+    ui.horizontal(|ui| {
+        ui.selectable_value(&mut st.tab, 0, tr("Photos"));
+        let waiting = st.requests.iter().filter(|r| r["status"].as_str() == Some("pending")).count();
+        let label = if waiting > 0 { crate::i18n::tr_format!("Access ({g}) · ✉ {r}", g = st.guests.len(), r = waiting) } else { crate::i18n::tr_format!("Access ({g})", g = st.guests.len()) };
+        let t = ui.selectable_value(&mut st.tab, 1, label);
+        crate::widgets::register(ui, "tab:galleryAccess", t.rect);
+    });
     ui.separator();
-    photos(app, ui, ctx, st, &detail);
+    if st.tab == 1 {
+        access_panel(app, ui, ctx, st, &slug);
+    } else {
+        photos(app, ui, ctx, st, &detail, &slug);
+    }
+}
+
+/// The hearts at a glance: how many, from how many people, the most loved photo, and the button that brings
+/// them into the library (the keyword "Client favourite").
+fn hearts_row(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, st: &mut GalleriesState, slug: &str) {
+    let t = Tokens::get(ui.ctx());
+    let total = st.likes.as_ref().and_then(|l| l["total"].as_u64()).unwrap_or(0);
+    let people = st.likes.as_ref().and_then(|l| l["people"].as_array()).map_or(0, Vec::len);
+    let top = st.likes.as_ref().map(|l| l["top"].clone()).filter(|v| !v.is_null());
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(crate::i18n::tr_format!("♥ {n} · {p} person(s)", n = total, p = people)).strong());
+        if let Some(top) = &top
+            && let Some(id) = top["id"].as_u64()
+        {
+            ui.label(egui::RichText::new(tr("Most loved:")).color(t.text_dim));
+            thumb(app, ui, id, vec2(30.0, 30.0));
+            ui.label(format!("♥ {}", top["count"].as_u64().unwrap_or(0)));
+        }
+        let pull = ui.button(tr("Bring the hearts into LightCraft")).on_hover_text(tr("Gives each loved photo the keyword “Client favourite” in your library. Nothing else is changed."));
+        crate::widgets::register(ui, "button:galleryPull", pull.rect);
+        if pull.clicked() {
+            match app.run("gallery.pull", json!({"slug": slug})) {
+                Ok(r) => {
+                    let (n, gone) = (r["liked"].as_u64().unwrap_or(0), r["unliked"].as_u64().unwrap_or(0));
+                    app.toast(ctx, crate::i18n::tr_format!("Client favourites: {n} liked · {gone} taken back", n = n, gone = gone));
+                }
+                Err(e) => st.error = Some(e),
+            }
+        }
+        if ui.button(tr("Refresh")).clicked() {
+            reload_rows(app, st);
+            load(app, st, slug);
+        }
+    });
 }
 
 fn thumb(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64, size: egui::Vec2) -> (egui::Response, Rect) {
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    thumb_sense(app, ui, id, size, Sense::click())
+}
+
+fn thumb_sense(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u64, size: egui::Vec2, sense: Sense) -> (egui::Response, Rect) {
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
     let t = Tokens::get(ui.ctx());
     ui.painter().rect_filled(rect, 3.0, t.skeleton);
     let pid = PhotoId(id);
@@ -297,41 +426,126 @@ fn plan_panel(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &mut GalleriesStat
     });
 }
 
+const LEVELS: [(&str, &str); 3] = [("view", "View only"), ("like", "View and heart"), ("download", "View, heart and download")];
+
+fn level_label(level: &str) -> String {
+    LEVELS.iter().find(|(k, _)| *k == level).map_or_else(|| level.to_string(), |(_, t)| tr(t))
+}
+
+/// "dd/mm/yyyy" of a Unix time (UTC), for the date an access was given.
+fn day(ts: f64) -> String {
+    // days → civil date (Howard Hinnant)
+    let z = (ts / 86_400.0).floor() as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{d:02}/{m:02}/{y}")
+}
+
+/// Everyone who can open the gallery — people let in by email and codes — what each may do, since when and how
+/// many hearts they gave; the requests waiting for an answer; adding a code.
 fn access_panel(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, st: &mut GalleriesState, slug: &str) {
-    let waiting = st.requests.iter().filter(|r| r["status"].as_str() == Some("pending")).count();
-    let head = crate::i18n::tr_format!("Guests ({g}) and requests ({r})", g = st.guests.len(), r = waiting);
-    egui::CollapsingHeader::new(head).id_salt(("galleryAccess", slug.to_string())).default_open(waiting > 0).show(ui, |ui| {
-        for rq in st.requests.clone().into_iter().filter(|r| r["status"].as_str() == Some("pending")) {
-            ui.horizontal(|ui| {
-                ui.label(format!("{} <{}>", rq["name"].as_str().unwrap_or_default(), rq["email"].as_str().unwrap_or_default()));
-                let Some(id) = rq["id"].as_i64() else { return };
-                for (label, decision, level) in [("Approve (like)", "approve", "like"), ("Approve + download", "approve", "download"), ("Deny", "deny", "like")] {
-                    if ui.button(tr(label)).clicked() {
-                        act(app, st, "gallery.requests", json!({"decide": id, "decision": decision, "level": level}));
+    let t = Tokens::get(ui.ctx());
+    let download_on = st.detail.as_ref().map_or(true, |d| d["gallery"]["download"].as_bool().or_else(|| d["gallery"]["download"].as_i64().map(|n| n != 0)).unwrap_or(true));
+    let hearts: HashMap<String, u64> = st.likes.as_ref().and_then(|l| l["people"].as_array()).into_iter().flatten().filter_map(|p| Some((p["who"].as_str()?.to_lowercase(), p["count"].as_u64()?))).collect();
+    let mut set_level: Option<(String, String)> = None;
+    egui::ScrollArea::vertical().id_salt("galleryAccessList").auto_shrink([false, false]).show(ui, |ui| {
+        let pending: Vec<Value> = st.requests.iter().filter(|r| r["status"].as_str() == Some("pending")).cloned().collect();
+        if !pending.is_empty() {
+            ui.strong(tr("Waiting for your answer"));
+            for rq in pending {
+                ui.horizontal_wrapped(|ui| {
+                    let r = ui.label(format!("{} <{}>", rq["name"].as_str().unwrap_or_default(), rq["email"].as_str().unwrap_or_default()));
+                    if let Some(m) = rq["message"].as_str().filter(|m| !m.trim().is_empty()) {
+                        r.on_hover_text(m);
                     }
+                    let Some(id) = rq["id"].as_i64() else { return };
+                    for (label, decision, level) in [("Approve (like)", "approve", "like"), ("Approve + download", "approve", "download"), ("Deny", "deny", "like")] {
+                        let b = ui.button(tr(label));
+                        crate::widgets::register(ui, format!("button:galleryRequest:{id}:{decision}:{level}"), b.rect);
+                        if b.clicked() {
+                            act(app, st, "gallery.requests", json!({"decide": id, "decision": decision, "level": level}));
+                        }
+                    }
+                });
+            }
+            ui.separator();
+        }
+        ui.strong(crate::i18n::tr_format!("People with access ({n})", n = st.guests.len()));
+        if !download_on {
+            ui.label(egui::RichText::new(tr("Downloads are off for the whole gallery: nobody can download, whatever their level.")).color(t.text_dim));
+        }
+        if st.guests.is_empty() {
+            ui.label(tr("Nobody yet: add a code below, or approve a request."));
+        } else {
+            egui::Grid::new("galleryAccessGrid").striped(true).num_columns(6).spacing([14.0, 6.0]).show(ui, |ui| {
+                for h in ["Name", "Email", "May", "Since", "Hearts", ""] {
+                    ui.label(egui::RichText::new(tr(h)).color(t.text_dim));
+                }
+                ui.end_row();
+                for gu in st.guests.clone() {
+                    let Some(id) = gu["id"].as_str().map(String::from) else { continue };
+                    let name = gu["name"].as_str().unwrap_or_default();
+                    let level = gu["level"].as_str().unwrap_or("like").to_string();
+                    ui.label(name);
+                    match gu["email"].as_str() {
+                        Some(e) => ui.label(e),
+                        None => ui.label(egui::RichText::new(tr("Code")).color(t.text_dim)),
+                    };
+                    let combo = egui::ComboBox::from_id_salt(("galleryLevel", id.clone())).selected_text(level_label(&level)).show_ui(ui, |ui| {
+                        for (k, label) in LEVELS {
+                            let item = ui.selectable_label(level == k, tr(label));
+                            crate::widgets::register(ui, format!("galleryLevel:{id}:{k}"), item.rect);
+                            if item.clicked() && level != k {
+                                set_level = Some((id.clone(), k.to_string()));
+                            }
+                        }
+                    });
+                    crate::widgets::register(ui, format!("combo:galleryLevel:{id}"), combo.response.rect);
+                    ui.label(gu["created"].as_f64().map(day).unwrap_or_default());
+                    ui.label(hearts.get(&name.to_lowercase()).map_or(String::new(), |n| format!("♥ {n}")));
+                    if st.revoke.as_deref() == Some(id.as_str()) {
+                        ui.horizontal(|ui| {
+                            let go = ui.button(tr("Revoke now"));
+                            crate::widgets::register(ui, format!("button:galleryRevokeNow:{id}"), go.rect);
+                            if go.clicked() {
+                                st.revoke = None;
+                                act(app, st, "gallery.guests", json!({"revoke": id}));
+                            }
+                            if ui.button(tr("Cancel")).clicked() {
+                                st.revoke = None;
+                            }
+                        });
+                    } else {
+                        let b = ui.button(tr("Revoke")).on_hover_text(tr("Cuts this access at once: the link or code stops working."));
+                        crate::widgets::register(ui, format!("button:galleryRevoke:{id}"), b.rect);
+                        if b.clicked() {
+                            st.revoke = Some(id.clone());
+                        }
+                    }
+                    ui.end_row();
                 }
             });
         }
-        for gu in st.guests.clone() {
-            ui.horizontal(|ui| {
-                ui.label(format!("{} · {}", gu["name"].as_str().unwrap_or_default(), gu["level"].as_str().unwrap_or_default()));
-                if let Some(id) = gu["id"].as_i64()
-                    && ui.button(tr("Revoke")).clicked()
-                {
-                    act(app, st, "gallery.guests", json!({"revoke": id}));
-                }
-            });
-        }
+        ui.add_space(8.0);
+        ui.strong(tr("New guest code"));
         ui.horizontal(|ui| {
             crate::text_field::TextField::singleline("field:galleryGuestName", &mut st.name).hint(tr("Guest name")).width(160.0).show(ui);
-            let labels = ["view", "like", "download"];
-            egui::ComboBox::from_id_salt("galleryGuestLevel").selected_text(labels[st.level.min(2)]).show_ui(ui, |ui| {
-                for (i, l) in labels.iter().enumerate() {
-                    ui.selectable_value(&mut st.level, i, *l);
+            let combo = egui::ComboBox::from_id_salt("galleryGuestLevel").selected_text(level_label(LEVELS[st.level.min(2)].0)).show_ui(ui, |ui| {
+                for (i, (_, label)) in LEVELS.iter().enumerate() {
+                    ui.selectable_value(&mut st.level, i, tr(label));
                 }
             });
-            if ui.button(tr("Add a code")).clicked() && !st.name.trim().is_empty() {
-                let (name, level) = (st.name.trim().to_string(), labels[st.level.min(2)]);
+            crate::widgets::register(ui, "combo:galleryGuestLevel", combo.response.rect);
+            let add = ui.button(tr("Add a code"));
+            crate::widgets::register(ui, "button:galleryAddCode", add.rect);
+            if add.clicked() && !st.name.trim().is_empty() {
+                let (name, level) = (st.name.trim().to_string(), LEVELS[st.level.min(2)].0);
                 match app.run("gallery.guests", json!({"slug": slug, "add": name, "level": level})) {
                     Ok(r) => {
                         let code = r["code"].as_str().map(String::from);
@@ -354,109 +568,422 @@ fn access_panel(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Context,
             });
         }
     });
+    if let Some((id, level)) = set_level {
+        act(app, st, "gallery.setAccess", json!({"id": id, "level": level}));
+    }
 }
 
-/// The gallery's photos, by chapter, each with a menu: cover, remove, hide, move.
-fn photos(app: &mut LightcraftApp, ui: &mut egui::Ui, _ctx: &egui::Context, st: &mut GalleriesState, detail: &Value) {
+/// A photo of the gallery as the server lists it.
+#[derive(Clone)]
+struct Item {
+    pid: String,
+    id: Option<u64>,
+    name: String,
+    section: String,
+    hidden: bool,
+}
+
+fn items(detail: &Value) -> Vec<Item> {
+    detail["photos"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|p| Item {
+            pid: p["pid"].as_str().unwrap_or_default().to_string(),
+            id: p["id"].as_u64(),
+            name: p["name"].as_str().unwrap_or_default().to_string(),
+            section: p["section"].as_str().unwrap_or_default().to_string(),
+            hidden: p["hidden"].as_bool().unwrap_or(false) || p["hidden"].as_i64() == Some(1),
+        })
+        .collect()
+}
+
+/// pid → (hearts, who gave them)
+fn hearts_of(st: &GalleriesState) -> HashMap<String, (usize, Vec<String>)> {
+    st.likes
+        .as_ref()
+        .and_then(|l| l["photos"].as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|p| Some((p["pid"].as_str()?.to_string(), (p["count"].as_u64()? as usize, p["who"].as_array()?.iter().filter_map(|w| w.as_str().map(String::from)).collect()))))
+        .collect()
+}
+
+/// `gallery.arrange` for a whole display order: every photo, its chapter, the chapters' order.
+fn arrange_cmd(flat: &[(String, String)], chapters: &[String]) -> (String, Value) {
+    let sections: serde_json::Map<String, Value> = flat.iter().map(|(p, s)| (p.clone(), json!(s))).collect();
+    ("gallery.arrange".into(), json!({"pids": flat.iter().map(|(p, _)| p).collect::<Vec<_>>(), "sections": sections, "chapters": chapters}))
+}
+
+type Commands = Vec<(String, Value)>;
+
+/// Moves `carried` to `to`: the command, and the one that puts it back. `None` when nothing would change.
+fn move_action(flat: &[(String, String)], order: &[String], carried: &[String], to: &Drop) -> Option<(Commands, Commands)> {
+    let new = layout::moved(flat, carried, to)?;
+    Some((vec![arrange_cmd(&new, &layout::first_appearance(&new))], vec![arrange_cmd(flat, order)]))
+}
+
+/// Hides or shows `targets`; taking it back restores each photo's own state.
+fn hide_action(list: &[Item], targets: &[String], hide: bool) -> (Commands, Commands) {
+    let was = |hidden: bool| -> Vec<&String> { targets.iter().filter(|t| list.iter().any(|i| &i.pid == *t && i.hidden == hidden)).collect() };
+    let cmd = |pids: Vec<&String>, hidden: bool| (!pids.is_empty()).then(|| ("gallery.remove".to_string(), json!({"pids": pids, "hide": true, "hidden": hidden})));
+    (cmd(targets.iter().collect(), hide).into_iter().collect(), [cmd(was(true), true), cmd(was(false), false)].into_iter().flatten().collect())
+}
+
+/// What the grid decided this frame; run after it is drawn.
+#[derive(Default)]
+struct Out {
+    drop: Option<Target>,
+    run: Option<(Commands, Commands)>,
+}
+
+enum Target {
+    Place(Drop),
+    Trash,
+}
+
+/// The gallery's photos, by chapter. Click to pick (Cmd-click adds, Shift-click takes a range), drag to move
+/// them — before or after another photo, onto a chapter's title, or onto the bin — and Backspace/Delete takes
+/// the picked photos out of the gallery (after a confirmation: the library is never touched).
+fn photos(app: &mut LightcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, st: &mut GalleriesState, detail: &Value, slug: &str) {
     let t = Tokens::get(ui.ctx());
-    let cover = detail["gallery"]["cover"].as_str().unwrap_or_default().to_string();
-    let list: Vec<Value> = detail["photos"].as_array().cloned().unwrap_or_default();
+    let list = items(detail);
     if list.is_empty() {
         ui.label(tr("No photo in this gallery yet: add the selection or an album."));
         return;
     }
-    // local photos in display order: what a move swaps
-    let order: Vec<u64> = list.iter().filter_map(|p| p["id"].as_u64()).collect();
-    let mut chapters: Vec<(String, Vec<&Value>)> = Vec::new();
-    for p in &list {
-        let name = p["section"].as_str().unwrap_or_default().to_string();
-        match chapters.iter_mut().find(|(n, _)| *n == name) {
-            Some((_, v)) => v.push(p),
-            None => chapters.push((name, vec![p])),
+    let cover = detail["gallery"]["cover"].as_str().unwrap_or_default().to_string();
+    let order: Vec<String> = detail["gallery"]["sections_order"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect();
+    let flat = layout::display(&list.iter().map(|i| (i.pid.clone(), i.section.clone())).collect::<Vec<_>>(), &order);
+    let by_pid: HashMap<&str, &Item> = list.iter().map(|i| (i.pid.as_str(), i)).collect();
+    let hearts = hearts_of(st);
+    let loved = |pid: &str| hearts.get(pid).map_or(0, |h| h.0);
+    let reorder = st.view == 0;
+    let mut shown: Vec<&Item> = flat.iter().filter_map(|(p, _)| by_pid.get(p.as_str()).copied()).collect();
+    match st.view {
+        1 => {
+            shown.retain(|i| loved(&i.pid) > 0);
+            shown.sort_by_key(|i| std::cmp::Reverse(loved(&i.pid)));
+        }
+        2 => shown.retain(|i| i.hidden),
+        _ => {}
+    }
+    let visible: Vec<String> = shown.iter().map(|i| i.pid.clone()).collect();
+    let hidden_count = list.iter().filter(|i| i.hidden).count();
+    let mut out = Out::default();
+
+    // keys: Cmd-A picks everything on screen, Backspace/Delete asks to take the picked photos out
+    if !ctx.egui_wants_keyboard_input() && st.confirm_remove.is_empty() {
+        let (all, del) = ctx.input(|i| (i.modifiers.command && i.key_pressed(egui::Key::A), i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)));
+        if all {
+            st.picked = visible.clone();
+        } else if del && !st.picked.is_empty() {
+            st.confirm_remove = st.picked.clone();
         }
     }
-    let mut action: Option<(String, Value)> = None;
-    egui::ScrollArea::vertical().id_salt("galleryPhotos").auto_shrink([false, false]).max_height(330.0).show(ui, |ui| {
-        // chapter names in page order: what a move swaps (`sections_order` ignores the unnamed group)
-        let named: Vec<&String> = chapters.iter().map(|(n, _)| n).filter(|n| !n.is_empty()).collect();
-        for (name, items) in &chapters {
-            if chapters.len() > 1 || !name.is_empty() {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(format!("{} · {}", if name.is_empty() { tr("Without chapter") } else { name.clone() }, items.len())).strong());
-                    if let Some(i) = named.iter().position(|n| *n == name) {
-                        for (up, glyph, tip) in [(true, "▲", "Move chapter earlier"), (false, "▼", "Move chapter later")] {
-                            let ok = if up { i > 0 } else { i + 1 < named.len() };
-                            if ui.add_enabled(ok, egui::Button::new(glyph).small()).on_hover_text(tr(tip)).clicked() {
-                                let mut o: Vec<&String> = named.clone();
-                                o.swap(i, if up { i - 1 } else { i + 1 });
-                                action = Some(("gallery.update".into(), json!({"sections_order": o})));
-                            }
+
+    // taking photos out asks first
+    if !st.confirm_remove.is_empty() {
+        let n = st.confirm_remove.len();
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.strong(crate::i18n::tr_format!("Take {n} out of the gallery?", n = n));
+            ui.label(tr("They disappear from the page your clients see, and their hearts stop counting. Your originals and your LightCraft library are not touched. To put them back, add them again."));
+            ui.horizontal(|ui| {
+                let go = ui.button(tr("Take out of the gallery"));
+                crate::widgets::register(ui, "button:galleryRemoveConfirm", go.rect);
+                if go.clicked() {
+                    let pids = std::mem::take(&mut st.confirm_remove);
+                    st.picked.retain(|p| !pids.contains(p));
+                    out.run = Some((vec![("gallery.remove".into(), json!({"pids": pids}))], Vec::new()));
+                }
+                if ui.button(tr("Keep them")).clicked() {
+                    st.confirm_remove.clear();
+                }
+            });
+        });
+    }
+
+    // toolbar
+    let pointer = ui.input(|i| i.pointer.interact_pos());
+    let dragging = !st.drag.is_empty();
+    let chapter_names: Vec<String> = layout::first_appearance(&flat);
+    ui.horizontal_wrapped(|ui| {
+        let views = [tr("All photos"), tr("Most loved"), crate::i18n::tr_format!("Hidden photos ({n})", n = hidden_count)];
+        let combo = egui::ComboBox::from_id_salt("galleryView").selected_text(views[st.view.min(2)].clone()).show_ui(ui, |ui| {
+            for (i, v) in views.iter().enumerate() {
+                let item = ui.selectable_value(&mut st.view, i, v.clone());
+                crate::widgets::register(ui, format!("galleryView:{i}"), item.rect);
+            }
+        });
+        crate::widgets::register(ui, "combo:galleryView", combo.response.rect);
+        let n = st.picked.len();
+        if n == 0 {
+            ui.label(egui::RichText::new(tr("Click to pick (⌘-click to add, Shift-click for a range), drag to move.")).color(t.text_dim));
+        } else {
+            ui.label(egui::RichText::new(crate::i18n::tr_format!("Picked: {n}", n = n)).strong());
+            let all_hidden = st.picked.iter().all(|p| by_pid.get(p.as_str()).is_some_and(|i| i.hidden));
+            let hide = ui.button(tr(if all_hidden { "Show again" } else { "Hide from the page" }));
+            crate::widgets::register(ui, "button:galleryHidePicked", hide.rect);
+            if hide.clicked() {
+                out.run = Some(hide_action(&list, &st.picked, !all_hidden));
+            }
+            if n == 1 && let Some(id) = by_pid.get(st.picked[0].as_str()).and_then(|i| i.id) && ui.button(tr("Use as cover")).clicked() {
+                out.run = Some((vec![("gallery.update".into(), json!({"cover": id}))], Vec::new()));
+            }
+            if reorder {
+                ui.menu_button(tr("Move to chapter"), |ui| {
+                    for name in chapter_names.iter().map(String::as_str).chain(std::iter::once("")) {
+                        let label = if name.is_empty() { tr("Without chapter") } else { name.to_string() };
+                        if ui.button(label).clicked() {
+                            out.run = move_action(&flat, &order, &st.picked, &Drop::End(name.to_string()));
+                            ui.close();
                         }
                     }
                 });
-            }
-            ui.horizontal_wrapped(|ui| {
-                for p in items {
-                    let pid = p["pid"].as_str().unwrap_or_default();
-                    let hidden = p["hidden"].as_bool().unwrap_or(false) || p["hidden"].as_i64() == Some(1);
-                    let local = p["id"].as_u64();
-                    let (resp, rect) = match local {
-                        Some(id) => thumb(app, ui, id, vec2(TILE, TILE)),
-                        None => {
-                            let (r, resp) = ui.allocate_exact_size(vec2(TILE, TILE), Sense::click());
-                            ui.painter().rect_filled(r, 3.0, t.skeleton);
-                            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, tr("not in this library"), t.semibold(10.0), t.text_dim);
-                            (resp, r)
-                        }
-                    };
-                    crate::widgets::register(ui, format!("galleryPhoto:{pid}"), rect);
-                    if hidden {
-                        ui.painter().rect_filled(rect, 3.0, Color32::from_black_alpha(150));
-                        ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, tr("hidden"), t.semibold(11.0), Color32::WHITE);
-                    }
-                    if pid == cover {
-                        ui.painter().rect_stroke(rect, 3.0, Stroke::new(2.0, t.accent), StrokeKind::Inside);
-                        ui.painter().text(rect.left_top() + vec2(6.0, 4.0), egui::Align2::LEFT_TOP, "★", t.semibold(15.0), t.accent);
-                    }
-                    resp.context_menu(|ui| {
-                        if let Some(id) = local {
-                            if ui.button(tr("Use as cover")).clicked() {
-                                action = Some(("gallery.update".into(), json!({"cover": id})));
-                                ui.close();
-                            }
-                            if let Some(i) = order.iter().position(|x| *x == id) {
-                                if i > 0 && ui.button(tr("Move earlier")).clicked() {
-                                    let mut o = order.clone();
-                                    o.swap(i, i - 1);
-                                    action = Some(("gallery.arrange".into(), json!({"ids": o})));
-                                    ui.close();
-                                }
-                                if i + 1 < order.len() && ui.button(tr("Move later")).clicked() {
-                                    let mut o = order.clone();
-                                    o.swap(i, i + 1);
-                                    action = Some(("gallery.arrange".into(), json!({"ids": o})));
-                                    ui.close();
-                                }
-                            }
-                            let label = if hidden { "Show again" } else { "Hide from the page" };
-                            if ui.button(tr(label)).clicked() {
-                                action = Some(("gallery.remove".into(), json!({"ids": [id], "hide": true, "hidden": !hidden})));
-                                ui.close();
-                            }
-                            if ui.button(tr("Remove from the gallery")).clicked() {
-                                action = Some(("gallery.remove".into(), json!({"ids": [id]})));
-                                ui.close();
-                            }
-                        } else {
-                            ui.label(tr("Published from another library: manage it there."));
-                        }
-                    });
+                crate::text_field::TextField::singleline("field:galleryNewChapter", &mut st.new_chapter).hint(tr("New chapter")).width(120.0).show(ui);
+                let name = st.new_chapter.trim().to_string();
+                let make = ui.add_enabled(!name.is_empty(), egui::Button::new(tr("Create")));
+                crate::widgets::register(ui, "button:galleryNewChapter", make.rect);
+                if make.clicked() {
+                    out.run = move_action(&flat, &order, &st.picked, &Drop::End(name));
+                    st.new_chapter.clear();
                 }
-            });
-            ui.add_space(6.0);
+            }
+            if ui.button(tr("Unpick")).clicked() {
+                st.picked.clear();
+            }
+        }
+        // the bin: click to take the picked photos out, or drop dragged ones on it
+        let bin = ui.add_enabled(n > 0 || dragging, egui::Button::new(tr("🗑 Take out…")));
+        crate::widgets::register(ui, "button:galleryTrash", bin.rect);
+        if dragging && pointer.is_some_and(|p| bin.rect.contains(p)) {
+            ui.painter().rect_stroke(bin.rect.expand(2.0), 4.0, Stroke::new(2.0, Color32::LIGHT_RED), StrokeKind::Outside);
+            out.drop = Some(Target::Trash);
+        }
+        if bin.clicked() && n > 0 {
+            st.confirm_remove = st.picked.clone();
+        }
+        let undo = (!st.undo.is_empty()).then(|| ui.button(tr("↶ Undo")));
+        if let Some(u) = &undo {
+            crate::widgets::register(ui, "button:galleryUndo", u.rect);
+        }
+        if undo.is_some_and(|u| u.clicked()) {
+            let back = std::mem::take(&mut st.undo);
+            act_many(app, st, back, Vec::new());
+            st.undo.clear();
         }
     });
-    if let Some((command, p)) = action {
-        act(app, st, &command, p);
+
+    let cx = Grid { cover: &cover, hearts: &hearts, visible: &visible, reorder, pointer, dragging };
+    egui::ScrollArea::vertical().id_salt("galleryPhotos").auto_shrink([false, false]).max_height(ui.available_height().max(200.0)).show(ui, |ui| {
+        if dragging && let Some(p) = pointer {
+            // near the top or bottom edge of the grid: scroll with the drag
+            let r = ui.clip_rect();
+            if p.y < r.top() + 28.0 {
+                ui.scroll_with_delta(vec2(0.0, 14.0));
+            } else if p.y > r.bottom() - 28.0 {
+                ui.scroll_with_delta(vec2(0.0, -14.0));
+            }
+        }
+        if st.view == 0 {
+            let chapters = layout::chapters(&flat);
+            let named: Vec<&String> = chapters.iter().map(|(n, _)| n).filter(|n| !n.is_empty()).collect();
+            for (name, pids) in &chapters {
+                if chapters.len() > 1 || !name.is_empty() {
+                    let head = ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(format!("{} · {}", if name.is_empty() { tr("Without chapter") } else { name.clone() }, pids.len())).strong());
+                        if let Some(i) = named.iter().position(|n| *n == name) {
+                            for (up, glyph, tip) in [(true, "▲", "Move chapter earlier"), (false, "▼", "Move chapter later")] {
+                                let ok = if up { i > 0 } else { i + 1 < named.len() };
+                                if ui.add_enabled(ok, egui::Button::new(glyph).small()).on_hover_text(tr(tip)).clicked() {
+                                    let mut o: Vec<&String> = named.clone();
+                                    o.swap(i, if up { i - 1 } else { i + 1 });
+                                    out.run = Some((vec![("gallery.update".into(), json!({"sections_order": o}))], vec![("gallery.update".into(), json!({"sections_order": order}))]));
+                                }
+                            }
+                        }
+                    });
+                    let zone = head.response.rect.expand2(vec2(ui.available_width() - head.response.rect.width(), 2.0));
+                    if dragging && pointer.is_some_and(|p| zone.contains(p)) {
+                        ui.painter().rect_stroke(zone, 4.0, Stroke::new(2.0, t.accent), StrokeKind::Inside);
+                        out.drop = Some(Target::Place(Drop::End(name.clone())));
+                    }
+                }
+                ui.horizontal_wrapped(|ui| {
+                    for pid in pids {
+                        if let Some(item) = by_pid.get(pid.as_str()) {
+                            tile(app, ui, st, item, &cx, &flat, &order, &list, &chapter_names, &mut out);
+                        }
+                    }
+                });
+                ui.add_space(6.0);
+            }
+        } else if shown.is_empty() {
+            ui.label(tr(if st.view == 1 { "No heart yet." } else { "No hidden photo." }));
+        } else {
+            ui.horizontal_wrapped(|ui| {
+                for item in &shown {
+                    tile(app, ui, st, item, &cx, &flat, &order, &list, &chapter_names, &mut out);
+                }
+            });
+        }
+    });
+
+    // the drag follows the pointer and ends with the button
+    if dragging {
+        ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+        ctx.request_repaint();
+        if let Some(p) = pointer {
+            let n = st.drag.len();
+            egui::Area::new(egui::Id::new("galleryDragBadge")).order(egui::Order::Tooltip).interactable(false).fixed_pos(p + vec2(14.0, 10.0)).show(ctx, |ui| {
+                egui::Frame::NONE.fill(t.accent).corner_radius(10.0).inner_margin(egui::Margin::symmetric(9, 3)).show(ui, |ui| {
+                    ui.label(egui::RichText::new(crate::i18n::tr_format!("{n} photo(s)", n = n)).color(Color32::WHITE).font(t.semibold(12.0)));
+                });
+            });
+        }
+        if !ui.input(|i| i.pointer.any_down()) {
+            let carried = std::mem::take(&mut st.drag);
+            match out.drop.take() {
+                Some(Target::Place(to)) => out.run = move_action(&flat, &order, &carried, &to),
+                Some(Target::Trash) => st.confirm_remove = carried,
+                None => {}
+            }
+        }
     }
+    if let Some((commands, undo)) = out.run.take() {
+        act_many(app, st, commands, undo);
+    }
+    let _ = slug;
+}
+
+/// What the tiles of a frame share.
+struct Grid<'a> {
+    cover: &'a str,
+    hearts: &'a HashMap<String, (usize, Vec<String>)>,
+    visible: &'a [String],
+    reorder: bool,
+    pointer: Option<egui::Pos2>,
+    dragging: bool,
+}
+
+/// One photo: its picture, hearts, state, and what a click, a drag, a drop on it or a right click does.
+#[allow(clippy::too_many_arguments)]
+fn tile(app: &mut LightcraftApp, ui: &mut egui::Ui, st: &mut GalleriesState, item: &Item, cx: &Grid, flat: &[(String, String)], order: &[String], list: &[Item], chapters: &[String], out: &mut Out) {
+    let t = Tokens::get(ui.ctx());
+    let pid = item.pid.as_str();
+    let sense = Sense::click_and_drag();
+    let (resp, rect) = match item.id {
+        Some(id) => thumb_sense(app, ui, id, vec2(TILE, TILE), sense),
+        None => {
+            let (r, resp) = ui.allocate_exact_size(vec2(TILE, TILE), sense);
+            ui.painter().rect_filled(r, 3.0, t.skeleton);
+            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, tr("not in this library"), t.semibold(10.0), t.text_dim);
+            (resp, r)
+        }
+    };
+    crate::widgets::register(ui, format!("galleryPhoto:{pid}"), rect);
+    let picked = st.picked.iter().any(|p| p == pid);
+    let p = ui.painter();
+    if item.hidden {
+        p.rect_filled(rect, 3.0, Color32::from_black_alpha(150));
+        p.text(rect.center(), egui::Align2::CENTER_CENTER, tr("hidden"), t.semibold(11.0), Color32::WHITE);
+    }
+    if picked {
+        p.rect_filled(rect, 3.0, t.accent.gamma_multiply(0.25));
+        p.rect_stroke(rect, 3.0, Stroke::new(2.5, t.accent), StrokeKind::Inside);
+        p.text(rect.right_top() + vec2(-6.0, 3.0), egui::Align2::RIGHT_TOP, "✔", t.semibold(14.0), t.accent);
+    }
+    if pid == cx.cover {
+        p.text(rect.left_top() + vec2(6.0, 4.0), egui::Align2::LEFT_TOP, "★", t.semibold(15.0), t.accent);
+    }
+    if let Some((n, _)) = cx.hearts.get(pid).filter(|(n, _)| *n > 0) {
+        let g = p.layout_no_wrap(format!("♥ {n}"), t.semibold(11.0), Color32::WHITE);
+        let r = Rect::from_min_size(rect.right_bottom() - g.size() - vec2(10.0, 8.0), g.size() + vec2(8.0, 4.0));
+        p.rect_filled(r, 8.0, Color32::from_rgb(190, 50, 80));
+        p.galley(r.min + vec2(4.0, 2.0), g, Color32::WHITE);
+    }
+
+    // pick
+    if resp.clicked_by(egui::PointerButton::Primary) {
+        let (command, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+        layout::click(&mut st.picked, &mut st.anchor, cx.visible, pid, command, shift);
+    }
+    // drag
+    if resp.drag_started_by(egui::PointerButton::Primary) {
+        if !picked {
+            st.picked = vec![pid.to_string()];
+            st.anchor = Some(pid.to_string());
+        }
+        st.drag = layout::carried(&st.picked, pid);
+    }
+    // drop: the left half of a tile is "before it", the right half "after it"
+    if cx.dragging && cx.reorder && let Some(ptr) = cx.pointer && rect.expand2(vec2(4.0, 3.0)).contains(ptr) && ui.clip_rect().contains(ptr) && !st.drag.iter().any(|d| d == pid) {
+        let before = ptr.x < rect.center().x;
+        let x = if before { rect.left() - 3.0 } else { rect.right() + 3.0 };
+        ui.painter().line_segment([pos2(x, rect.top()), pos2(x, rect.bottom())], Stroke::new(3.0, t.accent));
+        out.drop = Some(Target::Place(if before { Drop::Before(pid.to_string()) } else { Drop::After(pid.to_string()) }));
+    }
+
+    // right click acts on the picked photos when this one is among them, else on it alone
+    if resp.secondary_clicked() && !picked {
+        st.picked = vec![pid.to_string()];
+        st.anchor = Some(pid.to_string());
+    }
+    let targets = layout::carried(&st.picked, pid);
+    resp.context_menu(|ui| {
+        if let Some(id) = item.id.filter(|_| targets.len() == 1) {
+            if ui.button(tr("Use as cover")).clicked() {
+                out.run = Some((vec![("gallery.update".into(), json!({"cover": id}))], Vec::new()));
+                ui.close();
+            }
+        }
+        if targets.len() == 1 && cx.reorder {
+            if let Some(i) = flat.iter().position(|(p, _)| p == pid) {
+                if i > 0 && ui.button(tr("Move earlier")).clicked() {
+                    out.run = move_action(flat, order, &targets, &Drop::Before(flat[i - 1].0.clone()));
+                    ui.close();
+                }
+                if i + 1 < flat.len() && ui.button(tr("Move later")).clicked() {
+                    out.run = move_action(flat, order, &targets, &Drop::After(flat[i + 1].0.clone()));
+                    ui.close();
+                }
+            }
+        }
+        if cx.reorder {
+            ui.menu_button(tr("Move to chapter"), |ui| {
+                for name in chapters.iter().map(String::as_str).chain(std::iter::once("")) {
+                    let label = if name.is_empty() { tr("Without chapter") } else { name.to_string() };
+                    if ui.button(label).clicked() {
+                        out.run = move_action(flat, order, &targets, &Drop::End(name.to_string()));
+                        ui.close();
+                    }
+                }
+            });
+        }
+        let all_hidden = targets.iter().all(|p| list.iter().any(|i| &i.pid == p && i.hidden));
+        if ui.button(tr(if all_hidden { "Show again" } else { "Hide from the page" })).clicked() {
+            out.run = Some(hide_action(list, &targets, !all_hidden));
+            ui.close();
+        }
+        if ui.button(tr("Remove from the gallery")).clicked() {
+            st.confirm_remove = targets.clone();
+            ui.close();
+        }
+        if item.id.is_none() {
+            ui.label(tr("Published from another library: it can be moved, hidden or removed here."));
+        }
+    });
+    let who = cx.hearts.get(pid).map(|(_, w)| w.clone()).unwrap_or_default();
+    resp.on_hover_ui(|ui| {
+        if !item.name.is_empty() {
+            ui.label(&item.name);
+        }
+        if !who.is_empty() {
+            ui.label(egui::RichText::new(tr("Loved by")).strong());
+            for w in who.iter().take(20) {
+                ui.label(format!("♥ {w}"));
+            }
+        }
+    });
 }
